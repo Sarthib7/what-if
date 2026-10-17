@@ -1,0 +1,33 @@
+{
+  "name": "what-if",
+  "version": "0.1.0",
+  "private": true,
+  "description": "What-IF: a Claude plugin that helps café owners rehearse a decision before they spend money. Transparent scenario maths, an imagined-customer rehearsal run by Claude subagents, and a visual report that teaches as it explains.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:watch": "node scripts/dev.mjs --watch",
+    "start:stdio": "node --import tsx src/mcp/stdio.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test test/*.test.ts",
+    "qa": "node --import tsx qa/run.ts",
+    "qa:dry": "node --import tsx qa/run.ts --no-loop"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "fflate": "^0.8.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "playwright": "^1.56.1",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What-IF — rehearse a decision before you spend money</title>
+<meta name="description" content="What-IF helps café owners rehearse a business decision before spending money: your numbers, three possible outcomes, the break-even, a rehearsal with imagined customers, and a small test. Possibilities, not promises.">
+<meta name="theme-color" content="#f6f3ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="What-IF — rehearse a decision before you spend money">
+<meta property="og:description" content="Your numbers, three possible outcomes, the one number to remember, and a small test. An AI coach that teaches as it explains.">
+<meta property="og:url" content="{{SITE_URL}}/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+<script type="module" src="/assets/home.js"></script>
+</head>
+<body class="s-page s-home">
+<a class="s-skip" href="#main">Skip to the content</a>
+<header class="s-head">
+  <div class="s-wrap s-head-in">
+    <a class="s-brand" href="/" aria-label="What-IF home">
+      <svg class="s-logo" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" class="s-logo-bg"/><path d="M5.5 16h7.5M13 16c4.2 0 6.2-7 12-7M13 16h12M13 16c4.2 0 6.2 7 12 7" fill="none" class="s-logo-line" stroke-width="2.6" stroke-linecap="round"/><circle cx="25" cy="9" r="2.7" class="s-logo-up"/><circle cx="25" cy="16" r="2.7" class="s-logo-mid"/><circle cx="25" cy="23" r="2.7" class="s-logo-down"/><circle cx="5.8" cy="16" r="2.7" class="s-logo-line-fill"/></svg>
+      <span>What-IF</span>
+    </a>
+    <nav class="s-nav" aria-label="Main">
+      <a href="#method">How it works</a>
+      <a href="#rehearsal">Rehearsal</a>
+      <a href="#connect">Add to your AI</a>
+      <a href="#skill">Get the skill</a>
+    </nav>
+    <a class="s-btn s-btn--sm" href="/r#demo" data-demo>See it work</a>
+  </div>
+</header>
+
+<main id="main">
+  <!-- Hero -->
+  <section class="s-hero" aria-labelledby="hero-h">
+    <div class="s-wrap s-hero-in">
+      <div class="s-hero-text">
+        <p class="s-eyebrow">For independent café owners · AI education for everyone</p>
+        <h1 id="hero-h" class="s-hero-h">What if<span class="s-hero-dots">…?</span></h1>
+        <p class="s-lede">Rehearse a business decision before you spend money. What-IF turns your own numbers into a few possible futures, shows every step of the maths, and ends with a small, cheap test.</p>
+        <div class="s-cta-row">
+          <a class="s-btn" href="/r#demo" data-demo>See it work <span aria-hidden="true">→</span></a>
+          <a class="s-btn s-btn--ghost" href="#connect">Add What-IF to your AI</a>
+        </div>
+        <p class="s-hero-note">Possibilities, not promises. No sign-up, nothing stored.</p>
+      </div>
+      <figure class="s-hero-vis" aria-labelledby="hero-vis-cap">
+        <svg viewBox="0 0 560 330" role="img" aria-labelledby="hero-vis-t hero-vis-d" focusable="false">
+          <title id="hero-vis-t">One decision, three possible futures</title>
+          <desc id="hero-vis-d">From today, three lines fan out over a short test: an optimistic one and an expected one end above the break-even line, a cautious one ends below it.</desc>
+          <rect class="s-hv-zone-pos" x="40" y="24" width="480" height="176" rx="0"/>
+          <rect class="s-hv-zone-neg" x="40" y="200" width="480" height="96"/>
+          <text class="s-hv-zone-t" x="52" y="46">↑ makes money</text>
+          <text class="s-hv-zone-t" x="52" y="284">↓ loses money</text>
+          <line class="s-hv-zero" x1="40" x2="520" y1="200" y2="200"/>
+          <text class="s-hv-zero-t" x="516" y="192" text-anchor="end">break-even</text>
+          <path class="s-hv-line s-hv-line--pos" d="M64 214 C 190 214, 290 120, 470 62"/>
+          <path class="s-hv-line s-hv-line--pos s-hv-line--main" d="M64 214 C 190 214, 300 170, 470 134"/>
+          <path class="s-hv-line s-hv-line--neg" d="M64 214 C 190 214, 300 232, 470 254"/>
+          <circle class="s-hv-start" cx="64" cy="214" r="7"/>
+          <text class="s-hv-t" x="64" y="242" text-anchor="middle">today</text>
+          <circle class="s-hv-end s-hv-end--pos" cx="470" cy="62" r="7"/>
+          <circle class="s-hv-end s-hv-end--pos" cx="470" cy="134" r="8"/>
+          <circle class="s-hv-end s-hv-end--neg" cx="470" cy="254" r="7"/>
+          <text class="s-hv-t" x="456" y="44" text-anchor="end">optimistic</text>
+          <text class="s-hv-t s-hv-t--main" x="456" y="118" text-anchor="end">expected</text>
+          <text class="s-hv-t" x="456" y="282" text-anchor="end">cautious</text>
+          <text class="s-hv-axis" x="280" y="320" text-anchor="middle">a two-week test →</text>
+        </svg>
+        <figcaption id="hero-vis-cap" class="s-hero-cap">Every number wears a label:
+          <span class="s-chip s-chip--owner">Your number</span>
+          <span class="s-chip s-chip--assumption">A guess</span>
+          <span class="s-chip s-chip--calculation">Calculated</span>
+          <span class="s-chip s-chip--imagined">Imagined</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- The method -->
+  <section class="s-sec" id="method" aria-labelledby="method-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">The method</p>
+        <h2 id="method-h">Seven small steps from “what if” to “let's try it”</h2>
+        <p class="s-sec-lede">The same steps a good adviser would walk you through. What-IF shows each one, so you learn the method, not just the answer.</p>
+      </header>
+      <div class="s-player s-noprint" data-player-controls hidden>
+        <button type="button" class="s-btn s-btn--ghost s-btn--sm" data-player-toggle aria-pressed="true">Pause</button>
+        <span class="s-player-now" aria-live="polite" data-player-now></span>
+      </div>
+      <ol class="s-method" data-method>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>1</span></div>
+          <div class="s-mtext"><h3>Ask</h3><p>Say it the way you would to a friend: “What if I run a weekday lunch offer?” What-IF turns it into one decision, compared with carrying on as now.</p></div>
+          <div class="s-mvis" aria-hidden="true"><div class="s-bubble">What if I run a weekday lunch offer?</div></div>
+        </li>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>2</span></div>
+          <div class="s-mtext"><h3>Your numbers</h3><p>A few figures from your till and your costs, plus the guesses nobody knows yet. Each one is labelled, so you always see what came from you and what is a guess.</p></div>
+          <div class="s-mvis" aria-hidden="true"><ul class="s-minirows"><li><span>Customers a day</span><b>140</b><span class="s-chip s-chip--owner">Your number</span></li><li><span>Extra at lunch</span><b>8</b><span class="s-chip s-chip--assumption">A guess</span></li><li><span>Takings a day</span><b>€1,036</b><span class="s-chip s-chip--calculation">Calculated</span></li></ul></div>
+        </li>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>3</span></div>
+          <div class="s-mtext"><h3>Possible outcomes</h3><p>Three versions of the future — a slow start, your likely guess and a strong one — worked out with plain arithmetic you can open and check.</p></div>
+          <div class="s-mvis" aria-hidden="true"><svg viewBox="0 0 220 96" class="s-minichart"><line x1="96" x2="96" y1="4" y2="92" class="s-mc-zero"/><text x="4" y="22" class="s-mc-t">cautious</text><rect x="62" y="12" width="34" height="14" rx="3" class="s-mc-neg"/><text x="4" y="52" class="s-mc-t">expected</text><rect x="96" y="42" width="64" height="14" rx="3" class="s-mc-pos"/><text x="4" y="82" class="s-mc-t">optimistic</text><rect x="96" y="72" width="112" height="14" rx="3" class="s-mc-pos"/></svg></div>
+        </li>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>4</span></div>
+          <div class="s-mtext"><h3>Break-even</h3><p>The one number to remember: how many extra customers you need before the change pays. Move a slider and watch the result — and the explanation — change.</p></div>
+          <div class="s-mvis" aria-hidden="true"><svg viewBox="0 0 220 96" class="s-minichart"><rect x="0" y="0" width="220" height="56" class="s-mc-zone-pos"/><rect x="0" y="56" width="220" height="40" class="s-mc-zone-neg"/><line x1="0" x2="220" y1="56" y2="56" class="s-mc-zero"/><path d="M8 86 L212 14" class="s-mc-line"/><line x1="122" x2="122" y1="4" y2="92" class="s-mc-be"/><text x="128" y="88" class="s-mc-t s-mc-t--b">break-even</text><circle cx="150" cy="36" r="6" class="s-mc-dot"/></svg></div>
+        </li>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>5</span></div>
+          <div class="s-mtext"><h3>Rehearse with imagined customers</h3><p>A student, an office worker, a regular… imagined customers react over a few rounds. They are not data: they help you find the questions to ask real people.</p></div>
+          <div class="s-mvis" aria-hidden="true"><div class="s-avatars"><span class="s-av s-av--a">M</span><span class="s-av s-av--b">J</span><span class="s-av s-av--c">A</span><span class="s-av s-av--d">H</span></div><span class="s-chip s-chip--imagined">Imagined</span></div>
+        </li>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>6</span></div>
+          <div class="s-mtext"><h3>Small test</h3><p>Two weeks, a cost cap, one thing to count, and a rule agreed before you start: keep, tweak or stop. Printable, so it can live by the till.</p></div>
+          <div class="s-mvis" aria-hidden="true"><div class="s-minicard"><b>10-day test</b><span class="s-rule s-rule--keep">Keep</span><span class="s-rule s-rule--tweak">Tweak</span><span class="s-rule s-rule--stop">Stop</span></div></div>
+        </li>
+        <li class="s-mstep" data-mstep>
+          <div class="s-mrail" aria-hidden="true"><span>7</span></div>
+          <div class="s-mtext"><h3>Learn</h3><p>Tell the coach what happened. What-IF puts reality next to your three guesses, so next time your guesses are better — and you can use the method without it.</p></div>
+          <div class="s-mvis" aria-hidden="true"><svg viewBox="0 0 220 70" class="s-minichart"><line x1="10" x2="210" y1="40" y2="40" class="s-mc-axis"/><circle cx="54" cy="40" r="5" class="s-mc-guess"/><circle cx="104" cy="40" r="5" class="s-mc-guess"/><circle cx="170" cy="40" r="5" class="s-mc-guess"/><text x="104" y="24" text-anchor="middle" class="s-mc-t">your guess</text><circle cx="86" cy="40" r="8" class="s-mc-actual"/><text x="86" y="64" text-anchor="middle" class="s-mc-t s-mc-t--b">what happened</text></svg></div>
+        </li>
+      </ol>
+      <p class="s-center"><a class="s-btn" href="/r#demo" data-demo>Open the demo report <span aria-hidden="true">→</span></a></p>
+    </div>
+  </section>
+
+  <!-- Rehearsal -->
+  <section class="s-sec s-sec--alt" id="rehearsal" aria-labelledby="reh-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">How the rehearsal works</p>
+        <h2 id="reh-h">A dress rehearsal with imagined customers</h2>
+        <p class="s-sec-lede">Inspired by swarm simulations like <a href="https://github.com/666ghj/MiroFish" rel="noopener">MiroFish</a>, made small and honest for one café: a handful of imagined people, a few rounds, no hidden services.</p>
+      </header>
+      <ol class="s-flow">
+        <li class="s-flow-step">
+          <div class="s-flow-vis" aria-hidden="true"><div class="s-avatars s-avatars--grid"><span class="s-av s-av--a">M</span><span class="s-av s-av--b">J</span><span class="s-av s-av--c">A</span><span class="s-av s-av--d">H</span><span class="s-av s-av--e">S</span><span class="s-av s-av--f">L</span></div></div>
+          <h3><span class="s-flow-n">1</span> Imagined customers</h3>
+          <p>Six made-up people, each with a routine, a lunch budget, a mood about your café and a memory of it.</p>
+        </li>
+        <li class="s-flow-step">
+          <div class="s-flow-vis" aria-hidden="true"><div class="s-minigrid"><i class="p"></i><i class="n"></i><i class="p"></i><i class="p"></i><i class="a"></i><i class="p"></i><i class="n"></i><i class="p"></i><i class="p"></i><i class="n"></i><i class="a"></i><i class="p"></i></div></div>
+          <h3><span class="s-flow-n">2</span> Rounds</h3>
+          <p>Each round, everyone who is around picks one thing to do: try it, tell a friend, ignore it, or nothing at all.</p>
+        </li>
+        <li class="s-flow-step">
+          <div class="s-flow-vis" aria-hidden="true"><div class="s-feed"><p><b>Mia</b> told Jonas: “the soup deal is good value”</p><p class="is-event"><b>You added</b> rain all week</p></div></div>
+          <h3><span class="s-flow-n">3</span> Neighbourhood feed</h3>
+          <p>What they say spreads to the others next round. You can add an event — rain, a rival's offer — and see what changes.</p>
+        </li>
+        <li class="s-flow-step">
+          <div class="s-flow-vis" aria-hidden="true"><ul class="s-qs"><li>Is there a vegan soup?</li><li>Does €9.90 include coffee?</li><li>3 of 6 tried it</li></ul></div>
+          <h3><span class="s-flow-n">4</span> Summary</h3>
+          <p>Questions to ask real customers, and plain counts like “3 of 6 imagined customers tried it” — never scaled up.</p>
+        </li>
+      </ol>
+      <aside class="s-caveat" aria-labelledby="caveat-h">
+        <h3 id="caveat-h">Honest by design</h3>
+        <p>Imagined customers are not data. A rehearsal can show you questions, doubts and wording problems before you spend money. It cannot tell you how many real people will come, and it never feeds the maths. The small test with real customers does that.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Connect -->
+  <section class="s-sec" id="connect" aria-labelledby="connect-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">Add What-IF to your AI</p>
+        <h2 id="connect-h">One link works in Claude, ChatGPT, Cursor and more</h2>
+        <p class="s-sec-lede">What-IF is an MCP server: a connector your AI app can call for the maths, the rehearsal and the report. No sign-in, and it stores nothing.</p>
+      </header>
+      <div class="s-url" data-mcp-fill>
+        <span class="s-url-label" id="mcp-url-label">Your What-IF connector URL</span>
+        <code class="s-url-code" id="mcp-url" aria-labelledby="mcp-url-label">{{SITE_URL}}/api/mcp</code>
+        <button type="button" class="s-btn s-btn--sm" data-copy="#mcp-url"><span data-copy-label>Copy URL</span></button>
+      </div>
+      <div class="s-apps" data-mcp-fill>
+        <article class="s-app">
+          <h3>Claude <small>claude.ai and Claude Desktop</small></h3>
+          <ol class="s-steps">
+            <li>Open <b>Settings → Connectors</b>.</li>
+            <li>Choose <b>Add custom connector</b>.</li>
+            <li>Name it <b>What-IF</b> and paste the URL above. Click <b>Add</b>.</li>
+            <li>In a chat, switch What-IF on in the tools menu, then ask “What if…?”</li>
+          </ol>
+        </article>
+        <article class="s-app">
+          <h3>Claude Code</h3>
+          <p>Run this once in your terminal:</p>
+          <div class="s-code"><pre><code id="cmd-claude-code">claude mcp add --transport http what-if {{SITE_URL}}/api/mcp</code></pre><button type="button" class="s-copy" data-copy="#cmd-claude-code"><span data-copy-label>Copy</span></button></div>
+          <p class="s-small">Then type <code>/mcp</code> to check it is connected, and ask “What if…?”</p>
+        </article>
+        <article class="s-app">
+          <h3>ChatGPT</h3>
+          <ol class="s-steps">
+            <li>Open <b>Settings → Apps &amp; Connectors → Advanced</b> and turn on <b>Developer mode</b>.</li>
+            <li>Back in <b>Apps &amp; Connectors</b>, choose <b>Create</b>.</li>
+            <li>Name it <b>What-IF</b>, paste the URL above as the MCP server URL, and choose no authentication.</li>
+            <li>In a chat, pick What-IF from the <b>+</b> menu and ask “What if…?”</li>
+          </ol>
+        </article>
+        <article class="s-app">
+          <h3>Cursor, VS Code, Windsurf</h3>
+          <p>Add What-IF to your <code>mcp.json</code>:</p>
+          <p class="s-code-label">Cursor — <code>~/.cursor/mcp.json</code></p>
+          <div class="s-code"><pre><code id="cfg-cursor">{
+  "mcpServers": {
+    "what-if": { "url": "{{SITE_URL}}/api/mcp" }
+  }
+}</code></pre><button type="button" class="s-copy" data-copy="#cfg-cursor"><span data-copy-label>Copy</span></button></div>
+          <p class="s-code-label">VS Code — <code>.vscode/mcp.json</code></p>
+          <div class="s-code"><pre><code id="cfg-vscode">{
+  "servers": {
+    "what-if": { "type": "http", "url": "{{SITE_URL}}/api/mcp" }
+  }
+}</code></pre><button type="button" class="s-copy" data-copy="#cfg-vscode"><span data-copy-label>Copy</span></button></div>
+          <p class="s-small">Windsurf uses the same block in <code>~/.codeium/windsurf/mcp_config.json</code>, with <code>"serverUrl"</code> in place of <code>"url"</code>.</p>
+        </article>
+        <article class="s-app s-app--wide">
+          <h3>Any other MCP client</h3>
+          <p>Add a remote server with the <b>Streamable HTTP</b> transport and the URL above. There is no sign-in and no API key. Every tool is stateless: your numbers travel in the request and in the report link, and nothing is kept on the server.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Skill -->
+  <section class="s-sec s-sec--alt" id="skill" aria-labelledby="skill-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">Get the skill</p>
+        <h2 id="skill-h">Teach your AI the What-IF method</h2>
+        <p class="s-sec-lede">The skill tells Claude when to start (any “what if…” about your business), how to coach one question at a time, and how to run the rehearsal. It works best with the connector above.</p>
+      </header>
+      <div class="s-skill">
+        <a class="s-btn" href="/what-if-skill.zip" download>Download what-if-skill.zip</a>
+        <div class="s-skill-steps">
+          <article class="s-app">
+            <h3>Claude.ai</h3>
+            <ol class="s-steps"><li>Open <b>Settings → Capabilities → Skills</b>.</li><li>Choose <b>Upload skill</b> and pick <code>what-if-skill.zip</code>.</li><li>Ask “What if…?” in any chat.</li></ol>
+          </article>
+          <article class="s-app">
+            <h3>Claude Code</h3>
+            <p>Unzip it into your skills folder, so you get <code>~/.claude/skills/what-if/SKILL.md</code>:</p>
+            <div class="s-code"><pre><code id="cmd-skill">unzip what-if-skill.zip -d ~/.claude/skills/</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill"><span data-copy-label>Copy</span></button></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Prompts -->
+  <section class="s-sec" id="prompts" aria-labelledby="prompts-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">Then just say “what if…”</p>
+        <h2 id="prompts-h">Three ways to start</h2>
+      </header>
+      <ul class="s-prompts">
+        <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p1">What if I run a weekday lunch offer at €9.90?</p><p class="s-prompt-then">What-IF asks for a few numbers, one at a time, then shows three outcomes and your break-even.</p><button type="button" class="s-copy s-copy--inline" data-copy="#p1"><span data-copy-label>Copy prompt</span></button></li>
+        <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p2">What if I put my flat white up from €3.90 to €4.20?</p><p class="s-prompt-then">You see how many sales you could lose before you are worse off, and how to test it for two weeks.</p><button type="button" class="s-copy s-copy--inline" data-copy="#p2"><span data-copy-label>Copy prompt</span></button></li>
+        <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p3">What if I try a lunch deal? Rehearse it with imagined customers first.</p><p class="s-prompt-then">Imagined customers react over four rounds; you get the questions to ask real ones this week.</p><button type="button" class="s-copy s-copy--inline" data-copy="#p3"><span data-copy-label>Copy prompt</span></button></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="s-foot">
+  <div class="s-wrap s-foot-in">
+    <p class="s-foot-honest"><b>Possibilities, not promises.</b> What-IF shows what could happen and why. It does not predict the future, and it is not a substitute for an accountant or other professional advice.</p>
+    <nav class="s-foot-nav" aria-label="Footer">
+      <a href="/r#demo" data-demo>Demo report</a>
+      <a href="/connect">Connect</a>
+      <a href="/what-if-skill.zip" download>Skill</a>
+      <a href="https://github.com/Sarthib7/what-if" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

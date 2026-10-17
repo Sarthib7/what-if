@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add What-IF to your AI</title>
+<meta name="description" content="Add the What-IF connector to Claude, ChatGPT, Cursor, VS Code, Windsurf or any MCP client, and get the What-IF skill.">
+<meta name="theme-color" content="#f6f3ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Add What-IF to your AI">
+<meta property="og:description" content="Your numbers, three possible outcomes, the one number to remember, and a small test. An AI coach that teaches as it explains.">
+<meta property="og:url" content="{{SITE_URL}}/connect">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+<script type="module" src="/assets/connect.js"></script>
+</head>
+<body class="s-page s-connect">
+<a class="s-skip" href="#main">Skip to the content</a>
+<header class="s-head">
+  <div class="s-wrap s-head-in">
+    <a class="s-brand" href="/" aria-label="What-IF home">
+      <svg class="s-logo" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" class="s-logo-bg"/><path d="M5.5 16h7.5M13 16c4.2 0 6.2-7 12-7M13 16h12M13 16c4.2 0 6.2 7 12 7" fill="none" class="s-logo-line" stroke-width="2.6" stroke-linecap="round"/><circle cx="25" cy="9" r="2.7" class="s-logo-up"/><circle cx="25" cy="16" r="2.7" class="s-logo-mid"/><circle cx="25" cy="23" r="2.7" class="s-logo-down"/><circle cx="5.8" cy="16" r="2.7" class="s-logo-line-fill"/></svg>
+      <span>What-IF</span>
+    </a>
+    <nav class="s-nav" aria-label="Main">
+      <a href="/#method">How it works</a>
+      <a href="#connect">Connect</a>
+      <a href="#skill">Get the skill</a>
+    </nav>
+    <a class="s-btn s-btn--sm" href="/r#demo">See it work</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="s-hero s-hero--slim" aria-labelledby="page-h">
+    <div class="s-wrap">
+      <p class="s-eyebrow"><a href="/">What-IF</a> · Connect</p>
+      <h1 id="page-h" class="s-page-h">Add What-IF to your AI</h1>
+      <p class="s-lede">Two pieces, both free: the <b>connector</b> (an MCP server that does the maths, the rehearsal and the report) and the <b>skill</b> (which teaches Claude the coaching method). Add the connector first; the skill is optional.</p>
+    </div>
+  </section>
+
+  <!-- Connect -->
+  <section class="s-sec" id="connect" aria-labelledby="connect-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">Add What-IF to your AI</p>
+        <h2 id="connect-h">The connector: one link for every app</h2>
+        <p class="s-sec-lede">What-IF is an MCP server: a connector your AI app can call for the maths, the rehearsal and the report. No sign-in, and it stores nothing.</p>
+      </header>
+      <div class="s-url" data-mcp-fill>
+        <span class="s-url-label" id="mcp-url-label">Your What-IF connector URL</span>
+        <code class="s-url-code" id="mcp-url" aria-labelledby="mcp-url-label">{{SITE_URL}}/api/mcp</code>
+        <button type="button" class="s-btn s-btn--sm" data-copy="#mcp-url"><span data-copy-label>Copy URL</span></button>
+      </div>
+      <div class="s-apps" data-mcp-fill>
+        <article class="s-app">
+          <h3>Claude <small>claude.ai and Claude Desktop</small></h3>
+          <ol class="s-steps">
+            <li>Open <b>Settings → Connectors</b>.</li>
+            <li>Choose <b>Add custom connector</b>.</li>
+            <li>Name it <b>What-IF</b> and paste the URL above. Click <b>Add</b>.</li>
+            <li>In a chat, switch What-IF on in the tools menu, then ask “What if…?”</li>
+          </ol>
+        </article>
+        <article class="s-app">
+          <h3>Claude Code</h3>
+          <p>Run this once in your terminal:</p>
+          <div class="s-code"><pre><code id="cmd-claude-code">claude mcp add --transport http what-if {{SITE_URL}}/api/mcp</code></pre><button type="button" class="s-copy" data-copy="#cmd-claude-code"><span data-copy-label>Copy</span></button></div>
+          <p class="s-small">Then type <code>/mcp</code> to check it is connected, and ask “What if…?”</p>
+        </article>
+        <article class="s-app">
+          <h3>ChatGPT</h3>
+          <ol class="s-steps">
+            <li>Open <b>Settings → Apps &amp; Connectors → Advanced</b> and turn on <b>Developer mode</b>.</li>
+            <li>Back in <b>Apps &amp; Connectors</b>, choose <b>Create</b>.</li>
+            <li>Name it <b>What-IF</b>, paste the URL above as the MCP server URL, and choose no authentication.</li>
+            <li>In a chat, pick What-IF from the <b>+</b> menu and ask “What if…?”</li>
+          </ol>
+        </article>
+        <article class="s-app">
+          <h3>Cursor, VS Code, Windsurf</h3>
+          <p>Add What-IF to your <code>mcp.json</code>:</p>
+          <p class="s-code-label">Cursor — <code>~/.cursor/mcp.json</code></p>
+          <div class="s-code"><pre><code id="cfg-cursor">{
+  "mcpServers": {
+    "what-if": { "url": "{{SITE_URL}}/api/mcp" }
+  }
+}</code></pre><button type="button" class="s-copy" data-copy="#cfg-cursor"><span data-copy-label>Copy</span></button></div>
+          <p class="s-code-label">VS Code — <code>.vscode/mcp.json</code></p>
+          <div class="s-code"><pre><code id="cfg-vscode">{
+  "servers": {
+    "what-if": { "type": "http", "url": "{{SITE_URL}}/api/mcp" }
+  }
+}</code></pre><button type="button" class="s-copy" data-copy="#cfg-vscode"><span data-copy-label>Copy</span></button></div>
+          <p class="s-small">Windsurf uses the same block in <code>~/.codeium/windsurf/mcp_config.json</code>, with <code>"serverUrl"</code> in place of <code>"url"</code>.</p>
+        </article>
+        <article class="s-app s-app--wide">
+          <h3>Any other MCP client</h3>
+          <p>Add a remote server with the <b>Streamable HTTP</b> transport and the URL above. There is no sign-in and no API key. Every tool is stateless: your numbers travel in the request and in the report link, and nothing is kept on the server.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Skill -->
+  <section class="s-sec s-sec--alt" id="skill" aria-labelledby="skill-h">
+    <div class="s-wrap">
+      <header class="s-sec-head">
+        <p class="s-eyebrow">Get the skill</p>
+        <h2 id="skill-h">Teach your AI the What-IF method</h2>
+        <p class="s-sec-lede">The skill tells Claude when to start (any “what if…” about your business), how to coach one question at a time, and how to run the rehearsal. It works best with the connector above.</p>
+      </header>
+      <div class="s-skill">
+        <a class="s-btn" href="/what-if-skill.zip" download>Download what-if-skill.zip</a>
+        <div class="s-skill-steps">
+          <article class="s-app">
+            <h3>Claude.ai</h3>
+            <ol class="s-steps"><li>Open <b>Settings → Capabilities → Skills</b>.</li><li>Choose <b>Upload skill</b> and pick <code>what-if-skill.zip</code>.</li><li>Ask “What if…?” in any chat.</li></ol>
+          </article>
+          <article class="s-app">
+            <h3>Claude Code</h3>
+            <p>Unzip it into your skills folder, so you get <code>~/.claude/skills/what-if/SKILL.md</code>:</p>
+            <div class="s-code"><pre><code id="cmd-skill">unzip what-if-skill.zip -d ~/.claude/skills/</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill"><span data-copy-label>Copy</span></button></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="s-foot">
+  <div class="s-wrap s-foot-in">
+    <p class="s-foot-honest"><b>Possibilities, not promises.</b> What-IF shows what could happen and why. It does not predict the future, and it is not a substitute for an accountant or other professional advice.</p>
+    <nav class="s-foot-nav" aria-label="Footer">
+      <a href="/r#demo">Demo report</a>
+      <a href="/connect">Connect</a>
+      <a href="/what-if-skill.zip" download>Skill</a>
+      <a href="https://github.com/Sarthib7/what-if" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

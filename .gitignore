@@ -1,0 +1,9 @@
+node_modules/
+.vercel/
+dist/
+.what-if/
+demo/
+qa/reports/ui/
+*.log
+qa/reports/dry-run.*
+.claude/

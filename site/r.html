@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your What-IF report</title>
+<meta name="description" content="A What-IF report: your numbers, three possible outcomes, the break-even, a rehearsal with imagined customers and a small test. The data lives in the link, not on a server.">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#f6f3ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+<script type="module" src="/assets/report.js"></script>
+</head>
+<body class="s-page s-viewer">
+<a class="s-skip" href="#report">Skip to the report</a>
+<header class="s-head">
+  <div class="s-wrap s-head-in">
+    <a class="s-brand" href="/" aria-label="What-IF home">
+      <svg class="s-logo" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" class="s-logo-bg"/><path d="M5.5 16h7.5M13 16c4.2 0 6.2-7 12-7M13 16h12M13 16c4.2 0 6.2 7 12 7" fill="none" class="s-logo-line" stroke-width="2.6" stroke-linecap="round"/><circle cx="25" cy="9" r="2.7" class="s-logo-up"/><circle cx="25" cy="16" r="2.7" class="s-logo-mid"/><circle cx="25" cy="23" r="2.7" class="s-logo-down"/><circle cx="5.8" cy="16" r="2.7" class="s-logo-line-fill"/></svg>
+      <span>What-IF</span>
+    </a>
+    <div class="s-toolbar" role="toolbar" aria-label="Report actions" data-toolbar hidden>
+      <button type="button" class="s-btn s-btn--ghost s-btn--sm" data-copy-link><span data-copy-label>Copy link</span></button>
+      <button type="button" class="s-btn s-btn--sm" data-print-card aria-label="Print test card">Print<span class="s-hide-sm"> test card</span></button>
+    </div>
+  </div>
+</header>
+
+<main id="report" class="s-report" tabindex="-1">
+  <div class="s-loading" data-loading>
+    <p class="s-loading-t">Drawing your report…</p>
+    <noscript><p>This report is drawn in your browser from the data in the link, so it needs JavaScript. Nothing is sent to a server.</p></noscript>
+  </div>
+</main>
+
+<template id="report-error">
+  <section class="s-error" aria-labelledby="err-h">
+    <h1 id="err-h">This link has no report in it</h1>
+    <p class="s-error-msg" data-error-msg>What-IF reports live entirely in the link, after the #. This one is empty or was cut off.</p>
+    <ul class="s-error-tips">
+      <li>If you copied it from a chat, make sure you copied the whole link — it can be long.</li>
+      <li>Ask your AI coach for a fresh report link.</li>
+    </ul>
+    <p class="s-cta-row"><a class="s-btn" href="/r#demo" data-demo-link>See the demo report</a><a class="s-btn s-btn--ghost" href="/">What is What-IF?</a></p>
+  </section>
+</template>
+
+<footer class="s-foot s-noprint">
+  <div class="s-wrap s-foot-in">
+    <p class="s-foot-honest"><b>Possibilities, not promises.</b> Nothing in this report is stored on a server: it is redrawn in your browser from the link.</p>
+    <nav class="s-foot-nav" aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/connect">Add to your AI</a>
+      <a href="https://github.com/Sarthib7/what-if" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>
