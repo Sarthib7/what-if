@@ -6,6 +6,7 @@
  * real customers, never as a forecast and never fed into the scenario maths.
  */
 import type { TemplateId } from "../engine/types.ts";
+import type { Lang } from "../i18n/index.ts";
 
 export type SegmentId =
   | "office_worker"
@@ -39,7 +40,16 @@ export interface Persona {
   activityLevel: number;
   /** 80–150 words: who they are, ending with their personal memory of this café. */
   story: string;
+  /** Grammatical gender for the generated text (German, Spanish and Polish need it). */
+  gender?: "f" | "m";
+  /** Language-neutral tags the rule-based stand-in respects ("takeaway", "hurry", "pram"…). */
+  traits?: string[];
+  /** Ids of the places they go instead ("bakery", "doener", "canteen"…), in the order of `alternatives`. */
+  altIds?: string[];
 }
+
+/** How the report should draw an action: away (not around), went elsewhere, engaged with the change, or neutral. */
+export type ActionKind = "away" | "elsewhere" | "engaged" | "neutral";
 
 export interface RoundAction {
   id: string;
@@ -48,6 +58,8 @@ export interface RoundAction {
   public: boolean;
   /** Counts toward "engaged with the change" in the funnel. */
   positive: boolean;
+  /** How the report should draw it (see ActionKind). */
+  kind?: ActionKind;
 }
 
 export interface RoundSpec {
@@ -68,6 +80,8 @@ export interface Reaction {
   questionForOwner?: string;
   /** One sentence the persona remembers into the next round (its diary). */
   diary?: string;
+  /** Persona id whose public words (in the feed this persona saw) made them do it. Given by the model, or found in the persona's own words. */
+  heardFrom?: string;
   method: ReactionMethod;
 }
 
@@ -100,7 +114,12 @@ export interface Rehearsal {
   /** Post-run interview answers (MiroFish "deep interaction"). */
   interviews: { question: string; answers: { personaId: string; name: string; answer: string; method: ReactionMethod }[] }[];
   feed: FeedItem[];
-  events: { beforeRound: number; text: string }[];
+  /** Owner-injected events. `id` is set for the Berlin events (BERLIN_EVENTS), so they can be shown in another language. */
+  events: { beforeRound: number; text: string; id?: string }[];
+  /** Language every generated text in this rehearsal is written in (personas, rounds, rule-based reactions). */
+  lang?: Lang;
+  /** The Berlin Kiez the persona mix was drawn for (a rough guess, never statistics). */
+  kiez?: string;
   /** What customers can see of the change (never costs). Set by startRehearsal and rebuilt with it. */
   scene?: RehearsalScene;
   /** Segment weights the personas were drawn with, when the owner gave a mix (needed to rebuild the same people). */
@@ -156,7 +175,7 @@ export interface RehearsalSummary {
   personas: Persona[];
   rounds: RoundSpec[];
   /** One cell per persona per round, for the timeline grid. */
-  grid: { personaId: string; round: number; action: string; actionLabel: string; positive: boolean; thought: string }[];
+  grid: { personaId: string; round: number; action: string; actionLabel: string; positive: boolean; thought: string; kind?: ActionKind }[];
   perRound: { round: number; title: string; counts: { action: string; label: string; count: number }[] }[];
   /** Descriptive counts of imagined people, e.g. "noticed it: 4 of 6". Never scaled up to customers. */
   funnel: { label: string; count: number; of: number }[];
@@ -164,10 +183,18 @@ export interface RehearsalSummary {
   questionsForOwner: string[];
   feed: FeedItem[];
   events: Rehearsal["events"];
-  /** Who told whom: word-of-mouth links for the small network view. */
-  links: { from: string; to: string; round: number }[];
+  /** Who told whom: word-of-mouth links for the small network view. `text` is what the teller said (as it appeared in the feed). */
+  links: { from: string; to: string; round: number; text?: string }[];
   /** Positive (engaged) actions per round, for the uptake chart. */
   uptake: { round: number; engaged: number; active: number }[];
+  /** What "engaged" means for this template, in the rehearsal language ("Noticed or used the deal", "Still buying at the new price"). */
+  uptakeLabel?: string;
+  /** Language of every generated text in the summary. */
+  lang?: Lang;
+  /** The Kiez the persona mix was drawn for. */
+  kiez?: string;
+  /** One sentence: the mix of people is a rough guess for this Kiez, not statistics. Also part of the caveat. */
+  mixNote?: string;
   interviews: Rehearsal["interviews"];
   /** What to check with real customers, derived from the rehearsal. */
   checkWithRealCustomers: string[];

@@ -4,16 +4,18 @@ A small, MiroFish-inspired simulation: a handful of **imagined** local customers
 
 The What-IF server builds everything (personas, rounds, briefs, validation, summary). The host's job is to **play the personas**: in parallel subagents where it can, in turn where it cannot.
 
+In the Berlin beta the cast fits the owner's **Kiez** (pass `kiez` in `inputs`): names, alternatives such as the Bäckerei, the Späti or the Kantine, and channels such as nebenan.de or the Kiez WhatsApp group. The mix is a rough, labelled guess, never a statistic. Every brief tells the imagined customer to write `thought`, `saysPublicly`, `questionForOwner` and `diary` in the analysis language (the `lang` you passed), so the report reads in the owner's language. Don't translate their answers.
+
 ## The pieces
 
 | Piece | What it is |
 |---|---|
-| **Personas** | 6 by default (4–12). Each has a card (routine, usual spend, price sensitivity, relationship with the café, channels, alternatives, a quirk, an attitude of fan / neutral / sceptical, an activity level) and a short story of 80–150 words ending in their memory of this café. Segments include office workers, freelancers, students, parents, regulars, tourists, retirees and trades. |
+| **Personas** | 6 by default (4–12). Each has a card (routine, usual spend, price sensitivity, relationship with the café, channels, alternatives, a quirk, an attitude of fan / neutral / sceptical, an activity level) and a short story of 80–150 words ending in their memory of this café. Segments include office workers, freelancers, students, parents, regulars, tourists, retirees and trades; the owner can set the mix with `customer_mix`. |
 | **Activation** | Each round, a seeded draw decides who is around (based on activity level). People not around get an automatic "not around" with no model call. The same seed gives the same run. |
 | **Rounds** | 4 by default (3–5), for example launch day, first week, second week, after the test. Each round has a situation and 4–6 allowed actions, always including a do-nothing option. |
 | **Neighbourhood feed** | What people can see: the owner's announcement, word of mouth, reviews and posts from earlier rounds, and events. Public actions appear in the next round's feed. |
 | **Diary** | One sentence each persona remembers into the next round. It is their memory. |
-| **Events** | The owner can inject a change before any round: "it rains all week", "the café opposite starts an €8.50 lunch". |
+| **Events** | The owner can inject a change before any round: a BVG strike day, a week of rain, a new café two doors down with an €8.50 lunch… (the Berlin list is in `berlin.md`), or their own. |
 | **Interview** | After the run, ask every imagined customer (or a few) one question. |
 | **Summary** | A funnel of descriptive counts ("tried it: 3 of 6"), uptake per round, who told whom, quotes, questions for the owner, what to check with real customers, and a caveat. |
 
@@ -22,7 +24,7 @@ The brief for each persona already contains everything it needs: its card and st
 ## The loop
 
 ```
-whatif_rehearsal_start(template, inputs, …)  → personas, briefs (round 1), state, report_url
+whatif_rehearsal_start(template, inputs, lang, …)  → personas, briefs (round 1), state, report_url
 repeat:
     progress line to the owner
     play every brief                         (parallel subagents, or in turn)
@@ -36,7 +38,7 @@ interview (optional): whatif_rehearsal_interview → briefs → play → call ag
 debrief from the summary
 ```
 
-Always pass the **newest** `state` token. It is the whole rehearsal so far; the server keeps nothing.
+Always pass the **newest** `state` token. It is the whole rehearsal so far; the server keeps nothing. Pass `lang` on every call too.
 
 ## Playing a round with subagents (Claude Code)
 
@@ -134,9 +136,13 @@ Never retry personas that were accepted: that would give them two answers.
 
 After each round except the last, you may offer (once or twice per run, not every round):
 
-> Want to throw something at them before next week? For example: "it rains all week", or "the café opposite starts an €8.50 lunch".
+> Want to throw something at them before next week? For example: a BVG strike day, a week of rain, or a new café two doors down with an €8.50 lunch.
 
-Call `whatif_rehearsal_event` with `state` and the owner's `event` in their words. It returns a new `state`; the event appears in the next round's situation and feed. Use the newest `state` and the briefs that come back with it (or from the next tool result) for the next round, not older ones.
+> Wollen Sie den ausgedachten Gästen vor der nächsten Woche etwas zumuten? Zum Beispiel einen BVG-Streiktag, eine Woche Regen oder ein neues Café zwei Türen weiter mit Mittagstisch für 8,50 €.
+
+The Berlin events (`whatif_start` lists them with translated texts): a BVG strike day, a week of rain, a heatwave (32 °C), a Baustelle outside with the pavement half closed, the Berlin school holidays, a new café two doors down with an €8.50 lunch, a big Kiez street festival weekend, the Christmas market opening nearby. They are shocks to rehearse, never facts or forecasts: don't say when the next strike is or what the weather will do.
+
+Call `whatif_rehearsal_event` with `state`, `lang` and the `event` (the tool's wording, or the owner's own words). It returns a new `state`; the event appears in the next round's situation and feed. Use the newest `state` and the briefs that come back with it (or from the next tool result) for the next round, not older ones.
 
 Teaching moment: "This is the useful part of a rehearsal: you can try a shock safely, before it happens for real."
 
@@ -159,6 +165,8 @@ One line per round, before you play it. Use the round's title, its number and th
 - "Round 4/4: 6 imagined customers looking back after the test…"
 
 After each round: the new report link, plus one highlight with a quote and the *imagined* label. "Herr Becker (imagined regular) switched to the deal and told nobody."
+
+Write the progress lines in the owner's language: "Runde 2/4: 5 ausgedachte Gäste entscheiden am Dienstagmittag…", "Ronda 2/4: 5 clientes imaginados deciden el martes a mediodía…", "Runda 2/4: 5 wymyślonych klientów decyduje we wtorek w porze lunchu…".
 
 ## The debrief
 

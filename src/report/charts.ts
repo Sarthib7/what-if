@@ -11,9 +11,10 @@
  * text colours (never the data colour). Every chart has a <title>/<desc>, and
  * the report puts a table view next to it.
  */
-import { money, num, signed } from "../engine/format.ts";
+import { money, num } from "../engine/format.ts";
 import type { SensitivityPoint, Unit } from "../engine/types.ts";
-import { esc, firstName, initial, sharePct } from "./html.ts";
+import { esc, firstName, initial, sharePct, wholeSigned } from "./html.ts";
+import { t } from "./messages.ts";
 
 const f1 = (n: number) => (Math.round(n * 10) / 10).toString();
 
@@ -33,6 +34,29 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 /** Rough text width for layout (system UI fonts, average glyph ≈ 0.56em). */
 export function textW(s: string, size = 13): number {
   return Array.from(s).length * size * 0.56;
+}
+
+/** Splits text into lines no wider than maxW (rough width), at most maxLines; the last line ends with an ellipsis if cut. */
+export function wrapWords(text: string, maxW: number, size = 13, maxLines = 2): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? cur + " " + w : w;
+    if (textW(next, size) <= maxW || !cur) cur = next;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    const last = kept[maxLines - 1]!;
+    kept[maxLines - 1] = `${last.includes(" ") ? last.replace(/\s+\S*$/, "") : last}…`;
+    return kept;
+  }
+  return lines.length ? lines : [""];
 }
 
 function svgOpen(id: string, w: number, h: number, title: string, desc: string, cls: string): string {
@@ -83,7 +107,7 @@ export function barsSvg(
   opts: { width: number; id: string; title: string; desc: string; worst?: { value: number; label: string }; zeroLabel?: string | false; format?: (v: number) => string },
 ): string {
   const W = Math.max(280, opts.width);
-  const fmtV = opts.format ?? ((v: number) => signed(v));
+  const fmtV = opts.format ?? wholeSigned;
   const vals = rows.map((r) => r.value);
   const worst = opts.worst && Number.isFinite(opts.worst.value) ? opts.worst : undefined;
   let lo = Math.min(0, ...vals, worst ? worst.value : 0);
@@ -94,39 +118,56 @@ export function barsSvg(
   const padR = 6 + (vals.some((v) => v >= 0) ? labelLen : 0);
   const sx = (v: number) => padL + ((v - lo) / (hi - lo)) * (W - padL - padR);
   const top = opts.zeroLabel === false ? 8 : 26;
-  const rowH = 60;
-  const bottom = worst ? 34 : 10;
-  const H = top + rows.length * rowH + bottom;
+  // Row labels sit on their own line above each bar; long ones wrap (a phone is narrow), so nothing is cut off.
+  const maxLabel = W - 12;
+  const labelLines = rows.map((r) => wrapWords(r.sub ? `${r.label} ${r.sub}` : r.label, maxLabel, 13.5, 3));
+  const rowH = (i: number) => 60 + (labelLines[i]!.length - 1) * 16;
+  const rowTop: number[] = [];
+  rows.forEach((_, i) => rowTop.push(i === 0 ? top : rowTop[i - 1]! + rowH(i - 1)));
+  const band = (i: number) => rowTop[i]! + (labelLines[i]!.length - 1) * 16;
+  const bottom = worst ? 30 : 10;
+  const H = (rows.length ? rowTop[rows.length - 1]! + rowH(rows.length - 1) : top) + bottom;
   const x0 = sx(0);
   let s = svgOpen(opts.id, W, H, opts.title, opts.desc, "wi-svg-bars");
   // zero line: full height when it is a reference ("€0: breaks even"); otherwise a baseline under each bar only
   if (opts.zeroLabel !== false) s += `<line class="wi-zero" x1="${f1(x0)}" x2="${f1(x0)}" y1="${f1(top - 6)}" y2="${f1(H - bottom)}"/>`;
-  else rows.forEach((_, i) => (s += `<line class="wi-zero" x1="${f1(x0)}" x2="${f1(x0)}" y1="${f1(top + i * rowH + 22)}" y2="${f1(top + i * rowH + 52)}"/>`));
+  else rows.forEach((_, i) => (s += `<line class="wi-zero" x1="${f1(x0)}" x2="${f1(x0)}" y1="${f1(band(i) + 22)}" y2="${f1(band(i) + 52)}"/>`));
   if (opts.zeroLabel !== false) {
-    const zl = opts.zeroLabel ?? `${tickMoney(0)}: breaks even`;
+    const zl = opts.zeroLabel ?? t("chart.zero", { v: tickMoney(0) });
     const a = anchorFor(x0, W, textW(zl, 12));
     s += `<text class="wi-axis-label" x="${f1(a.x)}" y="14" text-anchor="${a.anchor}">${esc(zl)}</text>`;
   }
+  const xw = worst ? sx(worst.value) : undefined;
+  // the worst case: dashed segments in each bar band only, so the line never runs through a row label
+  if (worst && xw !== undefined) rows.forEach((_, i) => (s += `<line class="wi-ref wi-ref--neg" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(band(i) + 22)}" y2="${f1(band(i) + 52)}"/>`));
   rows.forEach((r, i) => {
-    const y = top + i * rowH;
+    const y = band(i);
     const role = r.role ?? "polarity";
-    const t = r.value > 0.004 ? "pos" : r.value < -0.004 ? "neg" : "zero";
-    const cls = role === "polarity" ? `wi-bar wi-bar--${t}` : `wi-bar wi-bar--${role}`;
+    const tn = r.value > 0.5 ? "pos" : r.value < -0.5 ? "neg" : "zero";
+    const cls = role === "polarity" ? `wi-bar wi-bar--${tn}` : `wi-bar wi-bar--${role}`;
     s += `<g class="wi-bar-row${r.highlight ? " is-hl" : ""}">`;
-    s += `<text class="wi-row-label" x="6" y="${f1(y + 16)}">${esc(r.label)}${r.sub ? `<tspan class="wi-row-sub" dx="6">${esc(r.sub)}</tspan>` : ""}</text>`;
+    const lines = labelLines[i]!;
+    if (lines.length === 1 && textW(r.sub ? `${r.label} ${r.sub}` : r.label, 13.5) <= maxLabel) {
+      s += `<text class="wi-row-label" x="6" y="${f1(rowTop[i]! + 16)}">${esc(r.label)}${r.sub ? `<tspan class="wi-row-sub" dx="6">${esc(r.sub)}</tspan>` : ""}</text>`;
+    } else {
+      s += `<text class="wi-row-label" x="6" y="${f1(rowTop[i]! + 16)}">${lines.map((ln, k) => `<tspan x="6"${k ? ' dy="16"' : ""}>${esc(ln)}</tspan>`).join("")}</text>`;
+    }
     const x1 = sx(r.value);
     s += hbar(x0, x1, y + 26, 22, cls);
     const v = fmtV(r.value);
     if (r.value >= 0) s += `<text class="wi-value" x="${f1(x1 + 6)}" y="${f1(y + 42)}">${esc(v)}</text>`;
-    else s += `<text class="wi-value" x="${f1(x1 - 6)}" y="${f1(y + 42)}" text-anchor="end">${esc(v)}</text>`;
+    else {
+      // a value label that would cross the dashed worst-case line moves to the left of it
+      let end = x1 - 6;
+      if (xw !== undefined && end - textW(v, 13) < xw + 4 && end > xw - 4) end = xw - 6;
+      s += `<text class="wi-value" x="${f1(end)}" y="${f1(y + 42)}" text-anchor="end">${esc(v)}</text>`;
+    }
     s += `</g>`;
   });
-  if (worst) {
-    const xw = sx(worst.value);
-    // drawn under the labels (which carry a surface halo), so text stays readable where they cross
-    s = s.replace(`<g class="wi-bar-row`, `<line class="wi-ref wi-ref--neg" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(top - 6)}" y2="${f1(H - bottom + 6)}"/><g class="wi-bar-row`);
+  if (worst && xw !== undefined) {
+    s += `<line class="wi-ref wi-ref--neg" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(H - bottom + 2)}" y2="${f1(H - bottom + 12)}"/>`;
     const a = anchorFor(xw, W, textW(worst.label, 12));
-    s += `<text class="wi-ref-label" x="${f1(a.x)}" y="${f1(H - 8)}" text-anchor="${a.anchor}">${esc(worst.label)}</text>`;
+    s += `<text class="wi-ref-label" x="${f1(a.x)}" y="${f1(H - 4)}" text-anchor="${a.anchor}">${esc(worst.label)}</text>`;
   }
   return s + `</svg>`;
 }
@@ -164,9 +205,9 @@ export interface SensLayout {
   sy: (y: number) => number;
 }
 
-export function sensLayout(points: SensitivityPoint[], width: number, field: NetField): SensLayout {
+export function sensLayout(points: SensitivityPoint[], width: number, field: NetField, twoMarks = false): SensLayout {
   const W = Math.max(280, width);
-  const H = Math.round(Math.min(340, Math.max(240, W * 0.5)));
+  const H = Math.round(Math.min(340, Math.max(W < 420 ? 220 : 240, W * 0.5)));
   const ys = points.map((p) => p[field]);
   let yMin = Math.min(0, ...ys);
   let yMax = Math.max(0, ...ys);
@@ -177,7 +218,7 @@ export function sensLayout(points: SensitivityPoint[], width: number, field: Net
   const tickW = Math.max(...niceTicks(yMin, yMax, 4).map((v) => textW(tickMoney(v), 12)), 28);
   const l = Math.round(tickW + 14);
   const r = 18;
-  const t = 30;
+  const t = twoMarks ? 48 : 30;
   const b = 34;
   const xs = points.map((p) => p.x);
   const xMin = Math.min(...xs);
@@ -230,24 +271,36 @@ export function nearestIndex(points: SensitivityPoint[], x: number): number {
 
 export function sensitivitySvg(
   sens: { label: string; unit: Unit; current: number; breakEvenX: number | null; points: SensitivityPoint[] },
-  opts: { width: number; index: number; field: NetField; id: string; title: string; desc: string },
+  opts: { width: number; index: number; field: NetField; id: string; title: string; desc: string; ongoing?: number | null },
 ): string {
   const pts = sens.points;
   if (pts.length === 0) return "";
-  const L = sensLayout(pts, opts.width, opts.field);
-  const { W, H, l, r, t, b, sx, sy } = L;
+  const be = sens.breakEvenX;
+  const inRange = (x: number | null | undefined): x is number => x !== null && x !== undefined && Number.isFinite(x) && x >= Math.min(...pts.map((p) => p.x)) && x <= Math.max(...pts.map((p) => p.x));
+  const on = inRange(opts.ongoing) ? opts.ongoing : undefined;
+  const L = sensLayout(pts, opts.width, opts.field, on !== undefined && inRange(be));
+  const { W, H, l, r, b, sx, sy } = L;
+  const top = L.t;
   const y0 = sy(0);
   const plotB = H - b;
   const plotR = W - r;
   let s = svgOpen(opts.id, W, H, opts.title, opts.desc, "wi-svg-sens");
   const cp = `${opts.id}-cp`;
   const cn = `${opts.id}-cn`;
-  s += `<defs><clipPath id="${cp}"><rect x="${l}" y="${t - 4}" width="${f1(plotR - l)}" height="${f1(Math.max(0, y0 - t + 4))}"/></clipPath><clipPath id="${cn}"><rect x="${l}" y="${f1(y0)}" width="${f1(plotR - l)}" height="${f1(Math.max(0, plotB - y0 + 4))}"/></clipPath></defs>`;
+  s += `<defs><clipPath id="${cp}"><rect x="${l}" y="${top - 4}" width="${f1(plotR - l)}" height="${f1(Math.max(0, y0 - top + 4))}"/></clipPath><clipPath id="${cn}"><rect x="${l}" y="${f1(y0)}" width="${f1(plotR - l)}" height="${f1(Math.max(0, plotB - y0 + 4))}"/></clipPath></defs>`;
   // zones: makes money above zero, loses money below
-  if (y0 > t) s += `<rect class="wi-zone wi-zone--pos" x="${l}" y="${t}" width="${f1(plotR - l)}" height="${f1(y0 - t)}"/>`;
+  if (y0 > top) s += `<rect class="wi-zone wi-zone--pos" x="${l}" y="${top}" width="${f1(plotR - l)}" height="${f1(y0 - top)}"/>`;
   if (y0 < plotB) s += `<rect class="wi-zone wi-zone--neg" x="${l}" y="${f1(y0)}" width="${f1(plotR - l)}" height="${f1(plotB - y0)}"/>`;
-  if (y0 - t > 26) s += `<text class="wi-zone-label" x="${l + 10}" y="${t + 18}">↑ Makes money</text>`;
-  if (plotB - y0 > 26) s += `<text class="wi-zone-label" x="${l + 10}" y="${f1(plotB - 10)}">↓ Loses money</text>`;
+  // zone words sit in a corner that no marker line crosses (left first, then right)
+  const vxs = [be, on].filter((x): x is number => inRange(x)).map((x) => sx(x));
+  const zone = (text: string, y: number) => {
+    const w = textW(text, 12) + 4;
+    const clear = (x0: number) => !vxs.some((vx) => vx > x0 - 4 && vx < x0 + w + 4);
+    const lx = clear(l + 10) ? l + 10 : clear(plotR - 10 - w) ? plotR - 10 - w : l + 10;
+    return `<text class="wi-zone-label" x="${f1(lx)}" y="${f1(y)}">${esc(text)}</text>`;
+  };
+  if (y0 - top > 26) s += zone(t("chart.makes"), top + 18);
+  if (plotB - y0 > 26) s += zone(t("chart.loses"), plotB - 10);
   // y grid + ticks
   for (const v of niceTicks(L.yMin, L.yMax, 4)) {
     const y = sy(v);
@@ -263,14 +316,17 @@ export function sensitivitySvg(
     s += `<text class="wi-tick" x="${f1(x)}" y="${f1(plotB + 19)}" text-anchor="middle">${esc(xText(v, sens.unit))}</text>`;
   }
   s += `<line class="wi-axis" x1="${l}" x2="${f1(plotR)}" y1="${f1(plotB)}" y2="${f1(plotB)}"/>`;
-  // break-even marker
-  const be = sens.breakEvenX;
-  if (be !== null && be >= L.xMin && be <= L.xMax) {
-    const x = sx(be);
-    s += `<line class="wi-ref wi-ref--be" x1="${f1(x)}" x2="${f1(x)}" y1="${t - 6}" y2="${f1(plotB)}"/>`;
-    const lab = `Break-even: ${xText(be, sens.unit)}`;
-    const a = anchorFor(x, W, textW(lab, 12.5));
-    s += `<text class="wi-ref-label wi-ref-label--be" x="${f1(a.x)}" y="${t - 12}" text-anchor="${a.anchor}">${esc(lab)}</text>`;
+  // break-even markers: pays back the test (solid) and, when different, pays its way each day (dashed).
+  // Two labels stack on two rows above the plot, so they never overlap each other or the lines.
+  const marks: { x: number; label: string; cls: string; row: number }[] = [];
+  if (inRange(be)) marks.push({ x: be, label: t("chart.be", { x: xText(be, sens.unit) }), cls: "wi-ref wi-ref--be", row: 0 });
+  if (on !== undefined) marks.push({ x: on, label: t("chart.ongoing", { x: xText(on, sens.unit) }), cls: "wi-ref wi-ref--on", row: marks.length ? 1 : 0 });
+  for (const m of marks) {
+    const x = sx(m.x);
+    s += `<line class="${m.cls}" x1="${f1(x)}" x2="${f1(x)}" y1="${top - 4}" y2="${f1(plotB)}"/>`;
+    const a = anchorFor(x, W, textW(m.label, 12.5));
+    const ly = marks.length > 1 ? (m.row === 0 ? top - 28 : top - 10) : top - 12;
+    s += `<text class="wi-ref-label ${m.cls.includes("--on") ? "wi-ref-label--on" : "wi-ref-label--be"}" x="${f1(a.x)}" y="${f1(ly)}" text-anchor="${a.anchor}">${esc(m.label)}</text>`;
   }
   // the line, green above zero and red below
   const d = pts.map((p, i) => `${i ? "L" : "M"}${f1(sx(p.x))} ${f1(sy(p[opts.field]))}`).join("");
@@ -286,26 +342,36 @@ export function sensitivitySvg(
     const gy = sy(lineAt(pts, sens.current, opts.field));
     s += `<circle class="wi-guess" cx="${f1(gx)}" cy="${f1(gy)}" r="6.5"/>`;
     if (Math.abs(gx - cx) > 56) {
-      const lab = "Your guess";
-      const right = gx + 12 + textW(lab, 12) < plotR;
-      s += `<text class="wi-guess-label" x="${f1(right ? gx + 12 : gx - 12)}" y="${f1(gy + (gy < t + 30 ? 18 : -10))}" text-anchor="${right ? "start" : "end"}">${lab}</text>`;
+      const lab = t("chart.yourGuess");
+      const lw = textW(lab, 12);
+      const vlines = marks.map((m) => sx(m.x));
+      // pick the side (right, then left) and the height (above, then below) that crosses no line
+      const crossesV = (x0: number, x1: number) => vlines.some((vx) => vx > x0 - 3 && vx < x1 + 3);
+      const right = gx + 12 + lw < plotR && !crossesV(gx + 12, gx + 12 + lw);
+      const left = gx - 12 - lw > l && !crossesV(gx - 12 - lw, gx - 12);
+      const useRight = right ? true : left ? false : gx + 12 + lw < plotR;
+      const above = gy - 10;
+      const below = gy + 20;
+      const clearOf = (y: number) => Math.abs(y - 4 - y0) > 9 && y - 12 > top && y < plotB - 2;
+      const ly = clearOf(above) ? above : clearOf(below) ? below : gy < y0 ? above - 12 : below + 12;
+      s += `<text class="wi-guess-label" x="${f1(useRight ? gx + 12 : gx - 12)}" y="${f1(ly)}" text-anchor="${useRight ? "start" : "end"}">${esc(lab)}</text>`;
     }
   }
   // the slider position
   s += `<g class="wi-cursor">`;
-  s += `<line class="wi-cursor-line" x1="${f1(cx)}" x2="${f1(cx)}" y1="${t}" y2="${f1(plotB)}"/>`;
+  s += `<line class="wi-cursor-line" x1="${f1(cx)}" x2="${f1(cx)}" y1="${top}" y2="${f1(plotB)}"/>`;
   s += `<circle class="wi-cursor-dot" cx="${f1(cx)}" cy="${f1(cy)}" r="6"/>`;
   const v = cur[opts.field];
-  const lab = signed(v);
+  const lab = wholeSigned(v);
   const lw = textW(lab, 13.5) + 18;
   let bx = cx - lw / 2;
   bx = Math.max(l + 2, Math.min(plotR - lw - 2, bx));
   let by = cy - 40;
-  if (by < t + 2) by = cy + 14;
+  if (by < top + 2) by = cy + 14;
   s += `<rect class="wi-cursor-box" x="${f1(bx)}" y="${f1(by)}" width="${f1(lw)}" height="26" rx="8"/>`;
   s += `<text class="wi-cursor-text" x="${f1(bx + lw / 2)}" y="${f1(by + 17.5)}" text-anchor="middle">${esc(lab)}</text>`;
   s += `</g>`;
-  s += `<rect class="wi-hit" x="${l}" y="${t}" width="${f1(plotR - l)}" height="${f1(plotB - t)}" fill="transparent"/>`;
+  s += `<rect class="wi-hit" x="${l}" y="${top}" width="${f1(plotR - l)}" height="${f1(plotB - top)}" fill="transparent"/>`;
   return s + `</svg>`;
 }
 
@@ -321,12 +387,12 @@ export function uptakeSvg(
   const H = 210;
   const l = 34;
   const r = 10;
-  const t = 26;
+  const top = 26;
   const b = 34;
   const n = Math.max(opts.rounds, uptake.length, 1);
   const band = (W - l - r) / n;
   const yMax = Math.max(1, opts.total);
-  const sy = (v: number) => t + (1 - v / yMax) * (H - t - b);
+  const sy = (v: number) => top + (1 - v / yMax) * (H - top - b);
   const bw = Math.min(22, band * 0.3);
   let s = svgOpen(opts.id, W, H, opts.title, opts.desc, "wi-svg-uptake");
   const step = yMax <= 6 ? 1 : yMax <= 12 ? 2 : Math.ceil(yMax / 5);
@@ -339,10 +405,10 @@ export function uptakeSvg(
     const round = i + 1;
     const u = uptake.find((x) => x.round === round);
     const cx = l + band * i + band / 2;
-    s += `<text class="wi-tick" x="${f1(cx)}" y="${H - 12}" text-anchor="middle">Round ${round}</text>`;
+    s += `<text class="wi-tick" x="${f1(cx)}" y="${H - 12}" text-anchor="middle">${esc(t("chart.round", { n: round }))}</text>`;
     if (!u) {
       const running = opts.running === round;
-      s += `<text class="wi-axis-label${running ? " wi-pulse-text" : ""}" x="${f1(cx)}" y="${f1(sy(0) - 10)}" text-anchor="middle">${running ? "running…" : "to come"}</text>`;
+      s += `<text class="wi-axis-label${running ? " wi-pulse-text" : ""}" x="${f1(cx)}" y="${f1(sy(0) - 10)}" text-anchor="middle">${esc(running ? t("chart.running") : t("chart.toCome"))}</text>`;
       continue;
     }
     s += vbar(cx - bw - 1, bw, sy(0), sy(u.active), "wi-col wi-col--active");

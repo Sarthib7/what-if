@@ -2,8 +2,10 @@ import { strict as assert } from "node:assert";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { Analysis, TestPlan, TestResult } from "../src/engine/types.ts";
-import { renderReport, reportStyles, reportTokens, STEPS } from "../src/report/index.ts";
+import { REPORT_MESSAGES, renderReport, reportStyles, reportTokens, STEPS } from "../src/report/index.ts";
 import type { ReportInput } from "../src/report/index.ts";
+import { readout } from "../src/report/sections.ts";
+import type { Lang } from "../src/i18n/index.ts";
 import type { RehearsalSummary } from "../src/sim/types.ts";
 
 /* ------------------------------------------------------------------ */
@@ -21,6 +23,11 @@ export function fixtureAnalysis(over: Partial<Analysis> = {}): Analysis {
   return {
     id: "a-fixture",
     template: "lunch_offer",
+    lang: "en",
+    facts: [
+      { id: "vat_food", label: "VAT on food in cafés", value: "7%", source: "Bundesfinanzministerium", url: "https://www.bundesfinanzministerium.de/", asOf: "2026-01-01" },
+      { id: "min_wage", label: "Minimum wage", value: "€13.90 an hour", source: "Bundesregierung", url: "https://www.bundesregierung.de/", asOf: "2026-01-01" },
+    ],
     createdAt: "2026-10-17T10:00:00.000Z",
     business: "Café Fixture",
     question: "What if I run a weekday lunch offer?",
@@ -239,8 +246,11 @@ test("DEMO DATA ribbon only when the analysis is demo", () => {
   assert.ok(!renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }) }).includes("DEMO DATA"));
 });
 
-test("no external URLs or CDNs in the report or its styles", () => {
-  const html = renderReport(full) + reportStyles();
+test("no external URLs or CDNs in the report or its styles, except the public facts' sources", () => {
+  const rendered = renderReport(full);
+  const links = [...rendered.matchAll(/<a class="wi-fact-link" href="([^"]+)" rel="noopener noreferrer" target="_blank">/g)].map((m) => m[1]);
+  assert.deepEqual(links, ["https://www.bundesfinanzministerium.de/", "https://www.bundesregierung.de/"]);
+  const html = rendered.replace(/<a class="wi-fact-link" href="[^"]+"/g, "<a") + reportStyles();
   assert.ok(!/https?:\/\//i.test(html), "found an http(s) URL");
   assert.ok(!/(src|href)="\/\//i.test(html), "found a protocol-relative URL");
   assert.ok(!/@import|url\(\s*["']?https?:/i.test(html), "found an external stylesheet or font");
@@ -253,10 +263,17 @@ test("escapes HTML in every user- or model-provided string", () => {
   reh.personas = reh.personas.map((p, i) => (i === 0 ? { ...p, name: evil, story: evil } : p));
   reh.grid = reh.grid.map((c) => ({ ...c, thought: evil }));
   reh.feed = [{ round: 1, name: evil, text: evil, kind: "post" }];
-  const a = fixtureAnalysis({ business: evil, question: evil, lessons: [evil], warnings: [evil] });
+  const a = fixtureAnalysis({
+    business: evil,
+    question: evil,
+    lessons: [evil],
+    warnings: [evil],
+    facts: [{ id: "x", label: evil, value: evil, source: evil, url: "javascript:alert(1)", asOf: evil }],
+  });
   a.inputs = a.inputs.map((i) => ({ ...i, note: evil }));
   const html = renderReport({ analysis: a, plan: { ...plan, title: evil, before: [evil] }, rehearsal: reh, result: { ...result, plain: evil } });
   assert.ok(!html.includes("<script"), "raw <script> leaked");
+  assert.ok(!html.includes("javascript:"), "a non-http fact link became a link");
   assert.ok(html.includes("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"));
 });
 
@@ -267,7 +284,7 @@ test("styles: tokens with dark mode, print stylesheet, focus states; site.css sh
   assert.match(css, /@media print/);
   assert.match(css, /:focus-visible/);
   const site = new URL("../site/assets/site.css", import.meta.url);
-  if (existsSync(site)) assert.ok(readFileSync(site, "utf8").includes(reportTokens()), "site/assets/site.css must contain reportTokens() verbatim");
+  if (existsSync(site)) assert.ok(readFileSync(site, "utf8").split("\r\n").join("\n").includes(reportTokens()), "site/assets/site.css must contain reportTokens() verbatim");
 });
 
 test("price-change style analysis (share units) renders percentages with a real minus sign", () => {
@@ -286,6 +303,261 @@ test("price-change style analysis (share units) renders percentages with a real 
   const html = renderReport({ analysis: a });
   assert.ok(html.includes("−6.9%"), "break-even shown as −6.9%");
   assert.ok(!/>-\d/.test(html), "no ASCII hyphen used as a minus sign in text");
+});
+
+/* ------------------------------------------------------------------ */
+/* Berlin beta: four languages, who did what, facts, honest rehearsal    */
+/* ------------------------------------------------------------------ */
+
+const LANGS: Lang[] = ["de", "en", "es", "pl"];
+const STEP_WORD: Record<Lang, string> = { de: "Schritt", en: "Step", es: "Paso", pl: "Krok" };
+
+function inLang(lang: Lang, over: Partial<ReportInput> = {}): string {
+  return renderReport({ ...full, analysis: fixtureAnalysis({ lang }), ...over });
+}
+
+function text(html: string): string {
+  return html
+    .replace(/<svg[\s\S]*?<\/svg>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ");
+}
+
+for (const lang of LANGS) {
+  test(`all six steps render in ${lang}, in order, with one h1 and the lang attribute`, () => {
+    const html = inLang(lang);
+    const hs = headings(html);
+    let last = -1;
+    for (const st of STEPS) {
+      const i = hs.indexOf(st.title);
+      assert.ok(i >= 0, `missing step heading "${st.title}" (${lang})`);
+      assert.ok(i > last, `step heading "${st.title}" out of order (${lang})`);
+      last = i;
+      assert.ok(html.includes(`${STEP_WORD[lang]} ${st.n}/6`), `missing "${STEP_WORD[lang]} ${st.n}/6"`);
+    }
+    assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1);
+    assert.match(html, new RegExp(`<div class="wi-report" data-wi-report lang="${lang}"`));
+    assert.equal(STEPS[0]!.title, REPORT_MESSAGES[lang]["step1.title"]);
+  });
+}
+
+/** The fixture with every engine/sim-written text replaced by a placeholder, so only the report's own words remain. */
+const KEEP = new Set(["id", "key", "unit", "source", "kind", "template", "lang", "currency", "createdAt", "recordedAt", "analysisId", "personaId", "segment", "attitude", "priceSensitivity", "relationship", "method", "status", "action", "from", "to", "verdict", "closestScenario", "url", "asOf"]);
+function neutral<T>(v: T, k = ""): T {
+  if (typeof v === "string") return (KEEP.has(k) ? v : "Ⓧ") as T;
+  if (Array.isArray(v)) return v.map((x) => neutral(x, k)) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([kk, x]) => [kk, neutral(x, kk)])) as T;
+  return v;
+}
+
+test("the German report has no English leftovers in the report's own words", () => {
+  const de = text(renderReport(neutral({ ...full, analysis: fixtureAnalysis({ lang: "de" }) })));
+  for (const english of [
+    "Show the maths",
+    "Your number",
+    "A guess",
+    "Calculated",
+    "Possible outcomes",
+    "The short answer",
+    "Worst case",
+    "What you learned",
+    "Who did what",
+    "Check these with real customers",
+    "Imagined customers",
+    "Rehearsal with imagined customers",
+    "Your test",
+    "Before you start",
+    "Why this changed",
+    "Move the guess",
+    " a day",
+    "over the test",
+    "loses money",
+    "makes money",
+    "Not around",
+    "Round 1 ",
+    "Berlin facts used",
+  ])
+    assert.ok(!de.includes(english), `English leftover in the German report: "${english}"`);
+  for (const german of ["Rechnung zeigen", "Ihre Zahl", "Eine Schätzung", "Berechnet", "Ausgedacht", "Mögliche Ergebnisse", "Wer hat was gemacht?", "Verwendete Berlin-Fakten", "Was Sie über KI gelernt haben", "Woher kommt diese Zahl?"])
+    assert.ok(de.includes(german), `German text missing: "${german}"`);
+});
+
+test("the catalog is complete in all four languages, and translated", () => {
+  const en = REPORT_MESSAGES.en as Record<string, unknown>;
+  const keys = Object.keys(en);
+  for (const lang of ["de", "es", "pl"] as const) {
+    const cat = REPORT_MESSAGES[lang] as Record<string, unknown>;
+    for (const k of keys) assert.ok(k in cat, `${lang} lacks ${k}`);
+    const same = keys.filter((k) => typeof cat[k] === "string" && cat[k] === en[k]);
+    assert.ok(same.length < keys.length * 0.06, `${lang}: too many untranslated strings: ${same.join(", ")}`);
+  }
+});
+
+test("numbers follow the report language (9,90 € in German, €9.90 in English)", () => {
+  assert.ok(inLang("de").includes("9,90 €"));
+  assert.ok(inLang("en").includes("€9.90"));
+  assert.ok(inLang("pl").includes("9,90 €"));
+});
+
+test("language switcher: DE · EN · ES · PL buttons, current one pressed, hidden until the page wires it", () => {
+  const html = inLang("es");
+  const nav = html.match(/<nav class="wi-lang[^"]*" aria-label="([^"]+)" data-wi-lang-nav hidden>([\s\S]*?)<\/nav>/);
+  assert.ok(nav, "no language switcher");
+  assert.equal(nav[1], "Idioma del informe");
+  for (const l of LANGS) assert.match(nav[2]!, new RegExp(`data-wi-lang="${l}" lang="${l}" aria-pressed="${l === "es"}"`));
+  assert.match(nav[2]!, />ES<\/span><span class="wi-sr">Español</);
+});
+
+test("who did what: built from the data in the link, and it says plainly when no AI was involved", () => {
+  const demo = text(renderReport(full));
+  assert.ok(demo.includes("Who did what in this report"));
+  assert.ok(demo.includes("Sample numbers:"));
+  assert.ok(demo.includes("Calculated by plain code:"));
+  assert.ok(demo.includes("nothing at all in this demo"));
+  const tryIt = text(renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }), madeBy: "try", rehearsal: undefined }));
+  assert.ok(tryIt.includes("From you:"));
+  assert.ok(tryIt.includes("nothing. The numbers came from the form"));
+  const coach = text(renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }), madeBy: "coach", rehearsal: fixtureRehearsal({ method: "subagent" }) }));
+  assert.ok(coach.includes("it asked the questions, explains the steps and played the imagined customers"));
+  assert.ok(coach.includes("each played by its own AI helper"));
+  // 3 guesses in the fixture: the likely guess, the switch share and the test length What-IF filled in
+  assert.ok(coach.includes("Guesses: 3. Only your test can check them."));
+});
+
+test("the rehearsal says who played the customers once, matching the method; an inconsistent sim caveat is dropped", () => {
+  const ai = "These are imagined customers played by an AI from short descriptions.";
+  const rules = text(renderReport({ ...full, rehearsal: fixtureRehearsal({ method: "rule-based", caveat: ai }) }));
+  assert.ok(rules.includes("Simple fixed rules played the imagined customers, with no AI"));
+  assert.ok(!rules.includes("played by an AI"), "a rule-based run must not say an AI played the customers");
+  const chatHtml = renderReport({ ...full, rehearsal: fixtureRehearsal({ method: "in-context", caveat: ai, mixNote: "The mix of people is a rough guess for Neukölln, not statistics." }) });
+  const chatNote = text(chatHtml.match(/<p class="wi-caveat-note">[\s\S]*?<\/p>/)?.[0] ?? "");
+  assert.ok(chatNote.includes(ai), "the sim's caveat is the statement in step 5");
+  assert.ok(chatNote.includes("rough guess for Neukölln"), "the Kiez mix note is shown");
+  assert.ok(!text(chatHtml).includes("Simple fixed rules played"));
+  assert.ok(text(chatHtml).includes("played by the AI in your chat"), "the who-did-what card agrees");
+  const de = text(renderReport({ ...full, analysis: fixtureAnalysis({ lang: "de" }), rehearsal: fixtureRehearsal({ method: "rule-based", caveat: "" }) }));
+  assert.ok(de.includes("Einfache feste Regeln haben die ausgedachten Gäste gespielt, ohne KI."));
+});
+
+test("'Check these with real customers' carries the Imagined chip, never 'Your number'", () => {
+  const html = renderReport(full);
+  const card = html.match(/<div class="wi-card wi-checkreal"[\s\S]*?<\/ul><\/div>/)?.[0] ?? "";
+  assert.ok(card.includes("Check these with real customers"));
+  assert.ok(card.includes("wi-chip--imagined"));
+  assert.ok(!card.includes("wi-chip--owner"));
+});
+
+test("timeline: only not_around is 'Not around'; going elsewhere has its own state and legend", () => {
+  const reh = fixtureRehearsal();
+  reh.grid = reh.grid.map((c) => (c.personaId === "p2" && c.round === 3 ? { ...c, action: "eats_elsewhere", actionLabel: "Has lunch somewhere else", positive: false } : c));
+  const html = renderReport({ ...full, rehearsal: reh });
+  assert.match(html, /class="wi-cell is-elsewhere"[^>]*aria-label="Round 3, Jonas: Has lunch somewhere else\./);
+  assert.match(html, /<span class="wi-cell-label">Has lunch somewhere else<\/span>/);
+  assert.match(html, /class="wi-cell is-away"[^>]*aria-label="Round 2, Aylin: Not around/);
+  assert.ok(html.includes("Went elsewhere"), "legend entry for going elsewhere");
+  // round names in full above the grid; short headers in it
+  assert.match(html, /<ol class="wi-tl-rounds"[^>]*><li><strong>R1<\/strong> Round 1 title<\/li>/);
+});
+
+test("Berlin facts card lists every fact with its source and date", () => {
+  const html = renderReport(full);
+  assert.ok(html.includes('id="wi-facts"'));
+  assert.ok(html.includes("Berlin facts used"));
+  assert.ok(html.includes("VAT on food in cafés"));
+  assert.ok(html.includes("as of 1 January 2026"));
+  assert.ok(inLang("de").includes("Stand: 1. Januar 2026"));
+  assert.ok(!renderReport({ ...full, analysis: fixtureAnalysis({ facts: [] }) }).includes('id="wi-facts"'));
+});
+
+test("predict, then check: an optional guess box before the break-even, kept on the page only", () => {
+  const html = renderReport(full);
+  const card = html.indexOf("data-wi-be-card");
+  const box = html.indexOf("data-wi-predict hidden");
+  const value = html.indexOf("data-wi-be-value", card);
+  assert.ok(card > 0 && box > card && value > box, "the guess box sits in the break-even card, before the answer");
+  assert.match(html, /<label class="wi-predict-q" for="wi-predict-in">What do you think\? Extra lunch customers a day to pay back the test<\/label>/);
+  assert.match(html, /<input class="wi-input" id="wi-predict-in" type="number"/);
+  assert.ok(html.includes("Your guess stays on this page; it is not saved or sent."));
+  assert.ok(html.includes("data-wi-be-cover hidden"), "the step 1 tile can be covered until the guess");
+  assert.ok(html.includes("data-wi-be-head") && html.includes("data-wi-be-more"), "the card's answer can wait for the guess");
+});
+
+test("step 4 names both break-evens and the chart marks both", () => {
+  const a = fixtureAnalysis();
+  a.breakEven = { ...a.breakEven, ongoing: { value: 5, unit: "customers/day", label: "Extra lunch customers a day for each day to pay its way", maths: "€26 ÷ €6.30 = 4.1 → 5", plain: "From 5 a day each day pays its way." } };
+  a.sensitivity = { ...a.sensitivity, ongoingX: 5 };
+  const html = renderReport({ ...full, analysis: a });
+  assert.ok(html.includes("If you keep it going:"));
+  assert.ok(html.includes("Extra lunch customers a day for each day to pay its way: "));
+  assert.ok(html.includes("Break-even: 7"));
+  assert.ok(html.includes("Pays its way: 5"));
+  assert.match(html, /class="wi-ref wi-ref--on"/);
+  assert.ok(html.includes("What does “pays its way” mean?"));
+});
+
+test("'Why this changed' explains the difference from the guess as a mechanism you can check by hand", () => {
+  const a = fixtureAnalysis();
+  const r = readout(a, 11, 10);
+  assert.equal(r.diff, "3 more customers a day × €6.30 each × 10 days = +€189 compared with your guess.");
+  assert.equal(r.why, points[11]!.explanation);
+  assert.equal(readout(a, 6, 10).diff, "2 fewer customers a day × €6.30 each × 10 days = −€126 compared with your guess.");
+  assert.equal(readout(a, 8, 10).diff, "This is your own guess.");
+  assert.ok(renderReport(full).includes('data-wi-diff aria-live="polite">This is your own guess.'));
+});
+
+test("'Why this changed' uses the engine's slope and difference from the guess (perStep, vsGuess)", () => {
+  const a = fixtureAnalysis();
+  a.sensitivity = {
+    ...a.sensitivity,
+    perStep: { netTest: 53.5, netMonth: 116.1, plain: "Each extra customer a day adds €5.35 × 10 weekdays = €53.50 over the test." },
+    points: a.sensitivity.points.map((p) => ({ ...p, vsGuess: Math.round((p.x - 8) * 53.5 * 100) / 100 })),
+  };
+  assert.equal(readout(a, 11, 10).diff, "3 more customers a day × €5.35 each × 10 days = +€160.50 compared with your guess.");
+  assert.equal(readout(a, 8, 10).diff, "Each extra customer a day adds €5.35 × 10 weekdays = €53.50 over the test.");
+  const de = readout({ ...a, lang: "de" }, 5, 10).diff;
+  renderReport({ ...full, analysis: { ...a, lang: "de" } });
+  assert.ok(readout({ ...a, lang: "de" }, 5, 10).diff.startsWith("3 Gäste weniger pro Tag × 5,35"), de);
+});
+
+test("test results are shown in whole euros (−€56, not −€56.02)", () => {
+  const a = fixtureAnalysis();
+  a.scenarios = a.scenarios.map((s) => (s.id === "expected" ? { ...s, netTest: -56.02 } : s));
+  const html = renderReport({ ...full, analysis: a });
+  assert.ok(html.includes("−€56<"), "whole euros on the tile");
+  assert.ok(!/−€56\.02/.test(html.replace(/<pre[\s\S]*?<\/pre>/g, "")), "no cents on a test result outside the maths");
+});
+
+test("one idea per step: details collapsed by default (numbers, the working, people, glossary)", () => {
+  const html = renderReport(full);
+  assert.ok(!/<details[^>]*\sopen/.test(html), "nothing starts open");
+  assert.match(html, /<details class="wi-more"><summary>See all 6 numbers, and why each one matters<\/summary>/);
+  assert.match(html, /<details class="wi-working"><summary><span>The working<\/span>/);
+  assert.match(html, /<details class="wi-sub wi-people" id="wi-reh-personas">/);
+  assert.ok(html.indexOf('data-wi-chart="scenarios"') < html.indexOf('class="wi-scns"'), "the step 3 chart comes before the three cards");
+});
+
+test("what you learned: one AI lesson in the owner's numbers, the take-home rule, and 'AI model' in the glossary", () => {
+  const html = text(renderReport(full));
+  assert.ok(html.includes("What you learned about AI"));
+  assert.match(html, /\d+ results came from plain code, not from an AI\./);
+  assert.ok(html.includes("3 numbers are guesses. No AI can know them; only your test can."));
+  assert.ok(html.includes("The 4 customers were imagined (played by simple fixed rules, no AI)"));
+  assert.ok(html.includes("next time any AI gives you a number, ask: is it yours, calculated, a guess or imagined?"));
+  assert.ok(html.includes("AI model"));
+  assert.ok(html.includes("it does not know your future"));
+  for (const term of ["pays its way", "pay back the test", "worst case"]) assert.ok(html.includes(term), `glossary lacks ${term}`);
+  assert.ok(html.includes("After the 6 steps"));
+});
+
+test("a test result renders the comparison with translated measurement names", () => {
+  const html = renderReport(full);
+  assert.ok(html.includes("What actually happened"));
+  assert.ok(html.includes("Lunch customers a day before the test"));
+  assert.ok(html.includes("wi-chart-result"));
+  const de = inLang("de");
+  assert.ok(de.includes("Was tatsächlich passiert ist"));
+  assert.ok(de.includes("Mittagsgäste pro Tag vor dem Test"));
 });
 
 /* ------------------------------------------------------------------ */

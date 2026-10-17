@@ -3,99 +3,78 @@
  *
  * Everything is per weekday unless the name says otherwise. The one guess that
  * drives the result is x, the number of extra (new) lunch customers a day.
+ * Prices the owner gives are what customers pay (with VAT); VAT is not the café's
+ * money, so margins use the price after VAT: net = gross ÷ (1 + vat_rate).
  *
- *   margin per deal       m_offer     = offer_price − offer_cost
- *   lunch margin today    m_lunch_now = lunch_spend × (1 − variable_cost_share)
- *   switching regulars    switchers   = lunch_customers × switch_share
+ *   margin per deal       m_offer     = offer_price ÷ (1 + vat) − offer_cost
+ *   lunch margin today    m_lunch_now = lunch_spend ÷ (1 + vat) − lunch_spend × variable_cost_share
+ *   switching regulars    switchers   = lunch_customers × switch_share            (one decimal)
  *   cost of switching     switch_loss = switchers × (m_lunch_now − m_offer)   (negative = a gain)
- *   running cost          daily_cost  = extra_staff_cost_per_day + marketing_per_week / 5
+ *   running cost          daily_cost  = extra_staff_hours_per_day × staff_hourly_cost + marketing_per_week ÷ 5
  *   net_day(x)   = x × m_offer − switch_loss − daily_cost
  *   net_test(x)  = net_day(x) × test_days − setup_cost
  *   net_month(x) = net_day(x) × 21.7 weekdays (ongoing, setup already paid)
+ *
+ * Rounding rule: every building block is rounded to the cent (switchers to one decimal)
+ * before it is used again, so each "show the maths" line can be redone by hand with the
+ * numbers it prints and gives exactly the number it shows.
  */
-import { money, num, pct, plural, price, round, signed } from "./format.ts";
-import type { Analysis, Figure, ResolvedInput, Scenario, SensitivityPoint, Source, Unit } from "./types.ts";
+import { LUNCH_VAT_BLENDED, MIN_WAGE_2026 } from "./berlin.ts";
+import { ceilUp, EPS, eur, has, list, n, num, pc, pct, price, r1, r2, round, seur, signedPrice } from "./format.ts";
+import type { Values } from "./format.ts";
+import { continueSentence, fig, filledIn, fromSources, sourcesOf, sumText, valuesOf } from "./figures.ts";
+import { msg as t } from "./messages.ts";
+import type { Analysis, Figure, ResolvedInput, Scenario, SensitivityPoint } from "./types.ts";
+
+export { valuesOf };
 
 export const WEEKDAYS_PER_MONTH = 21.7;
 const W = WEEKDAYS_PER_MONTH;
-const EPS = 1e-9;
 
-type Values = Record<string, number | string>;
 type Body = Pick<
   Analysis,
   "current" | "scenarios" | "breakEven" | "worstCase" | "biggestUncertainty" | "sensitivity" | "lessons" | "nextQuestions" | "warnings"
 >;
-
-const n = (v: Values, k: string, d = 0): number => {
-  const x = v[k];
-  return typeof x === "number" && Number.isFinite(x) ? x : d;
-};
-const has = (v: Values, k: string): boolean => typeof v[k] === "number";
-/** Whole customers, rounded up, never below zero (float-safe: 7.0000000001 stays 7). */
-const ceilUp = (q: number): number => Math.max(0, Math.ceil(q - EPS));
-/** 32%, or 32.5% when the share needs a decimal. */
-const pc = (s: number): string => pct(s, Number.isInteger(Math.round(s * 1e6) / 1e4) ? 0 : 1);
-/** Totals in plain sentences: whole euros from €10 up ("about €56 down"); the maths strings keep the cents. */
-const eur = (x: number): string => money(x, Math.abs(x) < 10 && Math.abs(x) >= 0.005);
-const seur = (x: number): string => (x > 0 ? `+${eur(x)}` : eur(x));
-
-function fig(id: string, label: string, value: number, unit: Unit, source: Source, maths: string): Figure {
-  return { id, label, value: unit === "share" ? round(value, 4) : round(value, 2), unit, source, maths };
-}
-
-/** A figure built from inputs is demo data if any input is, a guess if any input is a guess, else a calculation. */
-function fromSources(src: Record<string, Source>, keys: string[]): Source {
-  const s = keys.map((k) => src[k]);
-  if (s.includes("demo")) return "demo";
-  if (s.includes("assumption")) return "assumption";
-  return "calculation";
-}
-
-/** "€15.00 for regulars who switch + €23.00 for staff and promotion − €4.00 …" (zero parts left out). */
-function sumText(parts: { amount: number; label: string }[]): string {
-  const live = parts.filter((p) => Math.abs(p.amount) > EPS).sort((x, y) => Number(x.amount < 0) - Number(y.amount < 0));
-  if (live.length === 0) return money(0);
-  return live
-    .map((p, i) => {
-      const body = `${money(Math.abs(p.amount))} ${p.label}`;
-      if (i === 0) return p.amount < 0 ? `−${body}` : body;
-      return `${p.amount < 0 ? "−" : "+"} ${body}`;
-    })
-    .join(" ");
-}
-
-export function valuesOf(inputs: ResolvedInput[]): Values {
-  return Object.fromEntries(inputs.map((i) => [i.key, i.value]));
-}
-
-function sourcesOf(inputs: ResolvedInput[]): Record<string, Source> {
-  return Object.fromEntries(inputs.map((i) => [i.key, i.source]));
-}
 
 export interface LunchModel {
   offerPrice: number;
   offerCost: number;
   lunchSpend: number;
   vcs: number;
+  /** VAT rate in the prices (blended), and the divisor 1 + vat. */
+  vat: number;
+  vatDiv: number;
   lunchCustomers: number;
   switchShare: number;
+  staffHours: number;
+  staffRate: number;
+  /** Extra staff cost per weekday: hours × cost per hour. */
   staff: number;
   marketing: number;
+  /** Promotion per weekday: marketing ÷ 5. */
+  marketingDay: number;
   setup: number;
   days: number;
-  /** What one deal leaves after ingredients. */
+  /** The deal price after VAT. */
+  netOfferPrice: number;
+  /** What one deal leaves after VAT and ingredients. */
   mOffer: number;
-  /** What one ordinary lunch leaves after ingredients today. */
+  /** What one ordinary lunch leaves after VAT and ingredients today. */
   mLunchNow: number;
   /** How much less a regular leaves when they switch to the deal (negative = more). */
   gap: number;
   switchers: number;
   switchLoss: number;
+  /** Cash out per weekday: staff and promotion. */
   dailyCost: number;
   /** Everything a day of the deal has to cover before it makes money (switching + running costs). */
   needDay: number;
+  /** The setup spread over the test days. */
+  setupDay: number;
+  /** Cash the owner pays out over the whole test: setup + staff + promotion. */
+  cashOutTest: number;
   reachable: boolean;
-  /** Extra customers a day so each day pays its way (setup already paid). */
+  /** Extra customers a day so each day pays its way (setup already paid). The number for deciding after the test. */
   beOngoing: number | null;
   beOngoingExact: number | null;
   /** Extra customers a day so the whole test, including setup, pays back. The headline break-even. */
@@ -108,40 +87,54 @@ export interface LunchModel {
 }
 
 export function lunchModel(v: Values): LunchModel {
+  const vat = has(v, "vat_rate") ? n(v, "vat_rate") : LUNCH_VAT_BLENDED;
+  const vatDiv = round(1 + vat, 4);
   const offerPrice = n(v, "offer_price");
   const offerCost = n(v, "offer_cost");
   const vcs = n(v, "variable_cost_share", 0.3);
   const lunchSpend = has(v, "lunch_spend") ? n(v, "lunch_spend") : n(v, "avg_spend");
   const lunchCustomers = n(v, "lunch_customers");
   const switchShare = n(v, "switch_share", 0.3);
-  const staff = n(v, "extra_staff_cost_per_day");
+  let staffHours = n(v, "extra_staff_hours_per_day");
+  let staffRate = n(v, "staff_hourly_cost", MIN_WAGE_2026);
+  if (!has(v, "extra_staff_hours_per_day") && has(v, "extra_staff_cost_per_day")) {
+    // An older link's daily staff cost: read as one hour at that cost.
+    const old = n(v, "extra_staff_cost_per_day");
+    staffHours = old > 0 ? 1 : 0;
+    if (old > 0) staffRate = old;
+  }
+  const staff = r2(staffHours * staffRate);
   const marketing = n(v, "marketing_per_week");
+  const marketingDay = r2(marketing / 5);
   const setup = n(v, "setup_cost");
   const days = Math.max(1, n(v, "test_days", 10));
 
-  const mOffer = offerPrice - offerCost;
-  const mLunchNow = lunchSpend * (1 - vcs);
-  const gap = mLunchNow - mOffer;
-  const switchers = lunchCustomers * switchShare;
-  const switchLoss = switchers * gap;
-  const dailyCost = staff + marketing / 5;
-  const needDay = switchLoss + dailyCost;
+  const netOfferPrice = r2(offerPrice / vatDiv);
+  const mOffer = r2(offerPrice / vatDiv - offerCost);
+  const mLunchNow = r2(lunchSpend / vatDiv - lunchSpend * vcs);
+  const gap = r2(mLunchNow - mOffer);
+  const switchers = r1(lunchCustomers * switchShare);
+  const switchLoss = r2(switchers * gap);
+  const dailyCost = r2(staff + marketingDay);
+  const needDay = r2(switchLoss + dailyCost);
+  const setupDay = r2(setup / days);
   const reachable = mOffer > EPS;
   const beOngoingExact = reachable ? Math.max(0, needDay / mOffer) : null;
   const beTestExact = reachable ? Math.max(0, (needDay + setup / days) / mOffer) : null;
 
-  const netDay = (x: number) => x * mOffer - switchLoss - dailyCost;
+  const netDay = (x: number) => r2(x * mOffer - needDay);
   return {
-    offerPrice, offerCost, lunchSpend, vcs, lunchCustomers, switchShare, staff, marketing, setup, days,
-    mOffer, mLunchNow, gap, switchers, switchLoss, dailyCost, needDay, reachable,
+    offerPrice, offerCost, lunchSpend, vcs, vat, vatDiv, lunchCustomers, switchShare, staffHours, staffRate, staff, marketing, marketingDay, setup, days,
+    netOfferPrice, mOffer, mLunchNow, gap, switchers, switchLoss, dailyCost, needDay, setupDay, reachable,
+    cashOutTest: r2(dailyCost * days + setup),
     beOngoing: beOngoingExact === null ? null : ceilUp(beOngoingExact),
     beOngoingExact,
     beTest: beTestExact === null ? null : ceilUp(beTestExact),
     beTestExact,
     netDay,
-    netTest: (x) => netDay(x) * days - setup,
-    netMonth: (x) => netDay(x) * W,
-    revenueDay: (x) => x * offerPrice + switchers * (offerPrice - lunchSpend),
+    netTest: (x) => r2(netDay(x) * days - setup),
+    netMonth: (x) => r2(netDay(x) * W),
+    revenueDay: (x) => r2(x * offerPrice + switchers * (offerPrice - lunchSpend)),
   };
 }
 
@@ -151,40 +144,66 @@ export function lunchHeadline(v: Values) {
   const likely = n(v, "extra_likely");
   return {
     breakEven: m.beTest,
-    breakEvenText: m.beTest === null ? "out of reach" : `${num(m.beTest)} a day`,
-    netTestExpected: round(m.netTest(likely)),
-    netMonthExpected: round(m.netMonth(likely)),
-    worstCase: round(m.netTest(0)),
+    breakEvenText: m.beTest === null ? t("lunch.outOfReach") : t("unit.perDay", { v: num(m.beTest) }),
+    breakEvenOngoing: m.beOngoing,
+    netTestExpected: m.netTest(likely),
+    netMonthExpected: m.netMonth(likely),
+    worstCase: m.netTest(0),
   };
 }
 
-/** What a day of the deal has to cover, as words for the maths strings. */
-function needParts(m: LunchModel): { amount: number; label: string }[] {
-  return [
-    { amount: m.switchLoss, label: m.switchLoss >= 0 ? "for regulars who switch" : "gained from regulars who switch" },
-    { amount: m.dailyCost, label: "for staff and promotion" },
-  ];
-}
-
+/** "switching regulars, staff and promotion" — what the deal's daily costs are made of. */
 function costWords(m: LunchModel): string {
   const w: string[] = [];
-  if (Math.abs(m.switchLoss) > EPS) w.push("switching regulars");
-  if (m.staff > 0) w.push("staff");
-  if (m.marketing > 0) w.push("promotion");
-  if (w.length === 0) return "costs";
-  return w.length === 1 ? w[0]! : `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}`;
+  if (Math.abs(m.switchLoss) > EPS) w.push(t("lunch.word.switching"));
+  if (m.staff > 0) w.push(t("lunch.word.staff"));
+  if (m.marketing > 0) w.push(t("lunch.word.promotion"));
+  if (w.length === 0) return t("lunch.word.costs");
+  return list(w, t("and"));
+}
+
+/** Whole euros in a plain list when they add up to the rounded total; otherwise cents, so the sum always checks out. */
+function partsText(total: number, parts: { amount: number; key: "lunch.part.setup" | "lunch.part.staffPromo" | "lunch.part.switching" }[]): string {
+  const live = parts.filter((p) => p.amount > EPS);
+  const whole = live.reduce((s, p) => s + Math.round(p.amount), 0) === Math.round(total);
+  const f = (x: number) => (whole ? eur(x) : price(x));
+  return list(live.map((p) => t(p.key, { v: f(p.amount) })), t("and"));
 }
 
 function breakEvenMaths(m: LunchModel): string {
-  if (!m.reachable) return `${price(m.offerPrice)} deal price − ${price(m.offerCost)} ingredients = ${price(m.mOffer)} per deal: nothing is left to cover any costs.`;
-  const parts = needParts(m);
-  if (m.setup > 0) parts.push({ amount: m.setup / m.days, label: `setup (${money(m.setup)} ÷ ${num(m.days)} days)` });
-  const need = m.needDay + (m.setup > 0 ? m.setup / m.days : 0);
+  if (!m.reachable)
+    return t("lunch.be.maths.none", { price: price(m.offerPrice), div: num(m.vatDiv, 4), cost: price(m.offerCost), m: price(m.mOffer) });
+  const lines: string[] = [];
+  const parts = [
+    { amount: m.switchLoss, label: m.switchLoss >= 0 ? t("lunch.label.forSwitching") : t("lunch.label.fromSwitching") },
+    { amount: m.dailyCost, label: t("lunch.label.forStaffPromo") },
+  ];
+  if (m.setup > 0) {
+    lines.push(t("lunch.be.maths.setup", { setup: price(m.setup), days: num(m.days), per: price(m.setupDay) }));
+    parts.push({ amount: m.setupDay, label: t("lunch.label.setup") });
+  }
+  const need = r2(m.needDay + (m.setup > 0 ? m.setupDay : 0));
+  if (need <= EPS) {
+    lines.push(t("lunch.be.maths.free", { sum: sumText(parts), need: price(need) }));
+    return lines.join(" ");
+  }
   const exact = m.beTestExact ?? 0;
-  if (need <= EPS)
-    return `Regulars who switch leave you ${money(-m.switchLoss)} a day more than their usual lunch did${m.dailyCost > 0 || m.setup > 0 ? `, which covers ${sumText(parts.filter((p) => p.amount > 0))} a day` : ""}: nothing is left to cover, so no extra customers are needed.`;
-  const rounded = Math.abs(exact - Math.round(exact)) < 1e-6 ? `exactly ${m.beTest}` : `${num(exact)}, rounded up to ${m.beTest}`;
-  return `${sumText(parts)} = ${price(need)} a day to cover. ${price(need)} ÷ ${price(m.mOffer)} per deal = ${rounded} extra customers a day.`;
+  const ratio = need / m.mOffer;
+  lines.push(
+    Math.abs(exact - Math.round(exact)) < 1e-6
+      ? t("lunch.be.maths.exact", { sum: sumText(parts), need: price(need), m: price(m.mOffer), be: num(m.beTest ?? 0) })
+      : t("lunch.be.maths.round", { sum: sumText(parts), need: price(need), m: price(m.mOffer), exact: num(ratio, 1), be: num(m.beTest ?? 0) }),
+  );
+  return lines.join(" ");
+}
+
+function ongoingMaths(m: LunchModel): string {
+  if (!m.reachable || m.beOngoingExact === null) return t("lunch.be.maths.none", { price: price(m.offerPrice), div: num(m.vatDiv, 4), cost: price(m.offerCost), m: price(m.mOffer) });
+  if (m.needDay <= EPS) return t("lunch.ongoing.maths.free", { need: price(m.needDay) });
+  const exact = m.beOngoingExact;
+  return Math.abs(exact - Math.round(exact)) < 1e-6
+    ? t("lunch.ongoing.maths.exact", { need: price(m.needDay), m: price(m.mOffer), be: num(m.beOngoing ?? 0) })
+    : t("lunch.ongoing.maths.round", { need: price(m.needDay), m: price(m.mOffer), exact: num(exact, 1), be: num(m.beOngoing ?? 0) });
 }
 
 export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
@@ -196,111 +215,141 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
   const high = n(v, "extra_high");
   const cash = has(v, "cash_buffer") ? n(v, "cash_buffer") : undefined;
   const fixed = has(v, "monthly_fixed_costs") ? n(v, "monthly_fixed_costs") : undefined;
-  const days = m.days;
-
-  // ---- Current path ------------------------------------------------------
-  const current: Figure[] = [];
   const wc = n(v, "weekday_customers"), avg = n(v, "avg_spend");
-  const takings = wc * avg * W;
-  const left = takings * (1 - m.vcs);
+  const days = m.days;
+  const div = num(m.vatDiv, 4);
+  const vatPct = pc(m.vat);
+  const dayN = (x: number) => t("n.weekdays", { n: x });
+
+  // ---- Current path (weekdays only: the deal runs on weekdays) -------------
+  const current: Figure[] = [];
+  const takings = r2(wc * avg * W);
+  const left = r2(takings / m.vatDiv - takings * m.vcs);
   current.push(
-    fig("weekday_takings_month", "Weekday takings per month, today", takings, "EUR/month", fromSources(src, ["weekday_customers", "avg_spend"]),
-      `${num(wc)} customers a day × ${price(avg)} average spend × ${W} weekdays = ${money(takings)} a month`),
-    fig("weekday_left_month", "Left after ingredients per month (weekdays), today", left, "EUR/month",
-      fromSources(src, ["weekday_customers", "avg_spend", "variable_cost_share"]),
-      `${money(takings)} × (100% − ${pc(m.vcs)} spent on ingredients and packaging) = ${money(left)} a month to pay rent, wages and you`),
-  );
-  if (fixed !== undefined)
-    current.push(fig("monthly_fixed_costs", "Monthly fixed costs (rent, wages, energy, insurance)", fixed, "EUR/month", src.monthly_fixed_costs ?? "owner",
-      `${money(fixed)} a month, whether or not you run the deal`));
-  current.push(
-    fig("lunch_margin_now", "What one lunch leaves you today, after ingredients", m.mLunchNow, "EUR", fromSources(src, ["lunch_spend", "variable_cost_share"]),
-      `${price(m.lunchSpend)} lunch × (100% − ${pc(m.vcs)} ingredients) = ${price(m.mLunchNow)} per lunch`),
-    fig("deal_margin", "What one deal leaves you, after ingredients", m.mOffer, "EUR", fromSources(src, ["offer_price", "offer_cost"]),
-      `${price(m.offerPrice)} deal price − ${price(m.offerCost)} ingredients = ${price(m.mOffer)} per deal`),
-    fig("switch_cost_day", "What regulars switching to the deal cost you, per day", m.switchLoss, "EUR/day",
-      fromSources(src, ["lunch_customers", "switch_share", "lunch_spend", "variable_cost_share", "offer_price", "offer_cost"]),
+    fig("weekday_takings_month", t("lunch.fig.takings.label"), takings, "EUR/month", fromSources(src, ["weekday_customers", "avg_spend"]),
+      t("lunch.fig.takings.maths", { wc: num(wc), avg: price(avg), w: num(W), takings: price(takings) })),
+    fig("weekday_left_month", t("lunch.fig.left.label"), left, "EUR/month", fromSources(src, ["weekday_customers", "avg_spend", "variable_cost_share", "vat_rate"]),
+      t("lunch.fig.left.maths", { takings: price(takings), div, vat: vatPct, vcs: pc(m.vcs), left: price(left) })),
+    fig("lunch_margin_now", t("lunch.fig.lunchMargin.label"), m.mLunchNow, "EUR", fromSources(src, ["lunch_spend", "variable_cost_share", "vat_rate"]),
+      t("lunch.fig.lunchMargin.maths", { spend: price(m.lunchSpend), div, vat: vatPct, vcs: pc(m.vcs), m: price(m.mLunchNow) })),
+    fig("deal_margin", t("lunch.fig.dealMargin.label"), m.mOffer, "EUR", fromSources(src, ["offer_price", "offer_cost", "vat_rate"]),
+      t("lunch.fig.dealMargin.maths", { price: price(m.offerPrice), div, vat: vatPct, cost: price(m.offerCost), m: price(m.mOffer) })),
+    fig("switch_cost_day", t("lunch.fig.switch.label"), m.switchLoss, "EUR/day",
+      fromSources(src, ["lunch_customers", "switch_share", "lunch_spend", "variable_cost_share", "offer_price", "offer_cost", "vat_rate"]),
       m.gap >= 0
-        ? `${num(m.lunchCustomers)} lunch customers × ${pc(m.switchShare)} who switch = ${num(m.switchers)} a day. Each leaves ${price(m.gap)} less (${price(m.mLunchNow)} − ${price(m.mOffer)}), so ${num(m.switchers)} × ${price(m.gap)} = ${money(m.switchLoss)} a day`
-        : `${num(m.lunchCustomers)} lunch customers × ${pc(m.switchShare)} who switch = ${num(m.switchers)} a day. Each leaves ${price(-m.gap)} more than today (${price(m.mOffer)} − ${price(m.mLunchNow)}), so switching earns you ${money(-m.switchLoss)} a day`),
-    fig("running_cost_day", "Running cost of the deal, per weekday", m.dailyCost, "EUR/day", fromSources(src, ["extra_staff_cost_per_day", "marketing_per_week"]),
-      `${price(m.staff)} extra staff + ${price(m.marketing)} promotion a week ÷ 5 weekdays = ${price(m.dailyCost)} a day`),
+        ? t("lunch.fig.switch.maths.cost", { lc: num(m.lunchCustomers), share: pc(m.switchShare), sw: num(m.switchers), gap: price(m.gap), now: price(m.mLunchNow), deal: price(m.mOffer), loss: price(m.switchLoss) })
+        : t("lunch.fig.switch.maths.gain", { lc: num(m.lunchCustomers), share: pc(m.switchShare), sw: num(m.switchers), gap: price(-m.gap), now: price(m.mLunchNow), deal: price(m.mOffer), gain: price(-m.switchLoss) })),
+    fig("running_cost_day", t("lunch.fig.running.label"), m.dailyCost, "EUR/day",
+      fromSources(src, ["extra_staff_hours_per_day", "staff_hourly_cost", "marketing_per_week"]),
+      t("lunch.fig.running.maths", { hours: t("n.staffHours", { n: m.staffHours }), rate: price(m.staffRate), mkt: price(m.marketing), daily: price(m.dailyCost) })),
   );
 
   // ---- Scenarios ---------------------------------------------------------
-  const scenario = (id: Scenario["id"], label: string, guessName: string, key: string, x: number): Scenario => {
+  const scenario = (id: Scenario["id"], guessName: string, key: string, x: number): Scenario => {
     const rev = m.revenueDay(x), nd = m.netDay(x), nt = m.netTest(x), nm = m.netMonth(x);
-    const switchPart = m.switchLoss >= 0 ? `− ${money(m.switchLoss)} switching regulars` : `+ ${money(-m.switchLoss)} from switching regulars`;
+    const switchPart = m.switchLoss >= 0 ? t("lunch.scn.minusSwitch", { v: price(m.switchLoss) }) : t("lunch.scn.plusSwitch", { v: price(-m.switchLoss) });
     const figures: Figure[] = [
-      fig("extra_customers", "Extra lunch customers a day", x, "customers/day", src[key] ?? "assumption",
-        `${guessName}: ${plural(x, "extra lunch customer")} a day. Nobody knows this yet; the test measures it.`),
-      fig("revenue_change_day", "Change in lunch takings per day", rev, "EUR/day", "calculation",
-        `${num(x)} new deals × ${price(m.offerPrice)} + ${num(m.switchers)} switching regulars × (${price(m.offerPrice)} − ${price(m.lunchSpend)}) = ${signed(rev)} a day`),
-      fig("net_day", "Result per weekday, after ingredients and costs", nd, "EUR/day", "calculation",
-        `${num(x)} × ${price(m.mOffer)} per deal ${switchPart} − ${money(m.dailyCost)} staff and promotion = ${signed(nd)} a day`),
-      fig("net_test", `Result over the test (${num(days)} weekdays, after setup)`, nt, "EUR", "calculation",
-        `${signed(nd)} × ${num(days)} weekdays − ${money(m.setup)} setup = ${signed(nt)}`),
-      fig("net_month", "Result per month if you keep it", nm, "EUR/month", "calculation",
-        `${signed(nd)} × ${W} weekdays = ${signed(nm)} a month (no setup: that is paid once)`),
+      fig("extra_customers", t("lunch.assume.label"), x, "customers/day", src[key] ?? "assumption",
+        t("lunch.scn.extra.maths", { guess: guessName, x: t("n.extraLunchDay", { n: x }) })),
+      fig("revenue_change_day", t("lunch.scn.revenue.label"), rev, "EUR/day", "calculation",
+        t("lunch.scn.revenue.maths", { x: num(x), price: price(m.offerPrice), sw: num(m.switchers), spend: price(m.lunchSpend), rev: signedPrice(rev) })),
+      fig("net_day", t("lunch.scn.netDay.label"), nd, "EUR/day", "calculation",
+        t("lunch.scn.netDay.maths", { x: num(x), m: price(m.mOffer), switchPart, daily: price(m.dailyCost), nd: signedPrice(nd) })),
+      fig("net_test", t("lunch.scn.netTest.label", { days: dayN(days) }), nt, "EUR", "calculation",
+        t("lunch.scn.netTest.maths", { nd: signedPrice(nd), days: dayN(days), setup: price(m.setup), nt: signedPrice(nt) })),
+      fig("net_month", t("lunch.scn.netMonth.label"), nm, "EUR/month", "calculation",
+        t("lunch.scn.netMonth.maths", { nd: signedPrice(nd), w: num(W), nm: signedPrice(nm) })),
     ];
     if (fixed !== undefined && fixed > 0)
-      figures.push(fig("net_month_share_fixed", "Monthly result as a share of your fixed costs", nm / fixed, "share", "calculation",
-        `${signed(nm)} ÷ ${money(fixed)} fixed costs = ${nm < 0 ? "−" : ""}${pct(Math.abs(nm / fixed), 1)}`));
-    const ofFixed = fixed !== undefined && fixed > 0 && nm > 0 ? ` (${pct(nm / fixed, 1)} of your fixed costs)` : "";
-    const who = `If ${plural(x, "extra customer")} come${x === 1 ? "s" : ""} each weekday`;
+      figures.push(fig("net_month_share_fixed", t("lunch.scn.shareFixed.label"), nm / fixed, "share", "calculation",
+        t("lunch.scn.shareFixed.maths", { nm: signedPrice(nm), fixed: price(fixed), share: `${nm < 0 ? "−" : ""}${pct(Math.abs(nm / fixed), 1)}` })));
+    const ofFixed = fixed !== undefined && fixed > 0 && nm > 0 ? t("lunch.scn.ofFixed", { p: pct(nm / fixed, 1) }) : "";
+    const who = t("lunch.scn.who", { n: x });
     let plain: string;
-    if (nt >= 0) plain = `${who}, the test ends ${eur(nt)} up, and keeping the deal would earn about ${eur(Math.max(0, nm))} a month${ofFixed}.`;
-    else if (nm >= 0)
-      plain = `${who}, the test ends ${eur(-nt)} down because the ${eur(m.setup)} setup is not paid back yet, but keeping the deal would earn about ${eur(nm)} a month${ofFixed}.`;
-    else plain = `${who}, the test ends ${eur(-nt)} down, and keeping the deal would lose about ${eur(-nm)} a month.`;
+    if (nt >= 0) plain = t("lunch.scn.plain.up", { who, nt: eur(nt), nm: eur(Math.max(0, nm)), ofFixed });
+    else if (nm >= 0) plain = t("lunch.scn.plain.setup", { who, nt: eur(-nt), setup: eur(m.setup), nm: eur(nm), ofFixed });
+    else plain = t("lunch.scn.plain.down", { who, nt: eur(-nt), nm: eur(-nm) });
     return {
-      id, label, assumptionLabel: "Extra lunch customers a day", assumptionValue: x, assumptionUnit: "customers/day",
-      figures, netTest: round(nt), netMonth: round(nm), plain,
+      id,
+      label: t(`scn.${id}`),
+      assumptionLabel: t("lunch.assume.label"),
+      assumptionValue: x,
+      assumptionUnit: "customers/day",
+      assumptionText: t("n.extraLunchDay", { n: x }),
+      figures,
+      netTest: nt,
+      netMonth: nm,
+      plain,
     };
   };
   const scenarios: Scenario[] = [
-    scenario("cautious", "Cautious", "Your cautious guess", "extra_low", low),
-    scenario("expected", "Expected", "Your likely guess", "extra_likely", likely),
-    scenario("optimistic", "Optimistic", "Your optimistic guess", "extra_high", high),
+    scenario("cautious", t("guess.cautious"), "extra_low", low),
+    scenario("expected", t("guess.likely"), "extra_likely", likely),
+    scenario("optimistic", t("guess.optimistic"), "extra_high", high),
   ];
 
   // ---- Break-even --------------------------------------------------------
   const be = m.beTest, beOn = m.beOngoing;
   let bePlain: string;
-  if (!m.reachable || be === null || beOn === null)
-    bePlain = "Each deal leaves nothing after ingredients, so no number of extra customers can pay for the test. Raise the price or trim what is in the deal first.";
-  else if (be === 0)
-    bePlain = `The deal covers its costs even if nobody new comes, because regulars who switch to it leave you at least as much as their usual lunch and the running costs are covered. Every extra customer adds ${price(m.mOffer)}.`;
+  if (!m.reachable || be === null || beOn === null) bePlain = t("lunch.be.plain.none");
+  else if (be === 0) bePlain = t("lunch.be.plain.zero", { m: price(m.mOffer) });
   else if (m.setup > 0 && be !== beOn)
-    bePlain = `To pay back the whole test (${num(days)} weekdays, including the ${eur(m.setup)} setup), the deal needs ${plural(be, "extra lunch customer")} a day. After that, ${num(beOn)} a day keeps you level: each extra customer leaves ${price(m.mOffer)}, and the deal costs ${price(m.needDay)} a day to run (${costWords(m)}).`;
+    bePlain = t("lunch.be.plain.two", { days: dayN(days), setup: eur(m.setup), be: t("n.extraLunch", { n: be }), beOn: num(beOn), m: price(m.mOffer), need: price(m.needDay), costs: costWords(m) });
   else
-    bePlain = `The deal needs ${plural(be, "extra lunch customer")} a day to cover what it costs: each leaves ${price(m.mOffer)}, and the deal costs ${price(m.needDay + m.setup / days)} a day (${costWords(m)}${m.setup > 0 ? ", setup" : ""}).`;
+    bePlain = t("lunch.be.plain.one", { be: t("n.extraLunch", { n: be }), m: price(m.mOffer), need: price(r2(m.needDay + m.setupDay)), costs: m.setup > 0 ? `${costWords(m)}, ${t("lunch.word.setup")}` : costWords(m) });
   const breakEven: Body["breakEven"] = {
     value: be ?? 0,
     unit: "customers/day",
-    label: "Extra lunch customers a day to pay back the test",
+    label: t("lunch.be.label"),
     maths: breakEvenMaths(m),
     plain: bePlain,
     reachable: m.reachable,
+    ongoing: {
+      value: beOn ?? 0,
+      unit: "customers/day",
+      label: t("lunch.ongoing.label"),
+      maths: ongoingMaths(m),
+      plain:
+        !m.reachable || beOn === null
+          ? t("lunch.be.plain.none")
+          : beOn === 0
+            ? t("lunch.ongoing.plain.zero")
+            : t("lunch.ongoing.plain", { n: beOn, beOn: t("n.extraLunch", { n: beOn }), be: num(be ?? 0) }),
+    },
   };
 
-  // ---- Worst case --------------------------------------------------------
+  // ---- Worst case: nobody new comes, regulars switch as guessed ----------
   const worst = m.netTest(0);
+  const allSwitch = lunchModel({ ...v, switch_share: 1 }).netTest(0);
   const shareOfCash = cash !== undefined && cash > 0 ? round(Math.max(0, -worst) / cash, 4) : undefined;
-  const worstParts: string[] = [];
-  if (m.setup > 0) worstParts.push(`${eur(m.setup)} setup`);
-  if (m.dailyCost > 0) worstParts.push(`${eur(m.dailyCost * days)} for staff and promotion`);
-  if (m.switchLoss > EPS) worstParts.push(`${eur(m.switchLoss * days)} less from regulars who switch to the deal`);
-  const worstPartsText = worstParts.length > 1 ? `${worstParts.slice(0, -1).join(", ")} and ${worstParts[worstParts.length - 1]}` : worstParts[0] ?? "";
-  const cashText = shareOfCash !== undefined && worst < 0 ? ` That is ${pct(shareOfCash)} of the ${eur(cash!)} you could spend without worry.` : "";
+  const worstParts = partsText(-worst, [
+    { amount: m.setup, key: "lunch.part.setup" },
+    { amount: r2(m.dailyCost * days), key: "lunch.part.staffPromo" },
+    { amount: r2(m.switchLoss * days), key: "lunch.part.switching" },
+  ]);
+  const cashText = shareOfCash !== undefined && worst < 0 ? t("lunch.worst.cash", { p: pct(shareOfCash), cash: eur(cash!) }) : "";
+  let worstPlain: string;
+  if (worst >= 0) worstPlain = t("lunch.worst.plain.none", { share: pc(m.switchShare) });
+  else if (m.switchLoss > EPS)
+    worstPlain =
+      t("lunch.worst.plain.switch", { sw: t("n.regularsDay", { n: m.switchers }), swn: num(m.switchers), share: pc(m.switchShare), total: eur(-worst), parts: worstParts, cash: cashText }) +
+      (allSwitch < worst - 0.5 && m.switchShare < 1 ? t("lunch.worst.plain.all", { all: eur(-allSwitch) }) : "");
+  else worstPlain = t("lunch.worst.plain.noSwitch", { total: eur(-worst), parts: worstParts, cash: cashText });
   const worstCase: Body["worstCase"] = {
-    value: round(worst),
-    maths: `Nobody new: 0 × ${price(m.mOffer)} ${m.switchLoss >= 0 ? "−" : "+"} ${money(Math.abs(m.switchLoss))} switching regulars − ${money(m.dailyCost)} staff and promotion = ${signed(m.netDay(0))} a day; × ${num(days)} weekdays − ${money(m.setup)} setup = ${signed(worst)}`,
-    plain:
-      worst < 0
-        ? `If the deal brings in nobody new, the test costs ${eur(-worst)}${worstPartsText ? `: ${worstPartsText}` : ""}.${cashText} That is the most it can cost.`
-        : "Even if nobody new comes, the test does not lose money: regulars who switch to the deal leave you at least as much as their usual lunch, and that covers the running costs.",
+    value: worst,
+    maths: t("lunch.worst.maths", {
+      m: price(m.mOffer),
+      switchPart: m.switchLoss >= 0 ? t("lunch.scn.minusSwitch", { v: price(m.switchLoss) }) : t("lunch.scn.plusSwitch", { v: price(-m.switchLoss) }),
+      daily: price(m.dailyCost),
+      nd: signedPrice(m.netDay(0)),
+      days: dayN(days),
+      setup: price(m.setup),
+      worst: signedPrice(worst),
+    }),
+    plain: worstPlain,
     ...(shareOfCash !== undefined ? { shareOfCash } : {}),
+    cashOut: m.cashOutTest,
+    ...(m.gap > EPS && m.switchShare < 1 ? { ifAllSwitch: allSwitch } : {}),
   };
 
   // ---- Biggest uncertainty (tornado) ------------------------------------
@@ -308,110 +357,105 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
   const s = m.switchShare;
   const sLo = Math.max(0, Math.min(0.1, s * 0.5)), sHi = Math.min(1, Math.max(0.5, s * 1.5));
   const oc = m.offerCost, ls = m.lunchSpend;
+  const lsLo = r2(ls * 0.85), lsHi = r2(ls * 1.15), ocLo = r2(oc * 0.85), ocHi = r2(oc * 1.15);
   const tornado = [
-    { key: "extra_likely", label: `Extra lunch customers a day (${num(low)} to ${num(high)})`, swing: Math.abs(m.netTest(high) - m.netTest(low)) },
-    { key: "switch_share", label: `Regulars who switch to the deal (${pc(sLo)} to ${pc(sHi)})`, swing: Math.abs(at({ switch_share: sHi }) - at({ switch_share: sLo })) },
-    { key: "lunch_spend", label: `What a lunch customer spends today (${price(ls * 0.85)} to ${price(ls * 1.15)})`, swing: Math.abs(at({ lunch_spend: ls * 1.15 }) - at({ lunch_spend: ls * 0.85 })) },
-    { key: "offer_cost", label: `Ingredients per deal (${price(oc * 0.85)} to ${price(oc * 1.15)})`, swing: Math.abs(at({ offer_cost: oc * 1.15 }) - at({ offer_cost: oc * 0.85 })) },
+    { key: "extra_likely", label: t("lunch.unc.extra.label", { lo: num(low), hi: num(high) }), swing: Math.abs(m.netTest(high) - m.netTest(low)) },
+    { key: "switch_share", label: t("lunch.unc.switch.label", { lo: pc(sLo), hi: pc(sHi) }), swing: Math.abs(at({ switch_share: sHi }) - at({ switch_share: sLo })) },
+    { key: "lunch_spend", label: t("lunch.unc.spend.label", { lo: price(lsLo), hi: price(lsHi) }), swing: Math.abs(at({ lunch_spend: lsHi }) - at({ lunch_spend: lsLo })) },
+    { key: "offer_cost", label: t("lunch.unc.cost.label", { lo: price(ocLo), hi: price(ocHi) }), swing: Math.abs(at({ offer_cost: ocHi }) - at({ offer_cost: ocLo })) },
   ]
-    .map((t) => ({ ...t, swing: round(t.swing) }))
+    .map((x) => ({ ...x, swing: r2(x.swing) }))
     .sort((a, b) => b.swing - a.swing);
   const top = tornado[0]!;
-  const uncertaintyPlain: Record<string, string> = {
-    extra_likely: `Whether you get ${num(low)} or ${num(high)} extra customers a day changes the test result by ${eur(top.swing)} — more than anything else. That is what your test should measure.`,
-    switch_share: `How many of your regulars switch to the deal (between ${pc(sLo)} and ${pc(sHi)} of them) changes the test result by ${eur(top.swing)} — more than anything else. Ask each deal customer whether they usually have lunch here, and count the answers.`,
-    lunch_spend: `What your lunch customers spend today (${price(ls * 0.85)} to ${price(ls * 1.15)}) changes the test result by ${eur(top.swing)} — more than anything else, because it sets what a switching regular costs you. Check last week's lunchtime receipts on the till before you start.`,
-    offer_cost: `What one deal really costs you to make (${price(oc * 0.85)} to ${price(oc * 1.15)}) changes the test result by ${eur(top.swing)} — more than anything else. Cost one deal carefully from your supplier invoices before you start.`,
-  };
-  const biggestUncertainty: Body["biggestUncertainty"] = {
-    key: top.key,
-    label: top.label,
-    swing: top.swing,
-    plain: uncertaintyPlain[top.key] ?? "",
-    ranking: tornado,
-  };
+  let uncertaintyPlain: string;
+  if (top.swing < 0.005) uncertaintyPlain = t("unc.nothing");
+  else if (top.key === "extra_likely" && low === high) uncertaintyPlain = t("lunch.unc.extra.one", { x: num(likely) });
+  else
+    uncertaintyPlain = {
+      extra_likely: () => t("lunch.unc.extra.plain", { lo: num(low), hi: num(high), swing: eur(top.swing) }),
+      switch_share: () => t("lunch.unc.switch.plain", { lo: pc(sLo), hi: pc(sHi), swing: eur(top.swing) }),
+      lunch_spend: () => t("lunch.unc.spend.plain", { lo: price(lsLo), hi: price(lsHi), swing: eur(top.swing) }),
+      offer_cost: () => t("lunch.unc.cost.plain", { lo: price(ocLo), hi: price(ocHi), swing: eur(top.swing) }),
+    }[top.key as "extra_likely"]();
+  const biggestUncertainty: Body["biggestUncertainty"] = { key: top.key, label: top.label, swing: top.swing, plain: uncertaintyPlain, ranking: tornado };
 
   // ---- Sensitivity (the slider) -----------------------------------------
   const maxX = Math.max(Math.ceil(high * 1.5), (be ?? 0) * 2, 10);
   const step = maxX > 60 ? Math.ceil(maxX / 60) : 1;
   const points: SensitivityPoint[] = [];
-  for (let x = 0; x <= maxX; x += step) points.push({ x, netTest: round(m.netTest(x)), netMonth: round(m.netMonth(x)), explanation: explainX(m, x) });
+  const atGuess = m.netTest(likely);
+  for (let x = 0; x <= maxX; x += step) points.push({ x, netTest: m.netTest(x), netMonth: m.netMonth(x), explanation: explainX(m, x), vsGuess: r2(m.netTest(x) - atGuess) });
   const sensitivity: Body["sensitivity"] = {
     key: "extra_likely",
-    label: "Extra lunch customers a day",
+    label: t("lunch.assume.label"),
     unit: "customers/day",
     current: likely,
     breakEvenX: be,
+    ongoingX: beOn,
     points,
+    perStep: {
+      netTest: r2(m.mOffer * days),
+      netMonth: r2(m.mOffer * W),
+      plain: t("lunch.slope", { m: price(m.mOffer), days: dayN(days), test: price(r2(m.mOffer * days)), month: eur(m.mOffer * W) }),
+    },
   };
 
   // ---- Lessons -----------------------------------------------------------
   const expectedTest = m.netTest(likely);
   const lessons: string[] = [];
-  if (!m.reachable || be === null || beOn === null)
-    lessons.push("Each deal leaves nothing after ingredients, so more customers only means more work. A deal has to leave something over before customer numbers matter.");
-  else if (be === 0)
-    lessons.push(`On these numbers the deal pays for itself even if nobody new comes, because regulars who switch to it leave you more than their usual lunch. That rests on what lunch customers spend today (${price(m.lunchSpend)}), so check that number first.`);
-  else if (likely >= be)
-    lessons.push(`Break-even is the number to beat: ${plural(be, "extra lunch customer")} a day pays back the test. Your likely guess of ${num(likely)} beats it, so on your own numbers the test pays for itself — if the guess is right. The test checks the guess.`);
+  if (!m.reachable || be === null || beOn === null) lessons.push(t("lunch.lesson.none"));
+  else if (be === 0) lessons.push(t("lunch.lesson.zero", { spend: price(m.lunchSpend) }));
+  else if (likely >= be) lessons.push(t("lunch.lesson.beats", { be: t("n.extraLunch", { n: be }), likely: num(likely) }));
   else if (likely >= beOn)
-    lessons.push(`You need ${num(be)} extra lunch customers a day to pay back the test (including the ${eur(m.setup)} setup), and ${num(beOn)} a day to break even after that. Your likely guess of ${num(likely)} sits in between: the test itself would end about ${eur(Math.abs(expectedTest))} ${expectedTest < 0 ? "down" : "up"}, but the deal would pay its way if you kept it.`);
-  else
-    lessons.push(`You need ${num(beOn)} extra lunch customers a day just to cover the deal's daily costs (${num(be)} to pay back the test too). Your likely guess is ${num(likely)}, so on your own numbers the deal loses money every day. Changing the price, the contents or the promotion moves the break-even; a hopeful guess does not.`);
+    lessons.push(t("lunch.lesson.between", { be: num(be), setup: eur(m.setup), beOn: num(beOn), likely: num(likely), amt: eur(Math.abs(expectedTest)), dir: expectedTest < 0 ? t("word.down") : t("word.up") }));
+  else lessons.push(t("lunch.lesson.below", { be: num(be), beOn: num(beOn), likely: num(likely) }));
   if (m.gap > EPS)
-    lessons.push(`Each deal leaves ${price(m.mOffer)} after ingredients, while a regular's usual ${price(m.lunchSpend)} lunch leaves ${price(m.mLunchNow)}. So every regular who switches to the deal costs you ${price(m.gap)}: with about ${num(m.switchers)} of them a day, that is ${eur(m.switchLoss)} a day before a single new customer arrives.`);
-  else
-    lessons.push(`Each deal leaves ${price(m.mOffer)} after ingredients — at least as much as a regular's usual lunch (${price(m.mLunchNow)}) — so regulars switching to it cost you nothing. Only the running costs have to be earned back.`);
+    lessons.push(t("lunch.lesson.switch", { price: price(m.offerPrice), net: price(m.netOfferPrice), vat: vatPct, cost: price(m.offerCost), m: price(m.mOffer), spend: price(m.lunchSpend), now: price(m.mLunchNow), gap: price(m.gap), sw: num(m.switchers), loss: price(m.switchLoss) }));
+  else lessons.push(t("lunch.lesson.noSwitch", { price: price(m.offerPrice), net: price(m.netOfferPrice), vat: vatPct, m: price(m.mOffer), now: price(m.mLunchNow) }));
   if (worst < 0)
-    lessons.push(`If nobody new comes, the test costs at most ${eur(-worst)}${shareOfCash !== undefined ? ` — ${pct(shareOfCash)} of the ${eur(cash!)} you could spend without worry` : ""}. Knowing the most you can lose before you start is what makes a test safe to try.`);
-  if (biggestUncertainty.plain) lessons.push(`The number that matters most: ${biggestUncertainty.plain.charAt(0).toLowerCase()}${biggestUncertainty.plain.slice(1)}`);
-  lessons.push("This method works for any decision: write down your numbers, work out the break-even, then run a small test with a spending limit to check the one guess that matters most.");
+    lessons.push(t("lunch.lesson.worst", { worst: eur(-worst), share: pc(m.switchShare), cash: shareOfCash !== undefined ? t("lunch.lesson.worstCash", { p: pct(shareOfCash), cash: eur(cash!) }) : "" }));
+  if (top.swing >= 0.005) lessons.push(t("lesson.mostMatters", { plain: continueSentence(uncertaintyPlain) }));
+  lessons.push(t("lesson.method"));
 
   // ---- Next questions ----------------------------------------------------
-  const guessed = (k: string) => src[k] === "assumption" && inputs.find((i) => i.key === k)?.note !== undefined;
+  const guessed = (k: string) => filledIn(inputs, k);
   const fromGuesses: string[] = [];
-  if (guessed("lunch_spend"))
-    fromGuesses.push(`What does a lunchtime customer really spend? What-IF used your all-day average (${price(m.lunchSpend)}); last week's lunchtime receipts on the till will tell you.`);
-  if (guessed("variable_cost_share"))
-    fromGuesses.push(`What share of your takings goes on ingredients and packaging? What-IF guessed ${pc(m.vcs)}; last month's supplier bills divided by last month's takings gives the real figure.`);
-  if (guessed("switch_share"))
-    fromGuesses.push(`How many regulars would switch to the deal? What-IF used ${pc(m.switchShare)}. Ask five regulars this week whether they would take the deal instead of their usual lunch.`);
-  if (guessed("extra_low") || guessed("extra_high"))
-    fromGuesses.push(`What would a slow week and a great week look like? Give your own cautious and optimistic numbers instead of What-IF's ${num(low)} and ${num(high)} a day.`);
-  if (guessed("setup_cost")) fromGuesses.push("Are there any one-off costs to start, such as a sign, flyers or reprinting the menu? What-IF assumed none.");
-  if (guessed("extra_staff_cost_per_day")) fromGuesses.push("Would a busier lunch need extra staff hours? What-IF assumed no extra staff cost.");
-  if (guessed("marketing_per_week")) fromGuesses.push("Will you pay to promote the deal, for example a boosted Instagram post? What-IF assumed nothing.");
-  if (guessed("test_days")) fromGuesses.push(`How many weekdays could you run the test? What-IF assumed ${num(days)}.`);
+  if (guessed("lunch_spend")) fromGuesses.push(t("lunch.q.lunchSpend", { spend: price(m.lunchSpend) }));
+  if (guessed("vat_rate")) fromGuesses.push(t("lunch.q.vat", { vat: vatPct }));
+  if (guessed("variable_cost_share")) fromGuesses.push(t("lunch.q.vcs", { vcs: pc(m.vcs) }));
+  if (guessed("switch_share")) fromGuesses.push(t("lunch.q.switch", { share: pc(m.switchShare) }));
+  if (guessed("extra_low") || guessed("extra_high")) fromGuesses.push(t("lunch.q.range", { lo: num(low), hi: num(high) }));
+  if (guessed("setup_cost")) fromGuesses.push(t("lunch.q.setup"));
+  if (guessed("extra_staff_hours_per_day")) fromGuesses.push(t("lunch.q.staffHours"));
+  else if (guessed("staff_hourly_cost") && m.staffHours > 0) fromGuesses.push(t("lunch.q.staffRate", { rate: price(m.staffRate) }));
+  if (guessed("marketing_per_week")) fromGuesses.push(t("lunch.q.marketing"));
+  if (guessed("test_days")) fromGuesses.push(t("lunch.q.days", { days: num(days) }));
   const nextQuestions: string[] = [
-    ...(demo ? ["These are demo numbers for a made-up café. Which ones are furthest from yours? Start with your lunch customers and what they spend."] : []),
+    ...(demo ? [t("lunch.q.demo")] : []),
     ...fromGuesses.slice(0, 4),
-    ...(cash === undefined && worst < 0 ? [`How much cash could you put into a test without worry? It tells you whether the ${eur(Math.max(0, -worst))} worst case is comfortable.`] : []),
-    ...(fixed === undefined ? ["What are your monthly fixed costs (rent, wages, energy, insurance)? They put the monthly result in proportion."] : []),
-    `Count lunch customers (11:30–14:30) for 3 weekdays to replace the rough figure of ${num(m.lunchCustomers)} a day with a measured baseline.`,
-    ...(top.key === "extra_likely" ? ["How many extra lunch customers a day will the deal really bring? Only the test can tell, so plan how you will count them."] : []),
+    ...(cash === undefined && worst < 0 ? [t("lunch.q.cash", { worst: eur(Math.max(0, -worst)) })] : []),
+    ...(fixed === undefined ? [t("lunch.q.fixed")] : []),
+    t("lunch.q.baseline", { lc: num(m.lunchCustomers) }),
+    ...(top.key === "extra_likely" ? [t("lunch.q.extra")] : []),
   ].slice(0, 6);
 
   // ---- Warnings ----------------------------------------------------------
   const warnings: string[] = [];
-  if (!m.reachable)
-    warnings.push(`Each deal leaves nothing after ingredients (${price(m.offerPrice)} price, ${price(m.offerCost)} ingredients), so extra customers cannot make it pay.`);
+  if (!m.reachable) warnings.push(t("lunch.warn.none", { price: price(m.offerPrice), net: price(m.netOfferPrice), cost: price(m.offerCost) }));
   else if (be !== null && beOn !== null) {
-    if (likely < beOn)
-      warnings.push(`Your likely guess (${num(likely)} a day) is below the ${num(beOn)} a day the deal needs just to cover its daily costs: on your own numbers it loses money every day.`);
-    else if (likely < be)
-      warnings.push(`Your likely guess (${num(likely)} a day) is below the ${num(be)} a day needed to pay back the test, so the test itself would probably end about ${eur(Math.abs(expectedTest))} down. It pays off only if you keep the deal going afterwards (it pays its way from ${num(beOn)} a day) or more people come than you expect.`);
-    if (high < be) warnings.push(`Even your optimistic guess (${num(high)} a day) does not reach break-even (${num(be)} a day).`);
+    if (beOn > wc && wc > 0) warnings.push(t("lunch.warn.beAboveDay", { beOn: num(beOn), wc: num(wc) }));
+    if (likely < beOn) warnings.push(t("lunch.warn.belowOngoing", { likely: num(likely), beOn: num(beOn) }));
+    else if (likely < be) warnings.push(t("lunch.warn.belowTest", { likely: num(likely), be: num(be), amt: eur(Math.abs(expectedTest)), beOn: num(beOn) }));
+    if (high < be) warnings.push(t("lunch.warn.highBelow", { high: num(high), be: num(be) }));
   }
+  if (likely > wc && wc > 0) warnings.push(t("lunch.warn.likelyAboveDay", { likely: num(likely), wc: num(wc) }));
+  else if (m.lunchCustomers > 0 && likely > m.lunchCustomers) warnings.push(t("lunch.warn.likelyDoubles", { likely: num(likely), lc: num(m.lunchCustomers) }));
   if (worst < 0 && cash !== undefined && cash > 0) {
-    if (-worst > cash)
-      warnings.push(`If nobody new comes, the test could cost ${eur(-worst)} — more than the ${eur(cash)} you said you could spare. Consider a shorter test or a cheaper setup.`);
-    else if (-worst > cash * 0.5)
-      warnings.push(`If nobody new comes, the test could cost ${eur(-worst)} — more than half of the ${eur(cash)} you can spare. Consider a shorter test or a cheaper setup.`);
+    if (-worst > cash) warnings.push(t("lunch.warn.cashOver", { worst: eur(-worst), cash: eur(cash) }));
+    else if (-worst > cash * 0.5) warnings.push(t("lunch.warn.cashHalf", { worst: eur(-worst), cash: eur(cash) }));
   }
-  if (guessed("lunch_spend") && m.gap < -EPS)
-    warnings.push(`What-IF used your all-day average spend (${price(m.lunchSpend)}) for lunch, which is below the deal price (${price(m.offerPrice)}), so regulars switching to the deal looks like a gain. Lunch customers often spend more than the daily average; check your till, because this changes the result a lot.`);
-  if (m.gap > EPS)
-    warnings.push(`Each deal earns ${price(m.gap)} less than a regular's usual lunch (${price(m.mOffer)} against ${price(m.mLunchNow)}), so every regular who switches costs you money. A deal that looks different from what regulars already buy keeps switching down.`);
+  if (guessed("lunch_spend") && m.gap < -EPS) warnings.push(t("lunch.warn.avgSpend", { spend: price(m.lunchSpend), now: price(m.mLunchNow), m: price(m.mOffer) }));
+  if (m.gap > EPS) warnings.push(t("lunch.warn.gap", { gap: price(m.gap), m: price(m.mOffer), now: price(m.mLunchNow) }));
 
   return { current, scenarios, breakEven, worstCase, biggestUncertainty, sensitivity, lessons, nextQuestions, warnings };
 }
@@ -419,108 +463,126 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
 /** "Why this number": the calculation for one slider position, in words. */
 export function explainX(m: LunchModel, x: number): string {
   const nd = m.netDay(x), nt = m.netTest(x);
-  const costs = m.needDay;
-  const costText = costs >= 0 ? `minus ${money(costs)} for ${costWords(m)}` : `plus ${money(-costs)} from regulars who switch, after staff and promotion`;
-  let s = `With ${plural(x, "extra customer")} a day: ${num(x)} × ${price(m.mOffer)} = ${money(x * m.mOffer)} from new customers, ${costText} = ${signed(nd)} a day. Over ${num(m.days)} weekdays${m.setup > 0 ? `, after the ${money(m.setup)} setup` : ""}: ${signed(nt)}.`;
+  let s = t("lunch.x.base", {
+    who: t("n.extraCustomersDay", { n: x }),
+    x: num(x),
+    m: price(m.mOffer),
+    need: price(m.needDay),
+    nd: signedPrice(nd),
+    days: t("n.weekdays", { n: m.days }),
+    dn: num(m.days),
+    setup: price(m.setup),
+    nt: signedPrice(nt),
+  });
   const be = m.beTest, beOn = m.beOngoing;
   if (be !== null && beOn !== null) {
-    if (x >= be) s += ` That is at or above the ${num(be)} a day needed, so the test pays for itself.`;
-    else if (x >= beOn) s += ` Each day pays its way (${num(beOn)} a day is enough for that), but the setup is not paid back within the test (that needs ${num(be)}).`;
-    else s += ` That is below the ${num(be)} a day needed, so the test loses money.`;
-  } else s += " Each deal leaves nothing after ingredients, so more customers cannot help.";
+    if (x >= be) s += t("lunch.x.pays", { be: num(be) });
+    else if (x >= beOn) s += t("lunch.x.daily", { beOn: num(beOn), be: num(be) });
+    else s += t("lunch.x.loses", { beOn: num(beOn), be: num(be) });
+  } else s += t("lunch.x.none");
   return s;
 }
 
 /**
  * One "why this changed" sentence for a single input moved from `b` to `a` (all other inputs as in `b`).
  * Explains the mechanism first, then what it did to break-even and the expected test result.
+ * Any sum it writes out uses the same cent amounts the model uses, so it checks out by hand.
  */
 export function explainLunchChange(key: string, b: Values, a: Values, label = key.replace(/_/g, " ")): { text: string; mentionsWorst: boolean } {
   const mb = lunchModel(b), ma = lunchModel(a);
   const hb = lunchHeadline(b), ha = lunchHeadline(a);
-  const fv = (vv: Values) => n(vv, key);
-  const from = fv(b), to = fv(a);
+  const from = n(b, key), to = n(a, key);
   const up = to > from;
   const effect = (): string => {
     const parts: string[] = [];
     if (hb.breakEven !== null && ha.breakEven !== null) {
       const d = ha.breakEven - hb.breakEven;
-      if (d !== 0) parts.push(`you need ${num(Math.abs(d))} ${d < 0 ? "fewer" : "more"} extra customer${Math.abs(d) === 1 ? "" : "s"} a day to break even (${num(hb.breakEven)} → ${num(ha.breakEven)})`);
-      else parts.push(`break-even stays at ${num(hb.breakEven)} a day`);
-    } else if (ha.breakEven === null) parts.push("break-even is now out of reach, because each deal leaves nothing after ingredients");
+      if (d !== 0) parts.push(t(d < 0 ? "lunch.chg.beFewer" : "lunch.chg.beMore", { n: Math.abs(d), from: num(hb.breakEven), to: num(ha.breakEven) }));
+      else parts.push(t("lunch.chg.beSame", { be: num(hb.breakEven) }));
+    } else if (ha.breakEven === null) parts.push(t("lunch.chg.beGone"));
     if (Math.abs(ha.netTestExpected - hb.netTestExpected) >= 0.005)
-      parts.push(`the expected test result goes from ${seur(hb.netTestExpected)} to ${seur(ha.netTestExpected)}`);
-    return parts.join(", and ");
+      parts.push(t("chg.expected", { from: seur(hb.netTestExpected), to: seur(ha.netTestExpected) }));
+    return parts.join(t("chg.and"));
   };
-  const so = (cause: string) => `${cause}, so ${effect()}.`;
+  const so = (cause: string) => t("chg.so", { cause, effect: effect() });
+  const days = (x: number) => t("n.weekdays", { n: x });
 
   switch (key) {
     case "offer_price":
       return {
-        text: so(`You ${up ? "raised" : "lowered"} the deal price from ${price(from)} to ${price(to)}. Each deal now earns ${price(Math.abs(to - from))} ${up ? "more" : "less"} (${price(mb.mOffer)} → ${price(ma.mOffer)})` +
-          (Math.abs(ma.switchLoss - mb.switchLoss) > 0.005 ? ` and regulars who switch cost you ${money(mb.switchLoss)} → ${money(ma.switchLoss)} a day` : "")) +
-          " This assumes as many new customers come at the new price; the test will show whether they do.",
+        text:
+          so(
+            t(up ? "lunch.chg.offerPrice.up" : "lunch.chg.offerPrice.down", { from: price(from), to: price(to), diff: price(Math.abs(r2(ma.mOffer - mb.mOffer))), mb: price(mb.mOffer), ma: price(ma.mOffer) }) +
+              (Math.abs(ma.switchLoss - mb.switchLoss) > 0.005 ? t("lunch.chg.offerPrice.switch", { lb: price(mb.switchLoss), la: price(ma.switchLoss) }) : ""),
+          ) + t("lunch.chg.offerPrice.tail"),
         mentionsWorst: false,
       };
     case "offer_cost":
-      return { text: so(`Ingredients per deal went ${up ? "up" : "down"} from ${price(from)} to ${price(to)}, so each deal leaves ${price(Math.abs(to - from))} ${up ? "less" : "more"} (${price(mb.mOffer)} → ${price(ma.mOffer)})`), mentionsWorst: false };
+      return { text: so(t(up ? "lunch.chg.offerCost.up" : "lunch.chg.offerCost.down", { from: price(from), to: price(to), diff: price(Math.abs(r2(ma.mOffer - mb.mOffer))), mb: price(mb.mOffer), ma: price(ma.mOffer) })), mentionsWorst: false };
     case "extra_likely": {
-      const d = to - from;
+      const d = Math.abs(to - from);
       return {
-        text: `You changed your likely guess from ${num(from)} to ${num(to)} extra customers a day. Each one leaves ${price(mb.mOffer)}, so the expected test result moves by ${num(Math.abs(d))} × ${price(mb.mOffer)} × ${num(mb.days)} days = ${eur(Math.abs(d) * mb.mOffer * mb.days)} (${seur(hb.netTestExpected)} → ${seur(ha.netTestExpected)}). Break-even stays at ${hb.breakEvenText}: it depends on prices and costs, not on your guess.`,
+        text: t("lunch.chg.likely", { from: num(from), to: num(to), m: price(mb.mOffer), d: num(d), days: num(mb.days), amt: price(r2(d * mb.mOffer * mb.days)), eb: signedPrice(hb.netTestExpected), ea: signedPrice(ha.netTestExpected), be: hb.breakEvenText }),
         mentionsWorst: false,
       };
     }
     case "extra_low":
-    case "extra_high": {
-      const which = key === "extra_low" ? "cautious" : "optimistic";
+    case "extra_high":
       return {
-        text: `Your ${which} guess changed from ${num(from)} to ${num(to)} extra customers a day (${seur(mb.netTest(from))} → ${seur(ma.netTest(to))} over the test). That only moves the ${which} scenario; break-even and the expected result stay the same.`,
+        text: t(key === "extra_low" ? "lunch.chg.low" : "lunch.chg.high", { from: num(from), to: num(to), rb: seur(mb.netTest(from)), ra: seur(ma.netTest(to)) }),
         mentionsWorst: false,
       };
-    }
     case "switch_share":
-      return { text: so(`You changed how many regulars switch from ${pc(from)} to ${pc(to)} (${num(mb.switchers)} → ${num(ma.switchers)} a day). Each one ${mb.gap >= 0 ? `costs you ${price(mb.gap)}` : `earns you ${price(-mb.gap)} more`}, so switching now ${ma.switchLoss >= 0 ? "costs" : "earns"} ${money(Math.abs(ma.switchLoss))} a day instead of ${money(Math.abs(mb.switchLoss))}`), mentionsWorst: false };
+      return {
+        text: so(t(mb.gap >= 0 ? "lunch.chg.switch.cost" : "lunch.chg.switch.gain", { from: pc(from), to: pc(to), sb: num(mb.switchers), sa: num(ma.switchers), gap: price(Math.abs(mb.gap)), lb: price(Math.abs(mb.switchLoss)), la: price(Math.abs(ma.switchLoss)) })),
+        mentionsWorst: false,
+      };
     case "lunch_customers":
-      return { text: so(`Lunch customers went from ${num(from)} to ${num(to)} a day, so about ${num(ma.switchers)} instead of ${num(mb.switchers)} would switch to the deal, ${mb.gap >= 0 ? `each costing you ${price(mb.gap)}` : `each leaving you ${price(-mb.gap)} more`}`), mentionsWorst: false };
+      return { text: so(t(mb.gap >= 0 ? "lunch.chg.lunchCustomers.cost" : "lunch.chg.lunchCustomers.gain", { from: num(from), to: num(to), sa: num(ma.switchers), sb: num(mb.switchers), gap: price(Math.abs(mb.gap)) })), mentionsWorst: false };
     case "lunch_spend":
-      return { text: so(`What a lunch customer spends went from ${price(from)} to ${price(to)}, so each one now leaves ${price(ma.mLunchNow)} instead of ${price(mb.mLunchNow)}, and a regular who switches to the ${price(mb.offerPrice)} deal ${ma.gap >= 0 ? `costs you ${price(ma.gap)}` : `leaves you ${price(-ma.gap)} more`} instead of ${price(mb.gap)}`), mentionsWorst: false };
+      return { text: so(t(ma.gap >= 0 ? "lunch.chg.lunchSpend.cost" : "lunch.chg.lunchSpend.gain", { from: price(from), to: price(to), ma: price(ma.mLunchNow), mb: price(mb.mLunchNow), price: price(mb.offerPrice), ga: price(Math.abs(ma.gap)), gb: price(mb.gap) })), mentionsWorst: false };
     case "variable_cost_share": {
-      const lb = n(b, "weekday_customers") * n(b, "avg_spend") * W * (1 - mb.vcs), la = n(a, "weekday_customers") * n(a, "avg_spend") * W * (1 - ma.vcs);
-      return { text: so(`Ingredients went from ${pc(from)} to ${pc(to)} of the price. Today's lunches leave ${price(mb.mLunchNow)} → ${price(ma.mLunchNow)}, which changes what a switching regular costs, and your weekday takings after ingredients go from ${eur(lb)} to ${eur(la)} a month`), mentionsWorst: false };
+      const W2 = (vv: Values, mm: LunchModel) => { const tk = r2(n(vv, "weekday_customers") * n(vv, "avg_spend") * W); return r2(tk / mm.vatDiv - tk * mm.vcs); };
+      return { text: so(t("lunch.chg.vcs", { from: pc(from), to: pc(to), mb: price(mb.mLunchNow), ma: price(ma.mLunchNow), lb: eur(W2(b, mb)), la: eur(W2(a, ma)) })), mentionsWorst: false };
     }
+    case "vat_rate":
+      return { text: so(t("lunch.chg.vat", { from: pc(from), to: pc(to), mb: price(mb.mOffer), ma: price(ma.mOffer), lb: price(mb.mLunchNow), la: price(ma.mLunchNow) })), mentionsWorst: false };
     case "setup_cost":
-      return { text: so(`One-off setup costs went from ${eur(from)} to ${eur(to)}. They have to be paid back during the test, so they move the test break-even but not the daily one (${mb.beOngoing === null ? "out of reach" : `${num(mb.beOngoing)} a day`}). If nobody new comes, the test costs ${eur(Math.max(0, -hb.worstCase))} → ${eur(Math.max(0, -ha.worstCase))}`), mentionsWorst: true };
+      return {
+        text: so(t("lunch.chg.setup", { from: eur(from), to: eur(to), beOn: mb.beOngoing === null ? t("lunch.outOfReach") : t("unit.perDay", { v: num(mb.beOngoing) }), wb: eur(Math.max(0, -hb.worstCase)), wa: eur(Math.max(0, -ha.worstCase)) })),
+        mentionsWorst: true,
+      };
+    case "extra_staff_hours_per_day":
     case "extra_staff_cost_per_day":
-      return { text: so(`Extra staff now costs ${price(to)} a day instead of ${price(from)}, so the deal costs ${price(ma.dailyCost)} a day to run instead of ${price(mb.dailyCost)}`), mentionsWorst: false };
+      return { text: so(t("lunch.chg.staffHours", { from: t("unit.hoursPerDay", { n: mb.staffHours }), to: t("unit.hoursPerDay", { n: ma.staffHours }), db: price(mb.dailyCost), da: price(ma.dailyCost) })), mentionsWorst: false };
+    case "staff_hourly_cost":
+      return { text: so(t("lunch.chg.staffRate", { from: price(from), to: price(to), db: price(mb.dailyCost), da: price(ma.dailyCost) })), mentionsWorst: false };
     case "marketing_per_week":
-      return { text: so(`Promotion now costs ${price(to)} a week instead of ${price(from)} (${price(ma.marketing / 5)} instead of ${price(mb.marketing / 5)} a weekday), so the deal costs ${price(ma.dailyCost)} a day to run instead of ${price(mb.dailyCost)}`), mentionsWorst: false };
+      return { text: so(t("lunch.chg.marketing", { from: price(from), to: price(to), pb: price(mb.marketingDay), pa: price(ma.marketingDay), db: price(mb.dailyCost), da: price(ma.dailyCost) })), mentionsWorst: false };
     case "test_days":
       return {
-        text: `The test now runs ${num(to)} weekdays instead of ${num(from)}. The setup is spread over ${to > from ? "more" : "fewer"} days, so the test break-even goes ${hb.breakEvenText} → ${ha.breakEvenText}; but if nobody new comes, the test costs ${eur(Math.max(0, -hb.worstCase))} → ${eur(Math.max(0, -ha.worstCase))}, because staff, promotion and switching regulars cost money every day it runs. The expected test result goes from ${seur(hb.netTestExpected)} to ${seur(ha.netTestExpected)}.`,
+        text: t(to > from ? "lunch.chg.days.more" : "lunch.chg.days.fewer", { from: days(from), to: days(to), bb: hb.breakEvenText, ba: ha.breakEvenText, wb: eur(Math.max(0, -hb.worstCase)), wa: eur(Math.max(0, -ha.worstCase)), eb: seur(hb.netTestExpected), ea: seur(ha.netTestExpected) }),
         mentionsWorst: true,
       };
     case "cash_buffer": {
       const w = Math.max(0, -ha.worstCase);
-      return {
-        text: `You said you could spare ${eur(to)} instead of ${eur(from)}, so the worst case (${eur(w)}) is now ${from > 0 ? `${pct(w / from)} → ` : ""}${to > 0 ? pct(w / to) : "all"} of it. The deal's own numbers do not change.`,
-        mentionsWorst: true,
-      };
+      const share = `${from > 0 ? `${pct(w / from)} → ` : ""}${to > 0 ? pct(w / to) : t("lunch.chg.cash.all")}`;
+      return { text: t("lunch.chg.cash", { from: eur(from), to: eur(to), w: eur(w), share }), mentionsWorst: true };
     }
     case "monthly_fixed_costs": {
       const nm = ha.netMonthExpected;
-      return {
-        text: `Monthly fixed costs went from ${eur(from)} to ${eur(to)}. That does not change what the deal earns (expected ${seur(nm)} a month); it only changes how big that is next to your costs (${from > 0 ? pct(nm / from, 1) : "—"} → ${to > 0 ? pct(nm / to, 1) : "—"}).`,
-        mentionsWorst: false,
-      };
+      return { text: t("lunch.chg.fixed", { from: eur(from), to: eur(to), nm: seur(nm), pb: from > 0 ? pct(nm / from, 1) : "—", pa: to > 0 ? pct(nm / to, 1) : "—" }), mentionsWorst: false };
     }
     case "weekday_customers":
     case "avg_spend": {
-      const tb = n(b, "weekday_customers") * n(b, "avg_spend") * W, ta = n(a, "weekday_customers") * n(a, "avg_spend") * W;
-      const what = key === "weekday_customers" ? `Customers on a weekday went from ${num(from)} to ${num(to)}` : `Average spend went from ${price(from)} to ${price(to)}`;
-      return { text: `${what}, so your weekday takings today go from ${eur(tb)} to ${eur(ta)} a month. On its own this does not change the deal's result: that depends on your lunch numbers, not the whole day.`, mentionsWorst: false };
+      const tb = r2(n(b, "weekday_customers") * n(b, "avg_spend") * W), ta = r2(n(a, "weekday_customers") * n(a, "avg_spend") * W);
+      const what = key === "weekday_customers" ? t("lunch.chg.wc", { from: num(from), to: num(to) }) : t("lunch.chg.avg", { from: price(from), to: price(to) });
+      return { text: t("lunch.chg.dayTail", { what, tb: eur(tb), ta: eur(ta) }), mentionsWorst: false };
     }
+    case "kiez":
+      return { text: t("chg.kiez", { from: String(b[key] ?? "—"), to: String(a[key] ?? "—") }), mentionsWorst: false };
     default:
-      return { text: so(`${label} changed from ${typeof b[key] === "string" ? b[key] : num(from)} to ${typeof a[key] === "string" ? a[key] : num(to)}`), mentionsWorst: false };
+      return { text: so(t("chg.default", { label, from: typeof b[key] === "string" ? String(b[key]) : num(from), to: typeof a[key] === "string" ? String(a[key]) : num(to) })), mentionsWorst: false };
   }
 }
+

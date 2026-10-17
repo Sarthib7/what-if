@@ -1,0 +1,48 @@
+What-IF pitch screenshots: capture notes (2026-10-17)
+
+Everything in the list was captured; nothing is missing.
+Setup: Playwright Chromium 1.56.1, viewport 1440x900 at DPR 2 (phones: 390x844 at DPR 3, mobile and touch),
+light colour scheme, reduced motion, en-GB locale, Europe/Berlin time zone. Served with
+node scripts/dev.mjs --no-build --port 3340 after npm run build. No product code was changed.
+The capture script is outside the repo, in the session scratchpad (capture/capture.mjs).
+
+How the crops were made
+- Each crop is the element's own box plus 16 px of padding (20 px for the two break-even blocks).
+- While a crop is taken, the sticky header and step bar are hidden. Neighbouring elements wholly
+  outside the crop are hidden too (visibility only, so nothing moves), so no other card shows at
+  the edges.
+- slider-00 ... slider-23: 24 positions (0 to 23 extra lunch customers a day). The owner's guess is
+  slider-08. The clip box is the same in every frame (1760x1934). The readout and the "Why this
+  changed" box were held at their tallest height, so the card is the same size in every frame.
+
+Choices worth knowing
+- report-chips-en: the report has no separate legend element. The "What the labels mean" link in
+  step 2 points to the "Who did what" card (report-whodid-en). So this crop shows the step 2 line
+  "Each number wears a label…" and the labelled groups below it. The landing hero (landing-hero-en)
+  also has the four-chip legend: Your number / A guess / Calculated / Imagined.
+- report-short-en and both break-even shots were captured after answering the step 4 guess
+  (8 for the lunch deal, 5 for the price demo). Before a guess, the break-even tile reads
+  "? guess first" (see report-predict-en).
+- try-question-de and try-phone-de: "ca. 40" was typed, the German for "about 40". Both read as 40 a day.
+- connect-en and connect-beta-en: the server was restarted on 3340 with
+  WHATIF_BETA_CODES=BERLIN-DEMO, a local env setting only, so the code shows "Code accepted" and the
+  link includes ?code=BERLIN-DEMO. The link reads http://localhost:3340/api/mcp?code=BERLIN-DEMO,
+  because no public domain is configured. Retake this on the live https site, or cover the host in
+  the edit, before it goes out.
+- report-top-de (loaded with ?lang=de) and report-lang-switch-de (switched in the page) show the same view.
+- AI set: report-top-ai-en matches report-top-en above the fold, because it has the same demo question
+  and ribbon. report-rehearsal-ai-cards-en has the same 6 personas as the demo. The AI difference
+  shows in the who-did-what card, caveat, grid, funnel, feed, interview and questions shots.
+  report-rehearsal-ai-questions-en is tall (1760x3764) because it holds 23 questions for the owner.
+  The three rows between "Check these with real customers" and "In their own words" were folded
+  to fit it.
+
+Things noticed in the product itself (left as they are)
+- Landing at 1440 px wide: the header's "Try with your numbers" button wraps onto a second line.
+- Landing method, step 4 mini chart: the label "break-even: 11 a day" is cut to "break-even: 11 a".
+- Step 6 "Which guess matters most": the €642 value label sticks out past the inner box border.
+- Rule-based demo interview (report-interview-en): answers repeat in pairs (Chiara = Paweł,
+  Noor = Greta, Murat = Jan). The AI interview (report-rehearsal-ai-interview-en) has six different
+  answers, so it reads better in a pitch.
+- "In their own words" panel: the h4 headings sit flush against the panel's left edge.
+- /connect: the see-through sticky header shows faint ghost text from the content scrolled under it.

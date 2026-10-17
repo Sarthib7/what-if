@@ -1,11 +1,14 @@
 /**
  * Small, browser-safe HTML helpers for the report: escaping, source chips,
  * unit formatting (the engine's own formatters, so numbers read the same
- * everywhere) and a few icons.
+ * everywhere, in the report's language), point-of-use word hints and icons.
  */
 import { money, num, pct, price, signed } from "../engine/format.ts";
-import { SOURCE_LABEL } from "../engine/types.ts";
 import type { Source, Unit } from "../engine/types.ts";
+import { sourceLabel as engineSourceLabel } from "../engine/messages.ts";
+import { getLang, LOCALE } from "../i18n/index.ts";
+import { t } from "./messages.ts";
+import type { MsgKey } from "./messages.ts";
 
 const ESC: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
@@ -21,14 +24,16 @@ export function idPart(v: unknown): string {
 
 export const SOURCES: Source[] = ["owner", "assumption", "calculation", "imagined", "demo"];
 
-/** One line per source: the AI-literacy lesson "what came from you, what is maths, what is a guess, what is imagined". */
-export const SOURCE_LESSON: Record<Source, string> = {
-  owner: "A fact you told What-IF about your café.",
-  assumption: "Nobody knows this yet. It is a guess, and the small test will check it.",
-  calculation: "Worked out from the numbers above with plain arithmetic. Open “Show the maths” to check it.",
-  imagined: "Made up by the rehearsal's imagined customers. Good for finding questions, never evidence.",
-  demo: "Sample numbers for a made-up café, so you can see how the method works.",
-};
+/** The chip's words in the report language, the engine's own labels ("Your number", "Eine Schätzung", …), so chips read the same everywhere. */
+export function sourceLabel(source: Source): string {
+  const own = t(`src.${source}` as MsgKey);
+  try {
+    const label = engineSourceLabel(source, getLang());
+    return label && !label.startsWith("source.") ? label : own;
+  } catch {
+    return own;
+  }
+}
 
 const ICON_PATH: Record<Source, string> = {
   owner: '<circle cx="8" cy="5.2" r="2.7" fill="currentColor"/><path d="M2.8 14.2c0-3 2.4-4.8 5.2-4.8s5.2 1.8 5.2 4.8z" fill="currentColor"/>',
@@ -45,44 +50,13 @@ export function sourceIcon(source: Source): string {
 
 /** The coloured "where this number came from" chip. Colour + icon + words, so it never relies on colour alone. */
 export function chip(source: Source): string {
-  return `<span class="wi-chip wi-chip--${source}" data-source="${source}"><span class="wi-sr">Source: </span>${sourceIcon(source)}${esc(SOURCE_LABEL[source])}</span>`;
+  return `<span class="wi-chip wi-chip--${source}" data-source="${source}"><span class="wi-sr">${esc(t("chip.sr"))}</span>${sourceIcon(source)}${esc(sourceLabel(source))}</span>`;
 }
 
-/** A share as a percentage, with one decimal only when it matters (6.9%, 30%). */
-export function sharePct(v: number): string {
-  const p = Math.abs(v) * 100;
-  return pct(Math.abs(v), Math.abs(p - Math.round(p)) > 0.05 ? 1 : 0);
-}
-
-/** Formats a value in its unit, the way the engine writes it. */
-export function fmt(v: number | string, unit: Unit): string {
-  if (typeof v === "string") return v;
-  switch (unit) {
-    case "EUR":
-      return money(v);
-    case "EUR/day":
-      return `${money(v)} a day`;
-    case "EUR/week":
-      return `${money(v)} a week`;
-    case "EUR/month":
-      return `${money(v)} a month`;
-    case "customers/day":
-      return `${num(v)} a day`;
-    case "units/week":
-      return `${num(v)} a week`;
-    case "share":
-      return `${v < 0 ? "−" : ""}${sharePct(v)}`;
-    case "days":
-      return `${num(v)} ${Math.abs(v) === 1 ? "day" : "days"}`;
-    default:
-      return String(v);
-  }
-}
-
-/** Input values: money per item keeps its cents. */
-export function fmtInput(v: number | string, unit: Unit): string {
-  if (typeof v === "number" && unit === "EUR") return Math.abs(v) < 100 ? price(v) : money(v);
-  return fmt(v, unit);
+/** The chips an input wears, as a list of sources (demo guesses keep both labels). */
+export function inputSources(source: Source, kind: "fact" | "assumption" | "choice"): Source[] {
+  if (source === "demo" && kind === "assumption") return ["demo", "assumption"];
+  return [source];
 }
 
 /**
@@ -90,8 +64,7 @@ export function fmtInput(v: number | string, unit: Unit): string {
  * so the demo still teaches "this one is a guess".
  */
 export function inputChips(source: Source, kind: "fact" | "assumption" | "choice"): string {
-  if (source === "demo" && kind === "assumption") return `${chip("demo")} ${chip("assumption")}`;
-  return chip(source);
+  return inputSources(source, kind).map(chip).join(" ");
 }
 
 /**
@@ -103,12 +76,67 @@ export function figureChips(source: Source, maths: string | undefined): string {
   return chip(source);
 }
 
+/** A share as a percentage, with one decimal only when it matters (6.9%, 30%). */
+export function sharePct(v: number): string {
+  const p = Math.abs(v) * 100;
+  return pct(Math.abs(v), Math.abs(p - Math.round(p)) > 0.05 ? 1 : 0);
+}
+
+/** "{v} a day" in the report language. */
+export function perUnit(v: string, unit: "day" | "week" | "month"): string {
+  return t(unit === "day" ? "u.perDay" : unit === "week" ? "u.perWeek" : "u.perMonth", { v });
+}
+
+export function daysText(n: number): string {
+  return t("u.days", { n: num(n), count: n });
+}
+
+/** Formats a value in its unit, the way the engine writes it. */
+export function fmt(v: number | string, unit: Unit): string {
+  if (typeof v === "string") return v;
+  switch (unit) {
+    case "EUR":
+      return money(v);
+    case "EUR/day":
+      return perUnit(money(v), "day");
+    case "EUR/week":
+      return perUnit(money(v), "week");
+    case "EUR/month":
+      return perUnit(money(v), "month");
+    case "customers/day":
+      return perUnit(num(v), "day");
+    case "units/week":
+      return perUnit(num(v), "week");
+    case "share":
+      return `${v < 0 ? "−" : ""}${sharePct(v)}`;
+    case "days":
+      return daysText(v);
+    case "hours/day":
+      return t("u.hoursPerDay", { n: num(v), count: v });
+    default:
+      return String(v);
+  }
+}
+
+/** Input values: money per item keeps its cents. */
+export function fmtInput(v: number | string, unit: Unit): string {
+  if (typeof v === "number" && unit === "EUR") return Math.abs(v) < 100 ? price(v) : money(v);
+  return fmt(v, unit);
+}
+
+/** A money result over the test, in whole euros: "+€385", "−€56". Cents on a guess suggest certainty it does not have. */
+export function wholeSigned(v: number): string {
+  const r = Math.round(v);
+  if (r === 0) return money(0, false);
+  return r > 0 ? `+${money(r, false)}` : money(r, false);
+}
+
 /** A signed change: "+€412", "−€120", "+3%", "+2 a day". */
 export function fmtSigned(v: number, unit: Unit): string {
   if (unit === "share") return `${v > 0 ? "+" : v < 0 ? "−" : ""}${sharePct(v)}`;
   if (unit === "EUR" || unit === "EUR/day" || unit === "EUR/week" || unit === "EUR/month") {
     const base = signed(v);
-    return unit === "EUR" ? base : `${base}${unit === "EUR/day" ? " a day" : unit === "EUR/week" ? " a week" : " a month"}`;
+    return unit === "EUR" ? base : perUnit(base, unit === "EUR/day" ? "day" : unit === "EUR/week" ? "week" : "month");
   }
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${fmt(Math.abs(v), unit)}`;
 }
@@ -117,17 +145,17 @@ export function fmtSigned(v: number, unit: Unit): string {
 export function bigValue(v: number, unit: Unit): { big: string; small: string } {
   switch (unit) {
     case "customers/day":
-      return { big: num(v), small: "a day" };
+      return { big: num(v), small: t("u.aDay") };
     case "units/week":
-      return { big: num(v), small: "a week" };
+      return { big: num(v), small: t("u.aWeek") };
     case "share":
       return { big: `${v > 0 ? "+" : v < 0 ? "−" : ""}${sharePct(v)}`, small: "" };
     case "days":
-      return { big: num(v), small: Math.abs(v) === 1 ? "day" : "days" };
+      return { big: num(v), small: t("u.dayWord", { count: v }) };
     case "EUR/day":
     case "EUR/week":
     case "EUR/month":
-      return { big: money(v), small: unit === "EUR/day" ? "a day" : unit === "EUR/week" ? "a week" : "a month" };
+      return { big: money(v), small: t(unit === "EUR/day" ? "u.aDay" : unit === "EUR/week" ? "u.aWeek" : "u.aMonth") };
     case "EUR":
       return { big: money(v), small: "" };
     default:
@@ -137,19 +165,36 @@ export function bigValue(v: number, unit: Unit): { big: string; small: string } 
 
 /** "pos" / "neg" / "zero", for colouring money results (always paired with a sign and words). */
 export function tone(v: number): "pos" | "neg" | "zero" {
-  return v > 0.004 ? "pos" : v < -0.004 ? "neg" : "zero";
+  return v > 0.5 ? "pos" : v < -0.5 ? "neg" : "zero";
 }
 
 /** Plain words for a net result, so colour is never the only signal. */
 export function netWords(v: number): string {
-  const t = tone(v);
-  return t === "pos" ? "makes money" : t === "neg" ? "loses money" : "breaks even";
+  const s = tone(v);
+  return t(s === "pos" ? "net.pos" : s === "neg" ? "net.neg" : "net.zero");
 }
 
 /** The "Show the maths" disclosure. Works without JavaScript; the summary text flips when open. */
-export function mathsToggle(maths: string | undefined, label = "Show the maths"): string {
+export function mathsToggle(maths: string | undefined, label = t("maths.show")): string {
   if (!maths || !maths.trim()) return "";
-  return `<details class="wi-maths"><summary><span class="wi-when-closed">${esc(label)}</span><span class="wi-when-open">Hide the maths</span></summary><pre class="wi-maths-body">${esc(maths.trim())}</pre></details>`;
+  return `<details class="wi-maths"><summary><span class="wi-when-closed">${esc(label)}</span><span class="wi-when-open">${esc(t("maths.hide"))}</span></summary><pre class="wi-maths-body">${esc(maths.trim())}</pre></details>`;
+}
+
+export type TermId = "breakEven" | "paysItsWay" | "payBack" | "worstCase" | "margin" | "assumption" | "scenario" | "simulation" | "aiModel";
+
+export const TERMS: TermId[] = ["breakEven", "paysItsWay", "payBack", "worstCase", "scenario", "assumption", "margin", "simulation", "aiModel"];
+
+export function termWord(id: TermId): string {
+  return t(`term.${id}` as MsgKey);
+}
+
+export function termDef(id: TermId): string {
+  return t(`term.${id}.def` as MsgKey);
+}
+
+/** A point-of-use definition: "What does “break-even” mean?", open to read. No JavaScript needed. */
+export function hint(id: TermId): string {
+  return `<details class="wi-hint"><summary>${esc(t("hint.q", { term: termWord(id) }))}</summary><p>${esc(termDef(id))}</p></details>`;
 }
 
 export function list(items: string[] | undefined, cls = "wi-list"): string {
@@ -167,6 +212,37 @@ export function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? name;
 }
 
+/** A date as "1 January 2026" in the report language; the raw text if it is not a date. */
+export function dateText(iso: string): string {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return iso;
+  try {
+    return new Intl.DateTimeFormat(LOCALE[getLang()], { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(d);
+  } catch {
+    return iso;
+  }
+}
+
+/** True for http(s) links only, the one kind of external URL the report may carry (public fact sources). */
+export function safeHttpUrl(u: unknown): string | undefined {
+  if (typeof u !== "string") return undefined;
+  const s = u.trim();
+  if (!/^https?:\/\/[^\s"'<>]+$/i.test(s)) return undefined;
+  return s;
+}
+
+/** Lower-cases the first letter where the language allows it ("Extra lunch customers" → "extra lunch customers"). */
+export function lowerFirst(s: string): string {
+  const lang = getLang();
+  const first = s.split(/\s+/)[0] ?? "";
+  if (lang === "de") {
+    // German nouns keep their capital; adjectives and "mehr/extra/weitere" do not.
+    if (!/^(zusätzlich\w*|weitere\w*|mehr|extra|neue\w*|wenige\w*|mehr\w*)$/i.test(first)) return s;
+  }
+  if (first.length > 1 && first === first.toUpperCase()) return s; // an acronym
+  return s.charAt(0).toLocaleLowerCase() + s.slice(1);
+}
+
 /** Inline icons used across the report (decorative; always next to words). */
 export const ICONS = {
   check: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3.2 8.4l3 3 6.6-6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -182,4 +258,7 @@ export const ICONS = {
   heart: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M8 13.6S2 10 2 6.1A3 3 0 0 1 8 4.6a3 3 0 0 1 6 1.5C14 10 8 13.6 8 13.6z" fill="currentColor"/></svg>',
   minus: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M3.5 8h9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   brow: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M3 5.5l4 1.6M13 5.5l-4 1.6M4.5 11.5h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  bot: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><rect x="4" y="6.5" width="12" height="9" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 3.5v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="7.8" cy="11" r="1.2" fill="currentColor"/><circle cx="12.2" cy="11" r="1.2" fill="currentColor"/></svg>',
+  pin: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><path d="M10 17.5s5.5-5.2 5.5-9.3a5.5 5.5 0 0 0-11 0c0 4.1 5.5 9.3 5.5 9.3z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="8.2" r="2" fill="currentColor"/></svg>',
+  out: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M6 3.5H3.5v9h9V10M9 3h4v4M13 3L7.5 8.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 } as const;

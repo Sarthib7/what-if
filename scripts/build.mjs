@@ -2,15 +2,19 @@
 /**
  * Builds What-IF for Vercel (Build Output API v3) into .vercel/output:
  *
- *   static/                 site/** (minus site/src), with {{SITE_URL}} filled in
+ *   static/                 site/** (minus site/src), with {{SITE_URL}}, {{BETA_CONTACT}}, {{VERSION}} filled in
  *   static/assets/<name>.js  each site/src/*.ts entry, bundled for the browser
- *   static/what-if-skill.zip skill/what-if/** zipped under "what-if/", {{SITE_URL}} filled in
+ *   static/what-if-skill.zip skill/what-if/** zipped under "what-if/", placeholders filled in
  *   static/skill/**          the same skill files, for direct links
  *   functions/api/mcp.func   src/mcp/http.ts bundled for Node 22
- *   config.json              routes: /mcp → /api/mcp, /r → /r.html, /connect → /connect.html, …
+ *   config.json              routes: /mcp → /api/mcp, /r → /r.html, /connect, /try, … → <page>.html
  *
  * Also bundles dist/whatif-stdio.mjs (the stdio server).
- * SITE_URL: WHATIF_SITE_URL, else https://$VERCEL_PROJECT_PRODUCTION_URL, else http://localhost:3000.
+ *
+ * SITE_URL:      WHATIF_SITE_URL, else (in a Vercel build) https://$VERCEL_PROJECT_PRODUCTION_URL,
+ *                else http://localhost:3000 for local builds.
+ * BETA_CONTACT:  WHATIF_BETA_CONTACT (an email or URL for invite-code requests), empty if unset.
+ * Client bundles also get __WHATIF_VERSION__, __WHATIF_SITE_URL__ and __WHATIF_BETA_CONTACT__.
  */
 import { build } from "esbuild";
 import { zipSync, strToU8 } from "fflate";
@@ -27,17 +31,27 @@ const SKILL = join(ROOT, "skill", "what-if");
 const DIST = join(ROOT, "dist");
 
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const ON_VERCEL = Boolean(process.env.VERCEL);
+const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
 const SITE_URL = (
   process.env.WHATIF_SITE_URL?.trim() ||
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.replace(/^https?:\/\//, "")}` : "") ||
+  (ON_VERCEL && vercelProd ? `https://${vercelProd}` : "") ||
   "http://localhost:3000"
 ).replace(/\/+$/, "");
+const BETA_CONTACT = (process.env.WHATIF_BETA_CONTACT ?? "").trim();
+const isPublicUrl = (u) => /^https:\/\//i.test(u) && !/^https:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(u) && !/\.localhost(:\d+)?(\/|$)/i.test(u);
 
 const TEXT_EXT = new Set([".html", ".htm", ".md", ".txt", ".json", ".css", ".svg", ".xml", ".webmanifest", ".js", ".mjs"]);
 const started = Date.now();
 const warnings = [];
 
-const template = (text) => text.split("{{SITE_URL}}").join(SITE_URL).split("{{VERSION}}").join(pkg.version);
+const escapeHtml = (v) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const MARKUP_EXT = new Set([".html", ".htm", ".svg", ".xml"]);
+/** Fills {{SITE_URL}}, {{BETA_CONTACT}} and {{VERSION}}; values are HTML-escaped inside markup files. */
+const template = (text, ext = "") => {
+  const esc = MARKUP_EXT.has(ext) ? escapeHtml : (v) => v;
+  return text.split("{{SITE_URL}}").join(esc(SITE_URL)).split("{{BETA_CONTACT}}").join(esc(BETA_CONTACT)).split("{{VERSION}}").join(esc(pkg.version));
+};
 const rel = (p) => relative(ROOT, p).split(sep).join("/");
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
@@ -66,17 +80,19 @@ if (existsSync(SITE)) {
   for (const file of walk(SITE, (p) => p === siteSrc)) {
     const dest = join(STATIC, relative(SITE, file));
     mkdirSync(dirname(dest), { recursive: true });
-    if (TEXT_EXT.has(extname(file).toLowerCase())) writeFileSync(dest, template(readFileSync(file, "utf8")));
+    const ext = extname(file).toLowerCase();
+    if (TEXT_EXT.has(ext)) writeFileSync(dest, template(readFileSync(file, "utf8"), ext));
     else cpSync(file, dest);
     siteFiles++;
   }
 } else warnings.push("site/ does not exist yet: only the MCP function and the skill were built.");
 
 // --- client bundles --------------------------------------------------------------
-const entries = existsSync(siteSrc) ? readdirSync(siteSrc).filter((f) => /\.(ts|tsx|js|mjs)$/.test(f) && !f.endsWith(".d.ts")).map((f) => join(siteSrc, f)) : [];
+const entries = existsSync(siteSrc) ? readdirSync(siteSrc).filter((f) => /\.(ts|tsx|js|mjs)$/.test(f) && !f.endsWith(".d.ts") && f !== "messages.ts").map((f) => join(siteSrc, f)) : [];
 const define = {
   __WHATIF_VERSION__: JSON.stringify(pkg.version),
   __WHATIF_SITE_URL__: JSON.stringify(SITE_URL),
+  __WHATIF_BETA_CONTACT__: JSON.stringify(BETA_CONTACT),
 };
 let clientBytes = 0;
 if (entries.length) {
@@ -116,6 +132,12 @@ if (existsSync(SKILL)) {
   writeFileSync(join(STATIC, "what-if-skill.zip"), zip);
   zipBytes = zip.length;
   if (!existsSync(join(SKILL, "SKILL.md"))) warnings.push("skill/what-if/SKILL.md is missing.");
+  // The zip tells owners which MCP address to add; a localhost or http address only works on this machine.
+  if (!isPublicUrl(SITE_URL)) {
+    const msg = `what-if-skill.zip points at ${SITE_URL}/api/mcp, which is not a public https address. Set WHATIF_SITE_URL to the live site before sharing the zip.`;
+    warnings.push(ON_VERCEL ? `VERCEL BUILD: ${msg}` : msg);
+    if (ON_VERCEL) console.warn(`::warning::${msg}`);
+  }
 } else warnings.push("skill/what-if/ does not exist yet: no what-if-skill.zip.");
 
 // --- server bundles ----------------------------------------------------------------
@@ -153,7 +175,8 @@ writeFileSync(
   ) + "\n",
 );
 
-const stdioDefault = /^https:\/\//.test(SITE_URL) ? SITE_URL : "";
+// The stdio server's default report site: the public site of a deployed build, else none (it then uses localhost).
+const stdioDefault = isPublicUrl(SITE_URL) ? SITE_URL : "";
 const stdioResult = await build({
   ...serverCommon,
   entryPoints: [join(ROOT, "src", "mcp", "stdio.ts")],
@@ -169,7 +192,8 @@ const bytesOf = (r) => Object.values(r.metafile.outputs).reduce((n, o) => n + o.
 const pages = existsSync(STATIC)
   ? readdirSync(STATIC).filter((f) => f.endsWith(".html") && f !== "index.html" && f !== "404.html").map((f) => f.slice(0, -5))
   : [];
-for (const must of ["r", "connect"]) if (!pages.includes(must)) pages.push(must);
+const REQUIRED_PAGES = ["r", "connect", "try"];
+for (const must of REQUIRED_PAGES) if (!pages.includes(must)) pages.push(must);
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const routes = [
   { src: "^/mcp/?$", dest: "/api/mcp" },
@@ -183,10 +207,11 @@ const routes = [
 writeFileSync(join(OUT, "config.json"), JSON.stringify({ version: 3, routes }, null, 2) + "\n");
 
 // --- summary -------------------------------------------------------------------------
-for (const p of ["r", "connect"]) if (!existsSync(join(STATIC, `${p}.html`))) warnings.push(`site/${p}.html is missing (the /${p} route has nothing to serve yet).`);
+for (const p of REQUIRED_PAGES) if (!existsSync(join(STATIC, `${p}.html`))) warnings.push(`site/${p}.html is missing (the /${p} route has nothing to serve yet).`);
 const fnBytes = bytesOf(fnResult);
 console.log(`What-IF build ${pkg.version} -> ${rel(OUT)}  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
-console.log(`  SITE_URL           ${SITE_URL}`);
+console.log(`  SITE_URL           ${SITE_URL}${ON_VERCEL ? " (Vercel build)" : ""}`);
+console.log(`  BETA_CONTACT       ${BETA_CONTACT ? "set" : "(empty: the site hides the request-a-code button)"}`);
 console.log(`  static             ${siteFiles} site files, ${entries.length} client bundle(s) ${entries.length ? `(${kb(clientBytes)})` : ""}`);
 console.log(`  skill              ${skillFiles} file(s) -> static/what-if-skill.zip ${zipBytes ? `(${kb(zipBytes)})` : "(not built)"}`);
 console.log(`  function           functions/api/mcp.func/index.mjs (${kb(fnBytes)})`);

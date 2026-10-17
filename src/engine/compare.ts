@@ -1,41 +1,51 @@
 /**
  * Comparing things, two ways:
  *  - whatChanged(): two versions of the same decision, and why the result moved.
- *  - compareResult(): the plan against what really happened in the test.
+ *  - compareResult(): the plan against what really happened in the test, judged by
+ *    exactly the rule printed on the test card (decision.ts).
  */
-import { money, num, pct, price, round, setCurrency, signedPct } from "./format.ts";
-import { show } from "./inputs.ts";
-import { explainLunchChange, lunchHeadline, lunchModel, valuesOf } from "./lunch-offer.ts";
+import { getLang, setLang } from "../i18n/index.ts";
+import type { Lang } from "../i18n/index.ts";
+import { lunchThresholds, priceThresholds, verdictFor } from "./decision.ts";
+import { ceilUp, EPS, eur, n, num, pc, price, r2, round, seur, setCurrency, signedPct } from "./format.ts";
+import type { Values } from "./format.ts";
+import { valuesOf } from "./figures.ts";
+import { parseNumber, show } from "./inputs.ts";
+import { langOf, withLang } from "./lang.ts";
+import { explainLunchChange, lunchHeadline, lunchModel } from "./lunch-offer.ts";
+import { msg as t } from "./messages.ts";
+import type { MsgKey } from "./messages.ts";
 import { explainPriceChange, priceHeadline, priceModel } from "./price-change.ts";
 import { getTemplate } from "./templates.ts";
 import type { Analysis, ChangeExplanation, Scenario, TemplateId, TestResult } from "./types.ts";
 
-type Values = Record<string, number | string>;
-const EPS = 1e-9;
-/** Totals in plain sentences: whole euros from €10 up. */
-const eur = (x: number): string => money(x, Math.abs(x) < 10 && Math.abs(x) >= 0.005);
-const seur = (x: number): string => (x > 0 ? `+${eur(x)}` : eur(x));
-const n = (v: Values, k: string, d = 0): number => {
-  const x = v[k];
-  return typeof x === "number" && Number.isFinite(x) ? x : d;
-};
-const pc = (s: number): string => pct(s, Number.isInteger(Math.round(s * 1e6) / 1e4) ? 0 : 1);
-const ceilUp = (q: number): number => Math.max(0, Math.ceil(q - EPS));
+type ObservedField = { key: string; label: string; required: boolean };
 
-export const OBSERVED_FIELDS: Record<TemplateId, { key: string; label: string; required: boolean }[]> = {
+const OBSERVED_BASE: Record<TemplateId, { key: string; label: MsgKey; required: boolean }[]> = {
   lunch_offer: [
-    { key: "baseline_lunch_customers", label: "Lunch customers a day before the test (your baseline count)", required: true },
-    { key: "test_lunch_customers", label: "Lunch customers a day during the test (average)", required: true },
-    { key: "redemptions_per_day", label: "Lunch deals sold a day during the test (average)", required: true },
-    { key: "days_run", label: "Weekdays the test ran", required: false },
-    { key: "actual_setup_cost", label: "What the setup really cost", required: false },
+    { key: "baseline_lunch_customers", label: "obs.baseline_lunch_customers", required: true },
+    { key: "test_lunch_customers", label: "obs.test_lunch_customers", required: true },
+    { key: "redemptions_per_day", label: "obs.redemptions_per_day", required: true },
+    { key: "days_run", label: "obs.days_run_lunch", required: false },
+    { key: "actual_setup_cost", label: "obs.actual_setup_cost", required: false },
   ],
   price_change: [
-    { key: "units_before_per_week", label: "Sales per week before the change (baseline)", required: true },
-    { key: "units_after_per_week", label: "Sales per week at the new price (average)", required: true },
-    { key: "days_run", label: "Days the test ran", required: false },
+    { key: "units_before_per_week", label: "obs.units_before_per_week", required: true },
+    { key: "units_after_per_week", label: "obs.units_after_per_week", required: true },
+    { key: "days_run", label: "obs.days_run_price", required: false },
   ],
 };
+
+/** What the owner reports after the test, with labels in a language (default: the current one). */
+export function observedFields(template: TemplateId, lang?: Lang): ObservedField[] {
+  const base = OBSERVED_BASE[template];
+  if (!base) return [];
+  return withLang(lang, () => base.map((f) => ({ key: f.key, label: t(f.label), required: f.required })));
+}
+
+/** Observed fields per template, labelled in the current language (kept as an object for old call sites). */
+export const OBSERVED_FIELDS: Record<TemplateId, ObservedField[]> = {} as Record<TemplateId, ObservedField[]>;
+for (const id of Object.keys(OBSERVED_BASE) as TemplateId[]) Object.defineProperty(OBSERVED_FIELDS, id, { enumerable: true, get: () => observedFields(id) });
 
 // ---------------------------------------------------------------------------
 // whatChanged
@@ -48,31 +58,24 @@ const sameValue = (x: number | string | undefined, y: number | string | undefine
 };
 
 export function whatChanged(before: Analysis, after: Analysis): ChangeExplanation {
-  if (before.template !== after.template)
-    throw new Error("These are two different decisions, so they cannot be compared line by line. Compare two versions of the same decision instead.");
+  setLang(langOf(after));
+  if (before.template !== after.template) throw new Error(t("err.differentDecisions"));
   setCurrency(after.currency);
-  const t = getTemplate(after.template);
+  const tpl = getTemplate(after.template);
   const bv = valuesOf(before.inputs), av = valuesOf(after.inputs);
-  const lunch = t.id === "lunch_offer";
+  const lunch = tpl.id === "lunch_offer";
   const head = lunch ? lunchHeadline : priceHeadline;
   const explain = lunch ? explainLunchChange : explainPriceChange;
   const hb = head(bv), ha = head(av);
 
   const changes: ChangeExplanation["changes"] = [];
-  for (const f of t.fields) {
+  for (const f of tpl.fields) {
     const x = bv[f.key], y = av[f.key];
     if (sameValue(x, y)) continue;
-    changes.push({
-      key: f.key,
-      label: f.label,
-      from: x ?? "",
-      to: y ?? "",
-      fromText: x === undefined ? "not given" : show(f, x),
-      toText: y === undefined ? "not given" : show(f, y),
-    });
+    changes.push({ key: f.key, label: f.label, from: x ?? "", to: y ?? "", fromText: x === undefined ? t("chg.notGiven") : show(f, x), toText: y === undefined ? t("chg.notGiven") : show(f, y) });
   }
 
-  const unitText = (x: number) => (lunch ? `${num(x)} a day` : signedPct(x));
+  const unitText = (x: number) => (lunch ? t("unit.perDay", { v: num(x) }) : signedPct(x));
   const effects: ChangeExplanation["effects"] = [
     {
       id: "break_even",
@@ -82,26 +85,19 @@ export function whatChanged(before: Analysis, after: Analysis): ChangeExplanatio
       fromText: hb.breakEven === null ? hb.breakEvenText : unitText(hb.breakEven),
       toText: ha.breakEven === null ? ha.breakEvenText : unitText(ha.breakEven),
     },
-    { id: "net_test_expected", label: "Expected result over the test", from: hb.netTestExpected, to: ha.netTestExpected, fromText: seur(hb.netTestExpected), toText: seur(ha.netTestExpected) },
+    { id: "net_test_expected", label: t("eff.expectedTest"), from: hb.netTestExpected, to: ha.netTestExpected, fromText: seur(hb.netTestExpected), toText: seur(ha.netTestExpected) },
     {
       id: "net_month_expected",
-      label: "Expected result per month if you keep it",
+      label: t("eff.expectedMonth"),
       from: hb.netMonthExpected,
       to: ha.netMonthExpected,
-      fromText: `${seur(hb.netMonthExpected)} a month`,
-      toText: `${seur(ha.netMonthExpected)} a month`,
+      fromText: t("unit.perMonth", { v: seur(hb.netMonthExpected) }),
+      toText: t("unit.perMonth", { v: seur(ha.netMonthExpected) }),
     },
-    {
-      id: "worst_case",
-      label: lunch ? "Most the test can cost (nobody new comes)" : "Worst case over the test (your cautious guess)",
-      from: hb.worstCase,
-      to: ha.worstCase,
-      fromText: seur(hb.worstCase),
-      toText: seur(ha.worstCase),
-    },
+    { id: "worst_case", label: lunch ? t("eff.worstLunch") : t("eff.worstPrice"), from: hb.worstCase, to: ha.worstCase, fromText: seur(hb.worstCase), toText: seur(ha.worstCase) },
   ];
 
-  if (changes.length === 0) return { changes, effects, plain: ["Nothing changed: the numbers are the same, so the results are the same."] };
+  if (changes.length === 0) return { changes, effects, plain: [t("chg.nothing")] };
 
   const afterInput = new Map(after.inputs.map((i) => [i.key, i]));
   let mentionsWorst = false;
@@ -113,16 +109,15 @@ export function whatChanged(before: Analysis, after: Analysis): ChangeExplanatio
     const hm = head(mid);
     const impact = Math.abs(hm.netTestExpected - hb.netTestExpected) + (hm.breakEven !== hb.breakEven ? 0.01 : 0);
     let text: string;
-    if (bv[c.key] === undefined) text = `You added "${c.label}": ${c.toText}.`;
-    else if (y === undefined) text = `You removed "${c.label}" (it was ${c.fromText}).`;
+    if (bv[c.key] === undefined) text = t("chg.added", { label: c.label, to: c.toText });
+    else if (y === undefined) text = t("chg.removed", { label: c.label, from: c.fromText });
     else {
       const e = explain(c.key, bv, mid, c.label);
       text = e.text;
       mentionsWorst ||= e.mentionsWorst;
     }
     const ai = afterInput.get(c.key);
-    if (ai?.note && ai.source === "assumption" && (c.key.startsWith("extra_") || c.key.startsWith("volume_") || c.key === "lunch_spend"))
-      text += " What-IF set this one for you from your other answers; change it if you know better.";
+    if (ai && (ai.filledBy === "derived" || ai.filledBy === "fallback")) text += t("chg.setForYou");
     return { text, impact, order };
   });
   sentences.sort((x, y) => y.impact - x.impact || x.order - y.order);
@@ -131,15 +126,18 @@ export function whatChanged(before: Analysis, after: Analysis): ChangeExplanatio
   const worstChanged = Math.abs(ha.worstCase - hb.worstCase) >= 0.005;
   if (changes.length > 1) {
     plain.unshift(
-      `Altogether: break-even ${effects[0]!.fromText} → ${effects[0]!.toText}, expected test result ${seur(hb.netTestExpected)} → ${seur(ha.netTestExpected)}, ` +
-        `${lunch ? "most the test can cost" : "worst case"} ${eur(Math.max(0, -hb.worstCase))} → ${eur(Math.max(0, -ha.worstCase))}.`,
+      t("chg.altogether", {
+        beFrom: effects[0]!.fromText,
+        beTo: effects[0]!.toText,
+        eFrom: seur(hb.netTestExpected),
+        eTo: seur(ha.netTestExpected),
+        worst: lunch ? t("chg.worstNameLunch") : t("chg.worstNamePrice"),
+        wFrom: eur(Math.max(0, -hb.worstCase)),
+        wTo: eur(Math.max(0, -ha.worstCase)),
+      }),
     );
   } else if (worstChanged && !mentionsWorst) {
-    plain.push(
-      lunch
-        ? `If nobody new comes, the test now costs at most ${eur(Math.max(0, -ha.worstCase))} instead of ${eur(Math.max(0, -hb.worstCase))}.`
-        : `At your cautious guess the test now costs ${eur(Math.max(0, -ha.worstCase))} instead of ${eur(Math.max(0, -hb.worstCase))}.`,
-    );
+    plain.push(t(lunch ? "chg.worstLunch" : "chg.worstPrice", { to: eur(Math.max(0, -ha.worstCase)), from: eur(Math.max(0, -hb.worstCase)) }));
   }
   return { changes, effects, plain };
 }
@@ -149,28 +147,28 @@ export function whatChanged(before: Analysis, after: Analysis): ChangeExplanatio
 // ---------------------------------------------------------------------------
 
 function readObserved(template: TemplateId, observed: Record<string, unknown>): Record<string, number> {
-  const fields = OBSERVED_FIELDS[template];
-  if (!fields) throw new Error(`What-IF cannot compare results for the decision "${String(template)}".`);
+  const fields = OBSERVED_BASE[template];
+  if (!fields) throw new Error(t("err.noCompare", { t: String(template) }));
   const clean: Record<string, number> = {};
   const missing: string[] = [];
   const problems: string[] = [];
   for (const f of fields) {
     const raw = observed?.[f.key];
     if (raw === undefined || raw === null || raw === "") {
-      if (f.required) missing.push(f.label);
+      if (f.required) missing.push(t(f.label));
       continue;
     }
-    const x = typeof raw === "number" ? raw : Number(String(raw).replace(/[€\s]/g, "").replace(",", "."));
+    const x = typeof raw === "number" ? raw : parseNumber(String(raw), getLang()).value;
     if (!Number.isFinite(x) || x < 0) {
-      problems.push(`"${f.label}" should be a number of 0 or more; got "${String(raw)}".`);
+      problems.push(t("problem.observed", { label: t(f.label), raw: String(raw) }));
       continue;
     }
     clean[f.key] = x;
   }
   if (missing.length || problems.length) {
-    const lines = ["What-IF needs the test results before it can compare them with the plan."];
-    if (missing.length) lines.push("Still needed:", ...missing.map((m) => `- ${m}`));
-    if (problems.length) lines.push("Please check:", ...problems.map((p) => `- ${p}`));
+    const lines = [t("err.needResults")];
+    if (missing.length) lines.push(t("err.stillNeeded"), ...missing.map((m) => `- ${m}`));
+    if (problems.length) lines.push(t("err.pleaseCheck"), ...problems.map((p) => `- ${p}`));
     throw new Error(lines.join("\n"));
   }
   return clean;
@@ -196,15 +194,8 @@ function closest(scenarios: Scenario[], actual: number, slack: number): TestResu
   return best;
 }
 
-const CLOSEST_TEXT: Record<TestResult["closestScenario"], string> = {
-  cautious: "That is closest to your cautious scenario.",
-  expected: "That is close to your expected scenario.",
-  optimistic: "That is closest to your optimistic scenario.",
-  below_cautious: "That is below even your cautious scenario.",
-  above_optimistic: "That beats even your optimistic scenario.",
-};
-
 export function compareResult(a: Analysis, observed: Record<string, number>, opts: { recordedAt?: string } = {}): TestResult {
+  setLang(langOf(a));
   setCurrency(a.currency);
   const clean = readObserved(a.template, observed as Record<string, unknown>);
   const recordedAt = opts.recordedAt ?? new Date().toISOString();
@@ -219,126 +210,90 @@ function compareLunch(a: Analysis, v: Values, o: Record<string, number>, recorde
   const red = o.redemptions_per_day!;
   const days = o.days_run !== undefined && o.days_run > 0 ? o.days_run : m.days;
   const setup = o.actual_setup_cost ?? m.setup;
-  const extra = during - baseline;
+  const extra = r2(during - baseline);
   const newDeals = Math.max(0, extra);
   const switchers = Math.min(baseline, Math.max(0, red - newDeals));
   const actualShare = baseline > 0 ? switchers / baseline : 0;
 
-  // The plan's prices and costs, with what was measured: lunch customers, switching, setup, days run.
+  // The verdict: exactly the card's rule (from the plan's numbers).
+  const th = lunchThresholds(m, v);
+  const verdict = verdictFor(th, extra);
+
+  // What really happened in money: the plan's prices and costs with the measured lunch customers, switching, setup and days.
   const am = lunchModel({ ...v, lunch_customers: baseline, switch_share: actualShare, setup_cost: setup, test_days: days });
   // If lunch got quieter, each lost lunch costs what an ordinary lunch leaves.
-  const netDay = extra >= 0 ? am.netDay(extra) : am.netDay(0) + extra * am.mLunchNow;
-  const netTest = netDay * days - setup;
+  const netDay = extra >= 0 ? am.netDay(extra) : r2(am.netDay(0) + extra * am.mLunchNow);
+  const netTest = r2(netDay * days - setup);
   const expected = a.scenarios.find((s) => s.id === "expected")?.netTest ?? m.netTest(n(v, "extra_likely"));
-
-  const beExact = am.beTestExact;
-  let verdict: TestResult["verdict"];
-  if (beExact === null) verdict = "stop";
-  else if (extra >= beExact - EPS) verdict = "keep";
-  else if (extra >= beExact * 0.5 - EPS) verdict = "tweak";
-  else verdict = "stop";
 
   const extraR = round(extra, 1);
   const closestScenario = closest(a.scenarios, extra, 0.5);
-  const beNow = beExact === null ? null : ceilUp(beExact);
-  const bePlanned = m.beTest;
-  const beReasons: string[] = [];
-  if (Math.abs(switchers - m.switchers) >= 0.5) beReasons.push(`${switchers > m.switchers ? "more" : "fewer"} regulars switched to the deal than you guessed (${num(round(switchers, 1))} a day, not ${num(round(m.switchers, 1))})`);
-  if (Math.abs(setup - m.setup) >= 0.5) beReasons.push(`the setup cost ${eur(setup)} instead of ${eur(m.setup)}`);
-  if (days !== m.days) beReasons.push(`it ran ${num(days)} weekdays instead of ${num(m.days)}`);
-  const beSentence =
-    beNow === null
-      ? "Each deal leaves nothing after ingredients, so no number of customers could pay for it."
-      : `With what really happened, the test needed ${num(beNow)} extra a day to pay back${bePlanned !== null && bePlanned !== beNow ? ` (the plan said ${num(bePlanned)}; ${beReasons.length ? beReasons.join(" and ") : "the measured numbers moved it"})` : ""}.`;
-  const verdictText = { keep: "keep the deal", tweak: "tweak it and test one more week", stop: "stop the deal" }[verdict];
-  const lunchMove = extra >= 0 ? `${num(extraR)} extra` : `${num(-extraR)} fewer`;
+  const rule = !th
+    ? t("res.lunch.ruleNone")
+    : th.keepFrom === 0
+      ? t("res.lunch.rule0")
+      : t("res.lunch.rule", { keep: num(th.keepFrom), tweak: num(th.tweakFrom) });
+  const beNow = am.beOngoingExact === null ? null : ceilUp(am.beOngoingExact);
+  const careful = verdict === "keep" && beNow !== null && extra < beNow - EPS ? t("res.lunch.careful", { sw: num(round(switchers, 1)), plan: num(m.switchers), extra: num(extraR), beNow: num(beNow) }) : "";
+  const verdictText = t(`res.lunch.${verdict}` as "res.lunch.keep");
+  const lunchMove = extra >= 0 ? t("res.lunch.moveUp", { n: extraR }) : t("res.lunch.moveDown", { n: -extraR });
   const plain =
-    `During the test, lunch went from ${num(baseline)} to ${num(during)} customers a day: ${lunchMove}. ${beSentence} ` +
-    `So the verdict is: ${verdictText}. The test ended about ${eur(Math.abs(netTest))} ${netTest < 0 ? "down" : "up"}, against ${seur(expected)} in your expected scenario. ${CLOSEST_TEXT[closestScenario]}`;
+    t("res.lunch.plain", { baseline: num(baseline), during: num(during), move: lunchMove, rule, verdict: verdictText }) +
+    (careful ? ` ${careful}` : "") +
+    ` ${t(netTest < 0 ? "res.lunch.endedDown" : "res.lunch.endedUp", { amt: eur(Math.abs(netTest)), expected: seur(expected) })} ${t(`res.closest.${closestScenario}` as "res.closest.expected")}`;
 
   const likely = n(v, "extra_likely");
   const learned: string[] = [];
-  if (Math.abs(extra - likely) < 0.5)
-    learned.push(`Your likely guess of ${num(likely)} extra customers a day was close: reality was ${num(extraR)}. Your feel for this is good.`);
-  else learned.push(`Your likely guess was ${num(likely)} extra customers a day; reality was ${num(extraR)}. Next time start from ${num(Math.max(0, extraR))}.`);
-  if (baseline > 0)
-    learned.push(`You guessed ${pc(m.switchShare)} of lunch regulars would switch to the deal; about ${pc(round(actualShare, 3))} did (${num(round(switchers, 1))} of ${num(baseline)} a day).`);
-  if (Math.abs(baseline - m.lunchCustomers) >= 1)
-    learned.push(`You estimated ${num(m.lunchCustomers)} lunch customers a day; the count said ${num(baseline)}. Use the counted number from now on.`);
-  if (o.actual_setup_cost !== undefined && Math.abs(o.actual_setup_cost - m.setup) >= 0.5)
-    learned.push(`The setup cost ${eur(o.actual_setup_cost)}, not the ${eur(m.setup)} you planned.`);
-  if (days < m.days) learned.push(`You ran it for ${num(days)} weekdays instead of ${num(m.days)}. Short tests are noisier, so treat this as a first reading.`);
-  if (red > during + EPS) learned.push(`More deals were recorded (${num(red)} a day) than lunch customers (${num(during)}); check the tally sheet and the till count.`);
-  learned.push("Compare the measured number with the break-even, not with your hopes: that habit makes every next decision easier.");
+  if (Math.abs(extra - likely) < 0.5) learned.push(t("res.lunch.learn.close", { likely: num(likely), real: num(extraR) }));
+  else learned.push(t("res.lunch.learn.off", { likely: num(likely), real: num(extraR), next: num(Math.max(0, extraR)) }));
+  if (baseline > 0) learned.push(t("res.lunch.learn.switch", { plan: pc(m.switchShare), real: pc(round(actualShare, 3)), sw: num(round(switchers, 1)), baseline: num(baseline) }));
+  if (beNow !== null && m.beOngoing !== null && beNow !== m.beOngoing) learned.push(t("res.lunch.learn.beNow", { beNow: num(beNow), bePlan: num(m.beOngoing) }));
+  if (Math.abs(baseline - m.lunchCustomers) >= 1) learned.push(t("res.lunch.learn.baseline", { est: num(m.lunchCustomers), count: num(baseline) }));
+  if (o.actual_setup_cost !== undefined && Math.abs(o.actual_setup_cost - m.setup) >= 0.5) learned.push(t("res.lunch.learn.setup", { real: eur(o.actual_setup_cost), plan: eur(m.setup) }));
+  if (days < m.days) learned.push(t("res.learn.short", { real: t("n.weekdays", { n: days }), plan: num(m.days) }));
+  if (red > during + EPS) learned.push(t("res.lunch.learn.tally", { red: num(red), during: num(during) }));
+  learned.push(t("res.learn.habit"));
 
-  return {
-    analysisId: a.id,
-    recordedAt,
-    observed: o,
-    actual: round(extra, 2),
-    actualLabel: "Extra lunch customers a day (measured)",
-    closestScenario,
-    verdict,
-    netTest: round(netTest),
-    plain,
-    learned,
-  };
+  return { analysisId: a.id, recordedAt, observed: o, actual: round(extra, 2), actualLabel: t("res.lunch.actual"), closestScenario, verdict, netTest, plain, learned };
 }
 
 function comparePrice(a: Analysis, v: Values, o: Record<string, number>, recordedAt: string): TestResult {
   const m = priceModel(v);
   const before = o.units_before_per_week!;
   const after = o.units_after_per_week!;
-  if (before <= 0) throw new Error("What-IF needs the sales per week before the change (more than 0) to compare against.");
+  if (before <= 0) throw new Error(t("err.priceBaseline"));
   const days = o.days_run !== undefined && o.days_run > 0 ? o.days_run : m.days;
   const change = after / before - 1;
-  const netTest = ((after * m.mNew - before * m.mOld) * days) / 7;
+  const netTest = m.deltaMeasured(before, after, days);
   const expected = a.scenarios.find((s) => s.id === "expected")?.netTest ?? m.deltaTest(n(v, "volume_likely"));
-  const be = m.beV;
 
-  let verdict: TestResult["verdict"];
-  if (be === null) verdict = "stop";
-  else if (change >= be - EPS) verdict = "keep";
-  else if (be <= 0 ? change >= be * 1.5 - EPS : change >= be * 0.5 - EPS) verdict = "tweak";
-  else verdict = "stop";
+  // The verdict: the card's rule, applied to the measured baseline.
+  const th = priceThresholds(m, before);
+  const verdict = verdictFor(th, after);
 
   const closestScenario = closest(a.scenarios, change, 0.005);
-  const beSentence =
-    be === null
-      ? "Each sale leaves nothing after ingredients at the new price."
-      : be <= 0
-        ? `You could lose up to ${pc(-be)} of sales before being worse off.`
-        : `You needed sales to rise by ${pc(be)} to be better off.`;
+  const rule = !th || m.beV === null
+    ? t("res.price.ruleNone")
+    : m.beV <= -1 + 1e-9
+      ? t("res.price.ruleAny")
+      : t(m.beV <= 0 ? "res.price.ruleRise" : "res.price.ruleCut", { keep: num(th.keepFrom), tweak: num(th.tweakFrom) });
   const verdictText = {
-    keep: m.rise ? "keep the new price" : "keep the lower price",
-    tweak: m.rise ? "try a smaller rise" : "try a smaller cut",
-    stop: `go back to ${price(m.oldPrice)}`,
+    keep: m.rise ? t("res.price.keepRise") : t("res.price.keepCut"),
+    tweak: m.rise ? t("res.price.tweakRise") : t("res.price.tweakCut"),
+    stop: t("res.price.stop", { old: price(m.oldPrice) }),
   }[verdict];
   const plain =
-    `Sales went from ${num(before)} to ${num(after)} ${m.items} a week (${signedPct(round(change, 3))}). ${beSentence} So the verdict is: ${verdictText}. ` +
-    `Over ${num(days)} days that is about ${seur(netTest)} compared with the old price, against ${seur(expected)} in your expected scenario. ${CLOSEST_TEXT[closestScenario]}`;
+    t("res.price.plain", { before: num(before), after: num(after), change: signedPct(round(change, 3)), rule, verdict: verdictText, days: t("n.days", { n: days }), amt: seur(netTest), expected: seur(expected) }) +
+    ` ${t(`res.closest.${closestScenario}` as "res.closest.expected")}`;
 
   const likely = n(v, "volume_likely");
   const learned: string[] = [];
-  if (Math.abs(change - likely) < 0.01)
-    learned.push(`Your likely guess (${signedPct(likely)}) was close: sales changed by ${signedPct(round(change, 3))}. Your feel for your customers is good.`);
-  else
-    learned.push(`You guessed sales would change by ${signedPct(likely)}; they changed by ${signedPct(round(change, 3))} (${num(before)} → ${num(after)} a week). Next time start from ${signedPct(round(change, 2))}.`);
-  if (Math.abs(before - m.units) / Math.max(1, m.units) >= 0.05)
-    learned.push(`You estimated ${num(m.units)} sales a week; the baseline count said ${num(before)}. Use the counted number from now on.`);
-  if (days < m.days) learned.push(`You ran it for ${num(days)} days instead of ${num(m.days)}. Short tests are noisier, so treat this as a first reading.`);
-  learned.push("Compare the measured number with the break-even, not with your hopes: that habit makes every next decision easier.");
+  if (Math.abs(change - likely) < 0.01) learned.push(t("res.price.learn.close", { likely: signedPct(likely), real: signedPct(round(change, 3)) }));
+  else learned.push(t("res.price.learn.off", { likely: signedPct(likely), real: signedPct(round(change, 3)), before: num(before), after: num(after), next: signedPct(round(change, 2)) }));
+  if (Math.abs(before - m.units) / Math.max(1, m.units) >= 0.05) learned.push(t("res.price.learn.baseline", { est: num(m.units), count: num(before) }));
+  if (days < m.days) learned.push(t("res.learn.short", { real: t("n.days", { n: days }), plan: num(m.days) }));
+  learned.push(t("res.learn.habit"));
 
-  return {
-    analysisId: a.id,
-    recordedAt,
-    observed: o,
-    actual: round(change, 4),
-    actualLabel: "Change in weekly sales (measured)",
-    closestScenario,
-    verdict,
-    netTest: round(netTest),
-    plain,
-    learned,
-  };
+  return { analysisId: a.id, recordedAt, observed: o, actual: round(change, 4), actualLabel: t("res.price.actual"), closestScenario, verdict, netTest, plain, learned };
 }
+

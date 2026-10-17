@@ -4,9 +4,16 @@
  *
  * Per request: a fresh server and transport, JSON responses, nothing kept.
  * GET from a browser returns a small JSON description of the server.
+ *
+ * Closed beta: when WHATIF_BETA_CODES is set (comma-separated, each at least
+ * 6 characters), every POST needs a valid invite code via `?code=`, the
+ * `x-whatif-code` header or `Authorization: Bearer`. Unset = open. Codes are
+ * compared in constant time and never logged or echoed. Report links stay open.
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { LANGS } from "../i18n/index.ts";
 import { createServer, SERVER_DESCRIPTION, TOOL_NAMES, VERSION } from "./tools.ts";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -15,7 +22,7 @@ const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, Accept, Authorization, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID, X-Requested-With",
+    "Content-Type, Accept, Authorization, X-WhatIF-Code, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID, X-Requested-With",
   "Access-Control-Expose-Headers": "Mcp-Session-Id, Mcp-Protocol-Version",
   "Access-Control-Max-Age": "86400",
 };
@@ -117,7 +124,90 @@ function forgiveHeaders(req: IncomingMessage): void {
   }
 }
 
-function info(siteUrl: string) {
+// ---------------------------------------------------------------------------
+// Closed beta: invite codes
+// ---------------------------------------------------------------------------
+
+/** Codes longer than this are never valid, so a huge header or query cannot cost anything. */
+const MAX_CODE_CHARS = 200;
+const MIN_CODE_CHARS = 6;
+
+interface Beta {
+  required: boolean;
+  /** SHA-256 of each valid code (upper-cased), so every comparison has the same length. */
+  digests: Buffer[];
+}
+
+let betaCache: { raw: string; beta: Beta } | null = null;
+let warnedShortCodes = false;
+
+const digest = (code: string): Buffer => createHash("sha256").update(code.trim().toUpperCase(), "utf8").digest();
+
+/**
+ * WHATIF_BETA_CODES, read on every request (cheap, cached per value).
+ * Unset or blank = open. Set = closed, even if every entry is too short to count.
+ */
+export function betaConfig(): Beta {
+  const raw = process.env.WHATIF_BETA_CODES ?? "";
+  if (betaCache?.raw === raw) return betaCache.beta;
+  const entries = raw.split(",").map((c) => c.trim()).filter(Boolean);
+  const valid = entries.filter((c) => c.length >= MIN_CODE_CHARS && c.length <= MAX_CODE_CHARS);
+  if (valid.length < entries.length && !warnedShortCodes) {
+    warnedShortCodes = true;
+    console.warn(`[what-if] WHATIF_BETA_CODES: ${entries.length - valid.length} entr${entries.length - valid.length === 1 ? "y is" : "ies are"} shorter than ${MIN_CODE_CHARS} characters and will never be accepted.`);
+  }
+  const beta: Beta = { required: raw.trim() !== "", digests: valid.map(digest) };
+  betaCache = { raw, beta };
+  return beta;
+}
+
+/** The invite code a request carries: ?code=, x-whatif-code, or Authorization: Bearer. Never logged. */
+export function codeFrom(req: IncomingMessage): string {
+  let fromQuery = "";
+  try {
+    fromQuery = new URL(req.url ?? "/", "http://x").searchParams.get("code") ?? "";
+  } catch {
+    /* a malformed URL carries no code */
+  }
+  const fromHeader = header(req, "x-whatif-code");
+  const auth = String(req.headers.authorization ?? "");
+  const fromBearer = /^Bearer\s+(.+)$/i.exec(auth.trim())?.[1] ?? "";
+  return (fromQuery || fromHeader || fromBearer).trim();
+}
+
+/** Constant-time: every code is compared, digests have equal length, no early exit. */
+export function codeIsValid(code: string, beta: Beta = betaConfig()): boolean {
+  if (!code || code.length > MAX_CODE_CHARS) return false;
+  const given = digest(code);
+  let ok = 0;
+  for (const d of beta.digests) ok |= timingSafeEqual(given, d) ? 1 : 0;
+  return ok === 1;
+}
+
+function betaContact(): string {
+  return (process.env.WHATIF_BETA_CONTACT ?? "").trim().slice(0, 300);
+}
+
+/** The 401 message, German first, then English. It never contains the code that was sent. */
+export function betaMessage(hadCode: boolean, contact = betaContact(), siteUrl = ""): string {
+  const url = `${siteUrl || "https://<site>"}/api/mcp?code=…`;
+  const de = [
+    "What-IF ist eine geschlossene Beta für Berliner Cafés.",
+    hadCode ? "Dieser Einladungscode ist nicht gültig." : "Für diese Verbindung fehlt der Einladungscode.",
+    `Nutzen Sie Ihren persönlichen Link mit Code (${url}).`,
+    contact ? `Einen Code bekommen Sie hier: ${contact}` : "",
+  ];
+  const en = [
+    "What-IF is a closed beta for Berlin cafés.",
+    hadCode ? "This invite code is not valid." : "This connection has no invite code.",
+    `Use your personal link with your code (${url}).`,
+    contact ? `To ask for a code: ${contact}` : "",
+  ];
+  return `${de.filter(Boolean).join(" ")}\n\n${en.filter(Boolean).join(" ")}`;
+}
+
+function info(siteUrl: string, beta: { required: boolean; valid: boolean }) {
+  const contact = betaContact();
   return {
     name: "what-if",
     version: VERSION,
@@ -125,9 +215,13 @@ function info(siteUrl: string) {
     mcp_url: `${siteUrl}/api/mcp`,
     transport: "Streamable HTTP (stateless, JSON responses). POST JSON-RPC messages to mcp_url.",
     how_to_connect: `${siteUrl}/connect`,
-    claude_code: `claude mcp add --transport http what-if ${siteUrl}/api/mcp`,
+    claude_code: beta.required
+      ? `claude mcp add --transport http what-if "${siteUrl}/api/mcp?code=YOUR-INVITE-CODE"`
+      : `claude mcp add --transport http what-if ${siteUrl}/api/mcp`,
     tools: [...TOOL_NAMES],
     prompts: ["what-if"],
+    languages: [...LANGS],
+    beta: { required: beta.required, valid: beta.valid, ...(contact ? { contact } : {}) },
   };
 }
 
@@ -142,6 +236,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   const siteUrl = siteUrlFor(req);
+  const beta = betaConfig();
 
   if (method === "GET" || method === "HEAD") {
     const accept = String(req.headers.accept ?? "").toLowerCase();
@@ -156,7 +251,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       res.end();
       return;
     }
-    sendJson(res, 200, info(siteUrl));
+    // The site checks a code here without storing anything: { beta: { required, valid } }.
+    sendJson(res, 200, info(siteUrl, { required: beta.required, valid: !beta.required || codeIsValid(codeFrom(req), beta) }));
     return;
   }
 
@@ -168,6 +264,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (method !== "POST") {
     rpcError(res, 405, -32000, `Method not allowed: ${method}. Send MCP requests with POST.`, { Allow: "GET, POST, OPTIONS" });
     return;
+  }
+
+  if (beta.required) {
+    const code = codeFrom(req);
+    if (!codeIsValid(code, beta)) {
+      const contact = betaContact();
+      sendJson(res, 401, {
+        jsonrpc: "2.0",
+        error: { code: -32001, message: betaMessage(code !== "", contact, siteUrl), data: { beta: true, ...(contact ? { contact } : {}) } },
+        id: null,
+      });
+      return;
+    }
   }
 
   let body: unknown;

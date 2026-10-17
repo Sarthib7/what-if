@@ -8,11 +8,18 @@
  * - In-process checks import the TypeScript modules directly (run.ts runs
  *   under `node --import tsx`), so they test the same code the site and the
  *   MCP use, without a build.
- * - Slow shared work runs once per QA run: tsc, the demo analysis and its
- *   rehearsal, the dev server, the MCP session and the browser run.
+ * - Slow shared work runs once per QA run: tsc, the shipped demo per language,
+ *   the dev servers (open, and closed beta), the MCP session, the browser run
+ *   and the scratch copies (production-like build, LF/CRLF test runs).
+ * - The evidence for the judges (qa/reports/ui) comes from the shipped demo
+ *   (src/report/demo.ts demoState), the same link /r#demo opens, in de/en/es/pl.
+ * - v0.2 (Berlin closed beta): German is the product default, so the English-text
+ *   checks call the engine and the MCP tools with lang "en"; the language checks
+ *   pass the language themselves.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { extname } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -21,7 +28,7 @@ import { pathToFileURL } from "node:url";
 import type { Analysis, ChangeExplanation, DecisionTemplate, InputCheck, RawInputs, TestPlan, TestResult } from "../src/engine/types.ts";
 import type { PersonaBrief, Reaction, ReactionMethod, Rehearsal, RehearsalSummary, SubmitOutcome } from "../src/sim/types.ts";
 import type { ShareState } from "../src/state.ts";
-import { runUiCheck, UI_CHECKS, type UiResult } from "./ui-check.ts";
+import { EN_UI_PHRASES, englishHits, runUiCheck, UI_CHECKS, type UiResult } from "./ui-check.ts";
 
 export interface Outcome {
   ok: boolean;
@@ -154,12 +161,22 @@ interface TemplatesMod {
   demoInputs(id: string): Record<string, number | string>;
   DEMO_BUSINESS: string;
 }
+type Lang = "de" | "en" | "es" | "pl";
+const LANGS: Lang[] = ["de", "en", "es", "pl"];
+interface AnalyzeOpts {
+  business?: string;
+  question?: string;
+  demo?: boolean;
+  currency?: string;
+  id?: string;
+  lang?: Lang;
+}
 interface EngineMod extends TemplatesMod {
-  analyze(template: string, raw: RawInputs, opts?: { business?: string; question?: string; demo?: boolean; currency?: string; id?: string }): Analysis;
+  analyze(template: string, raw: RawInputs, opts?: AnalyzeOpts): Analysis;
   whatChanged(before: Analysis, after: Analysis): ChangeExplanation;
   planTest(a: Analysis): TestPlan;
   compareResult(a: Analysis, observed: Record<string, number>): TestResult;
-  checkInputs(template: string, raw: RawInputs, opts?: { demo?: boolean }): InputCheck;
+  checkInputs(template: string, raw: RawInputs, opts?: { demo?: boolean; lang?: Lang }): InputCheck;
   getTemplate(id: string): DecisionTemplate;
   OBSERVED_FIELDS: Record<string, { key: string; label: string; required: boolean }[]>;
 }
@@ -190,17 +207,194 @@ const SOURCES = ["owner", "assumption", "calculation", "imagined", "demo"];
 const SOURCE_LABELS = ["Your number", "A guess", "Calculated", "Imagined", "Demo data"];
 const EVENT = "The café opposite starts an €8.50 lunch.";
 
+interface I18nMod {
+  setLang(l: Lang): void;
+  getLang(): Lang;
+}
+interface DemoMod {
+  demoState(template?: string, opts?: Record<string, unknown>): ShareState;
+}
+
 const templates = (root: string) => load<TemplatesMod>(root, "src/engine/templates.ts", ["TEMPLATES", "demoInputs", "DEMO_BUSINESS"]);
-const engine = (root: string, need = ["analyze", "demoInputs", "DEMO_BUSINESS", "TEMPLATES"]) => load<EngineMod>(root, "src/engine/index.ts", need);
+/** The engine module itself, exactly as exported (no defaults added). */
+const rawEngine = (root: string, need = ["analyze", "demoInputs", "DEMO_BUSINESS", "TEMPLATES"]) => load<EngineMod>(root, "src/engine/index.ts", need);
+/**
+ * The engine with `lang: "en"` added to every analyze/checkInputs call that does not name a
+ * language, so the English-text checks below stay stable now that the product default is German.
+ * Language checks use rawEngine() and pass the language themselves.
+ */
+const engine = async (root: string, need = ["analyze", "demoInputs", "DEMO_BUSINESS", "TEMPLATES"]): Promise<EngineMod> => {
+  const m = await rawEngine(root, need);
+  return {
+    ...m,
+    analyze: (t, raw, opts = {}) => m.analyze(t, raw, { lang: "en", ...opts }),
+    checkInputs: (t, raw, opts = {}) => (typeof m.checkInputs === "function" ? m.checkInputs(t, raw, { lang: "en", ...opts }) : (undefined as never)),
+  };
+};
 const simMod = (root: string, need = ["startRehearsal", "roundBriefs", "submitRound", "ruleBasedReactions", "summarize"]) => load<SimMod>(root, "src/sim/index.ts", need);
 const stateMod = (root: string) => load<StateMod>(root, "src/state.ts", ["encodeState", "decodeState", "reportUrl"]);
 const reportMod = (root: string) => load<ReportMod>(root, "src/report/index.ts", ["renderReport"]);
+const i18nMod = (root: string) => load<I18nMod>(root, "src/i18n/index.ts", ["setLang", "getLang"]);
+
+/** Runs fn with the module-wide language set (when src/i18n exists), then puts English back. */
+async function inLang<T>(root: string, lang: Lang, fn: () => T): Promise<T> {
+  const i = await i18nMod(root).catch(() => null);
+  i?.setLang(lang);
+  try {
+    return fn();
+  } finally {
+    i?.setLang("en");
+  }
+}
 
 const question = (e: TemplatesMod, t: string) => e.TEMPLATES[t]?.exampleQuestion ?? "What if I run a weekday lunch offer?";
 
 /** The demo analysis exactly as the report page rebuilds it from a demo link. */
-function demoAnalysis(e: EngineMod, t = "lunch_offer", over: RawInputs = {}, opts: { demo?: boolean; business?: string; question?: string } = {}): Analysis {
+function demoAnalysis(e: EngineMod, t = "lunch_offer", over: RawInputs = {}, opts: AnalyzeOpts = {}): Analysis {
   return e.analyze(t, { ...e.demoInputs(t), ...over }, { demo: true, business: e.DEMO_BUSINESS, question: question(e, t), ...opts });
+}
+
+/** Exported names in src/** that define `name` (export const NAME / export { NAME }). */
+function findExport(root: string, name: string): string[] {
+  const re = new RegExp(`export\\s+(?:const|let|var|function)\\s+${name}\\b|export\\s*\\{[^}]*\\b${name}\\b[^}]*\\}`);
+  return listFiles(join(root, "src"), (f) => /\.ts$/.test(f) && !/\.test\./.test(f))
+    .filter((f) => re.test(readFileSync(f, "utf8")))
+    .map((f) => posix(relative(root, f)))
+    .sort((a, b) => Number(/index\.ts$/.test(b)) - Number(/index\.ts$/.test(a)));
+}
+
+async function loadExport<T>(root: string, name: string, prefer: string[]): Promise<{ value: T; file: string }> {
+  for (const rel of [...prefer, ...findExport(root, name)]) {
+    if (!existsSync(join(root, rel))) continue;
+    const m = await load<Record<string, unknown>>(root, rel).catch(() => null);
+    if (m && m[name] !== undefined) return { value: m[name] as T, file: rel };
+  }
+  throw new Missing(`no module in src/ exports ${name} yet`);
+}
+
+// ---- message catalogs ({ en: {...}, de: {...}, es: {...}, pl: {...} }, docs/ARCHITECTURE.md "Languages") ----
+
+type CatalogLike = Record<string, Record<string, unknown> | undefined>;
+
+/** Keys of each language block in a catalog file, read from the source (for catalogs that are not exported). */
+function staticCatalogs(src: string): Record<string, string[]>[] {
+  const groups: Record<string, string[]>[] = [];
+  const keysAt = (open: number): string[] => {
+    const keys: string[] = [];
+    let depth = 0;
+    let expectKey = false;
+    for (let i = open; i < src.length; i++) {
+      const c = src[i]!;
+      if (c === "/" && src[i + 1] === "/") {
+        i = src.indexOf("\n", i);
+        if (i < 0) break;
+        continue;
+      }
+      if (c === "/" && src[i + 1] === "*") {
+        i = src.indexOf("*/", i + 2) + 1;
+        if (i <= 0) break;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") {
+        let j = i + 1;
+        let tplDepth = 0;
+        for (; j < src.length; j++) {
+          if (src[j] === "\\") {
+            j++;
+            continue;
+          }
+          if (c === "`" && src[j] === "$" && src[j + 1] === "{") tplDepth++;
+          else if (c === "`" && tplDepth && src[j] === "}") tplDepth--;
+          else if (src[j] === c && !tplDepth) break;
+        }
+        if (depth === 1 && expectKey && c !== "`" && /^\s*:/.test(src.slice(j + 1, j + 20))) keys.push(src.slice(i + 1, j));
+        expectKey = false;
+        i = j;
+        continue;
+      }
+      if (c === "{" || c === "[" || c === "(") {
+        depth++;
+        if (depth === 1) expectKey = true;
+        continue;
+      }
+      if (c === "}" || c === "]" || c === ")") {
+        depth--;
+        if (depth === 0) return keys;
+        continue;
+      }
+      if (depth === 1 && c === ",") {
+        expectKey = true;
+        continue;
+      }
+      if (depth === 1 && expectKey && /[A-Za-z_$]/.test(c)) {
+        const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(i))!;
+        if (/^\s*[:(]/.test(src.slice(i + m[0].length, i + m[0].length + 20))) keys.push(m[0]);
+        expectKey = false;
+        i += m[0].length - 1;
+        continue;
+      }
+      if (!/\s/.test(c)) expectKey = false;
+    }
+    return keys;
+  };
+  for (const m of src.matchAll(/(?:^|[\s,{])["']?(en|de|es|pl)["']?\s*:\s*\{/g)) {
+    const lang = m[1]!;
+    const open = (m.index ?? 0) + m[0].length - 1;
+    if (lang === "en" || !groups.length) groups.push({});
+    groups[groups.length - 1]![lang] = keysAt(open);
+  }
+  return groups.filter((g) => g.en);
+}
+
+/** Every `en` key must be translated in de, es and pl (an empty string does not count). */
+async function catalogCheck(root: string, rel: string): Promise<Outcome> {
+  if (!existsSync(join(root, rel))) return { ok: false, detail: `${rel} does not exist yet (each module keeps its owner-facing strings in its own catalog: en complete, de/es/pl translated)` };
+  const problems: string[] = [];
+  const found: { name: string; keys: Record<string, string[]>; values?: CatalogLike }[] = [];
+  let loadError = "";
+  try {
+    const m = await load<Record<string, unknown>>(root, rel);
+    const consider = (name: string, v: unknown, depth: number) => {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return;
+      const o = v as CatalogLike;
+      if (o.en && typeof o.en === "object" && LANGS.some((l) => l !== "en" && o[l])) {
+        found.push({ name, keys: Object.fromEntries(LANGS.filter((l) => o[l]).map((l) => [l, Object.keys(o[l]!)])), values: o });
+        return;
+      }
+      if (depth < 1) for (const [k, x] of Object.entries(o)) consider(`${name}.${k}`, x, depth + 1);
+    };
+    for (const [k, v] of Object.entries(m)) consider(k, v, 0);
+  } catch (e) {
+    loadError = msg(e).split("\n")[0] ?? "";
+  }
+  if (!found.length) {
+    const groups = staticCatalogs(readFileSync(join(root, rel), "utf8"));
+    groups.forEach((g, i) => found.push({ name: `catalog ${i + 1} (read from the source${loadError ? `; the module did not load: ${loadError}` : ", not exported"})`, keys: g }));
+  }
+  if (!found.length) return { ok: false, detail: `${rel} has no catalog of the shape { en: {...}, de: {...}, es: {...}, pl: {...} }${loadError ? ` (${loadError})` : ""}` };
+  let total = 0;
+  const same: string[] = [];
+  for (const c of found) {
+    const en = c.keys.en ?? [];
+    total += en.length;
+    if (!en.length) problems.push(`${c.name}: the en block is empty`);
+    for (const l of LANGS.filter((x) => x !== "en")) {
+      const have = new Set(c.keys[l] ?? []);
+      if (!c.keys[l]) {
+        problems.push(`${c.name}: no ${l} block`);
+        continue;
+      }
+      const miss = en.filter((k) => !have.has(k));
+      const empty = c.values ? en.filter((k) => have.has(k) && typeof c.values![l]?.[k] === "string" && !String(c.values![l]![k]).trim()) : [];
+      if (miss.length) problems.push(`${c.name}: ${l} lacks ${miss.length} of ${en.length} keys: ${miss.slice(0, 6).join(", ")}${miss.length > 6 ? " …" : ""}`);
+      if (empty.length) problems.push(`${c.name}: ${l} has empty texts for ${empty.slice(0, 6).join(", ")}`);
+      if (c.values) {
+        const copied = en.filter((k) => typeof c.values!.en?.[k] === "string" && c.values![l]?.[k] === c.values!.en![k] && /[a-z]{4,}\s+[a-z]{3,}/i.test(String(c.values!.en![k])));
+        if (copied.length) same.push(`${l}: ${copied.length}`);
+      }
+    }
+  }
+  return verdict(problems.slice(0, 10), `${found.length} catalog(s), ${total} en keys, every key in de/es/pl${same.length ? ` (texts identical to English, worth a look: ${same.join(", ")})` : ""}`);
 }
 
 function playRound(sim: SimMod, r: Rehearsal): Rehearsal {
@@ -236,7 +430,79 @@ function firstDiff(a: unknown, b: unknown, path = "$"): string | null {
   return null;
 }
 
-/** The demo bundle: analysis, plan and a full rule-based rehearsal with one owner event. Built once. */
+/**
+ * The shipped demo in one language: the ShareState that /r#demo opens (src/report/demo.ts demoState),
+ * rebuilt the way the report page rebuilds it (analyze → planTest → rebuildRehearsal → summarize).
+ * Every judge screenshot and the static report come from this, so judges score what visitors see.
+ * When src/report/demo.ts cannot load, it falls back to a rule-based run (seed 42) and says so.
+ */
+interface Shipped {
+  lang: Lang;
+  share: ShareState;
+  token: string;
+  a: Analysis;
+  plan: TestPlan;
+  rehearsal?: Rehearsal;
+  summary?: RehearsalSummary;
+  simError?: string;
+  /** Where the share state came from. */
+  source: string;
+}
+const shippedMemo = new Map<Lang, Promise<Shipped>>();
+function shippedDemo(root: string, lang: Lang): Promise<Shipped> {
+  let p = shippedMemo.get(lang);
+  if (!p) {
+    p = (async () => {
+      const e = await rawEngine(root, ["analyze", "planTest", "demoInputs", "DEMO_BUSINESS", "TEMPLATES"]);
+      const st = await stateMod(root);
+      let share: ShareState;
+      let source = "src/report/demo.ts demoState(\"lunch_offer\")";
+      try {
+        const d = await load<DemoMod>(root, "src/report/demo.ts", ["demoState"]);
+        share = await inLang(root, lang, () => d.demoState("lunch_offer", { lang }));
+      } catch (err) {
+        source = `fallback (src/report/demo.ts: ${msg(err).split("\n")[0]}): rule-based run, seed 42`;
+        share = { v: 1, template: "lunch_offer", inputs: e.demoInputs("lunch_offer"), demo: true, business: e.DEMO_BUSINESS, question: question(e, "lunch_offer"), currency: "EUR" };
+        try {
+          const sim = await simMod(root, [...SIM_EXPORTS.filter((n) => n !== "rebuildRehearsal")]);
+          const a0 = e.analyze("lunch_offer", share.inputs, { demo: true, business: share.business, question: share.question, lang });
+          const r = await inLang(root, lang, () => playAll(sim, sim.injectEvent(playRound(sim, sim.startRehearsal(a0, { seed: 42 })), EVENT)));
+          share.rehearsal = toShare(r);
+        } catch {
+          /* the report still opens without the rehearsal */
+        }
+      }
+      share = { ...share, lang };
+      const a = e.analyze(share.template, share.inputs, { business: share.business, question: share.question, demo: share.demo, currency: share.currency, lang });
+      const plan = e.planTest(a);
+      const out: Shipped = { lang, share, token: st.encodeState(share), a, plan, source };
+      if (share.rehearsal) {
+        try {
+          const sim = await simMod(root, [...SIM_EXPORTS]);
+          out.rehearsal = await inLang(root, lang, () => sim.rebuildRehearsal(a, share.rehearsal!));
+          out.summary = await inLang(root, lang, () => sim.summarize(out.rehearsal!));
+        } catch (err) {
+          out.simError = msg(err);
+        }
+      } else {
+        // demoState swallows rehearsal errors; replay the start of one to say why.
+        let why = "";
+        try {
+          const sim = await simMod(root);
+          await inLang(root, lang, () => playRound(sim, sim.startRehearsal(a, { seed: 23 })));
+        } catch (err) {
+          why = `; starting one on the demo analysis fails with: ${msg(err).split("\n")[0]}`;
+        }
+        out.simError = `the shipped demo (src/report/demo.ts) has no rehearsal${why || " (demoState caught an error)"}`;
+      }
+      return out;
+    })();
+    shippedMemo.set(lang, p);
+  }
+  return p;
+}
+
+/** The English demo bundle most checks read: the shipped demo plus the modules. */
 interface Bundle {
   e: EngineMod;
   a: Analysis;
@@ -245,41 +511,59 @@ interface Bundle {
   rehearsal?: Rehearsal;
   summary?: RehearsalSummary;
   simError?: string;
+  source: string;
 }
 let bundleMemo: Promise<Bundle> | null = null;
 function bundle(root: string): Promise<Bundle> {
   bundleMemo ??= (async () => {
     const e = await engine(root, ["analyze", "planTest", "demoInputs", "DEMO_BUSINESS", "TEMPLATES"]);
-    const a = demoAnalysis(e);
-    const plan = e.planTest(a);
-    try {
-      const sim = await simMod(root, [...SIM_EXPORTS.filter((n) => n !== "rebuildRehearsal")]);
-      let r = sim.startRehearsal(a, { seed: 42 });
-      r = playRound(sim, r);
-      r = sim.injectEvent(r, EVENT);
-      r = playAll(sim, r);
-      return { e, a, plan, sim, rehearsal: r, summary: sim.summarize(r) };
-    } catch (err) {
-      return { e, a, plan, simError: msg(err) };
-    }
+    const s = await shippedDemo(root, "en");
+    const sim = await simMod(root, [...SIM_EXPORTS.filter((n) => n !== "rebuildRehearsal")]).catch(() => undefined);
+    return { e, a: s.a, plan: s.plan, sim, rehearsal: s.rehearsal, summary: s.summary, simError: s.simError, source: s.source };
   })();
   return bundleMemo;
 }
 
-/** The demo report link the UI check opens (and its text marker). */
-export async function demoReport(root: string): Promise<{ token: string; marker: string; share: ShareState }> {
+/** The demo report links the UI check opens: German first (the beta default), then en, es, pl; plus a text marker. */
+export async function demoReport(root: string): Promise<{ token: string; marker: string; share: ShareState; tokens: Partial<Record<Lang, string>>; source: string }> {
   const t = await templates(root);
-  const st = await stateMod(root);
-  const share: ShareState = { v: 1, template: "lunch_offer", inputs: t.demoInputs("lunch_offer"), demo: true, business: t.DEMO_BUSINESS, question: question(t, "lunch_offer") };
-  try {
-    const b = await bundle(root);
-    if (b.rehearsal) share.rehearsal = toShare(b.rehearsal);
-  } catch {
-    /* the report still opens without the rehearsal */
+  const tokens: Partial<Record<Lang, string>> = {};
+  let main: Shipped | null = null;
+  for (const l of LANGS) {
+    try {
+      const s = await shippedDemo(root, l);
+      tokens[l] = s.token;
+      if (l === "de") main = s;
+    } catch {
+      /* the other languages still open */
+    }
   }
+  if (!main) main = await shippedDemo(root, "en");
   const words = t.DEMO_BUSINESS.match(/\p{L}{5,}/gu) ?? [];
-  const marker = words.find((w) => !/^caf/i.test(w)) ?? t.DEMO_BUSINESS;
-  return { token: st.encodeState(share), marker, share };
+  const marker = words.find((w) => !/^caf/i.test(w) && !/^demo/i.test(w)) ?? t.DEMO_BUSINESS;
+  return { token: main.token, marker, share: main.share, tokens, source: main.source };
+}
+
+/** Text labels for "Why this changed" in every language, from src/report/messages.ts when it has them. */
+async function whyLabels(root: string): Promise<string[]> {
+  const out = new Set(["Why this changed"]);
+  try {
+    const m = await load<Record<string, unknown>>(root, "src/report/messages.ts");
+    for (const v of Object.values(m)) {
+      const c = v as CatalogLike;
+      if (!c || typeof c !== "object" || !c.en) continue;
+      for (const [k, en] of Object.entries(c.en)) {
+        if (typeof en !== "string" || !/^why this changed/i.test(en.trim())) continue;
+        for (const l of LANGS) {
+          const x = c[l]?.[k];
+          if (typeof x === "string" && x.trim()) out.add(x.trim().replace(/[.:?!…]+$/, ""));
+        }
+      }
+    }
+  } catch {
+    /* English only */
+  }
+  return [...out];
 }
 
 // ---- type-check (once), with errors attributed to components by path ----
@@ -364,10 +648,14 @@ interface Dev {
   port: number;
   out: string[];
 }
-let devMemo: Promise<Dev> | null = null;
-let devProc: ChildProcess | null = null;
+const devMemos = new Map<string, Promise<Dev>>();
+const devProcs = new Set<ChildProcess>();
 /** Set by the build check: the dev server then serves that output (--no-build) instead of rebuilding it. */
 let builtThisRun = false;
+
+/** The invite code the beta server accepts (a test value, not a real code). */
+export const BETA_CODE = "test-code-123";
+const BETA_CONTACT = "beta-qa@example.org";
 
 function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -380,26 +668,41 @@ function freePort(): Promise<number> {
   });
 }
 
+/** The open dev server (no invite codes): the one every other live check uses. */
 export function devServer(root: string): Promise<Dev> {
-  devMemo ??= (async () => {
+  return startDev(root, "main", {}, () => builtThisRun);
+}
+
+/** A second dev server with WHATIF_BETA_CODES set (closed beta), serving the main server's build. */
+export function betaServer(root: string): Promise<Dev> {
+  return startDev(root, "beta", { WHATIF_BETA_CODES: BETA_CODE, WHATIF_BETA_CONTACT: BETA_CONTACT }, () => true, () => devServer(root));
+}
+
+function startDev(root: string, name: string, extraEnv: Record<string, string>, noBuild: () => boolean, before?: () => Promise<unknown>): Promise<Dev> {
+  let memo = devMemos.get(name);
+  if (memo) return memo;
+  memo = (async () => {
+    if (before) await before();
     const script = join(root, "scripts/dev.mjs");
     if (!existsSync(script)) throw new Missing("scripts/dev.mjs does not exist yet");
     const port = await freePort();
     const out: string[] = [];
-    const child = spawn(process.execPath, builtThisRun ? [script, "--no-build"] : [script], {
-      cwd: root,
-      env: { ...process.env, PORT: String(port), WHATIF_SITE_URL: `http://localhost:${port}`, FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    devProc = child;
+    const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(port), WHATIF_SITE_URL: `http://localhost:${port}`, FORCE_COLOR: "0", ...extraEnv };
+    // The open server must be open even when the shell has beta variables set.
+    if (!extraEnv.WHATIF_BETA_CODES) delete env.WHATIF_BETA_CODES;
+    if (!extraEnv.WHATIF_BETA_CONTACT) delete env.WHATIF_BETA_CONTACT;
+    const child = spawn(process.execPath, noBuild() ? [script, "--no-build"] : [script], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    devProcs.add(child);
     let exited: number | null | undefined;
     child.on("exit", (c) => (exited = c));
     child.stdout?.on("data", (d: Buffer) => out.push(String(d)));
     child.stderr?.on("data", (d: Buffer) => out.push(String(d)));
     const deadline = Date.now() + 90_000;
     while (Date.now() < deadline) {
-      if (exited !== undefined) throw new Error(`scripts/dev.mjs exited (code ${exited}) before answering:\n${tail(out.join(""), 800)}`);
+      if (exited !== undefined) {
+        const noBuild = !existsSync(join(root, ".vercel/output/config.json"));
+        throw new Error(`scripts/dev.mjs exited (code ${exited}) before answering${noBuild ? ": there is no .vercel/output to serve because the build failed (see the build check)" : ""}:\n${tail(out.join(""), 800)}`);
+      }
       const ports = [String(port)];
       const said = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d+)/.exec(out.join(""))?.[1];
       if (said && said !== String(port)) ports.push(said);
@@ -417,16 +720,19 @@ export function devServer(root: string): Promise<Dev> {
     }
     throw new Error(`scripts/dev.mjs did not answer on port ${port} within 90 s (does it read PORT?):\n${tail(out.join(""), 800)}`);
   })();
-  return devMemo;
+  devMemos.set(name, memo);
+  return memo;
 }
 
 export function stopDev(): void {
-  const p = devProc;
-  devProc = null;
-  devMemo = null;
-  if (!p || p.exitCode !== null || p.pid === undefined) return;
-  if (isWin) spawnSync("taskkill", ["/pid", String(p.pid), "/T", "/F"], { windowsHide: true });
-  else p.kill("SIGTERM");
+  const procs = [...devProcs];
+  devProcs.clear();
+  devMemos.clear();
+  for (const p of procs) {
+    if (p.exitCode !== null || p.pid === undefined) continue;
+    if (isWin) spawnSync("taskkill", ["/pid", String(p.pid), "/T", "/F"], { windowsHide: true });
+    else p.kill("SIGTERM");
+  }
 }
 process.on("exit", stopDev);
 
@@ -638,6 +944,139 @@ function localLinks(md: string): string[] {
   return [...new Set([...links, ...mentions])].filter((l) => l && !/^(https?:|mailto:|#|\{\{)/.test(l) && (/\//.test(l) || /\.[a-z0-9]{1,5}$/i.test(l)));
 }
 
+// ---- scratch copies of the repo: a production-like build and a CRLF checkout ----
+// They live in node_modules/.cache/what-if-qa: packages resolve from the repo's node_modules,
+// tsc and git ignore the folder, and the real .vercel/output (served by the dev server) is never touched.
+
+const SCRATCH = "node_modules/.cache/what-if-qa";
+const PROD_URL = "https://example.vercel.app";
+const TEXT_FILE = /\.(ts|mts|mjs|js|css|html?|md|json|svg|txt|webmanifest|ya?ml)$/i;
+const scratchDirs = new Set<string>();
+
+/** Copies the parts of the repo a build or the tests need; `eol` rewrites every text file to LF or CRLF. */
+function scratchCopy(root: string, name: string, eol?: "lf" | "crlf"): string {
+  const dir = join(root, SCRATCH, name);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  scratchDirs.add(dir);
+  scratchRoots.add(root);
+  for (const d of ["src", "site", "skill", "scripts", "test"]) {
+    const from = join(root, d);
+    if (existsSync(from)) cpSync(from, join(dir, d), { recursive: true, filter: (s) => !/(^|[\\/])(node_modules|\.git)([\\/]|$)/.test(relative(from, s)) });
+  }
+  for (const f of ["package.json", "tsconfig.json"]) if (existsSync(join(root, f))) cpSync(join(root, f), join(dir, f));
+  if (eol)
+    for (const f of listFiles(dir, (x) => TEXT_FILE.test(x))) {
+      const lf = readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+      writeFileSync(f, eol === "crlf" ? lf.replace(/\n/g, "\r\n") : lf);
+    }
+  return dir;
+}
+
+function removeScratch(): void {
+  for (const d of scratchDirs) rmSync(d, { recursive: true, force: true });
+  scratchDirs.clear();
+  for (const root of scratchRoots) {
+    const dir = join(root, SCRATCH);
+    if (existsSync(dir) && !readdirSync(dir).length) rmSync(dir, { recursive: true, force: true });
+  }
+}
+const scratchRoots = new Set<string>();
+
+interface ProdBuild {
+  dir: string;
+  zip: Record<string, Uint8Array> | null;
+  out: string;
+}
+let prodMemo: Promise<ProdBuild> | null = null;
+/** `node scripts/build.mjs` with WHATIF_SITE_URL=https://example.vercel.app, in a scratch copy. */
+function prodBuild(root: string): Promise<ProdBuild> {
+  prodMemo ??= (async () => {
+    if (!existsSync(join(root, "scripts/build.mjs"))) throw new Missing("scripts/build.mjs does not exist yet");
+    const dir = scratchCopy(root, "prod-build");
+    const r = proc(process.execPath, [join(dir, "scripts/build.mjs")], dir, 5 * 60_000, { WHATIF_SITE_URL: PROD_URL, WHATIF_BETA_CONTACT: BETA_CONTACT });
+    const zipPath = join(dir, ".vercel/output/static/what-if-skill.zip");
+    if (r.code !== 0) throw new Error(`the production-like build (WHATIF_SITE_URL=${PROD_URL}) failed: exit ${r.code}\n${tail(r.out, 800)}`);
+    let zip: Record<string, Uint8Array> | null = null;
+    if (existsSync(zipPath)) {
+      const { unzipSync } = (await import("fflate")) as typeof import("fflate");
+      zip = unzipSync(new Uint8Array(readFileSync(zipPath)));
+    }
+    return { dir, zip, out: r.out };
+  })();
+  return prodMemo;
+}
+
+async function unzipText(path: string): Promise<{ files: Record<string, string>; error?: string }> {
+  const { unzipSync, strFromU8 } = (await import("fflate")) as typeof import("fflate");
+  try {
+    const raw = unzipSync(new Uint8Array(readFileSync(path)));
+    return { files: Object.fromEntries(Object.entries(raw).filter(([n]) => !n.endsWith("/") && (TEXT_FILE.test(n) || !extname(n))).map(([n, d]) => [n, strFromU8(d)])) };
+  } catch (e) {
+    return { files: {}, error: `not a valid zip: ${msg(e)}` };
+  }
+}
+
+/** Every …/api/mcp URL in a text, with its host. */
+const mcpUrls = (s: string) => [...s.matchAll(/\b(https?):\/\/([^\s/)`'"<>]+)[^\s)`'"<>]*?\/api\/mcp\b[^\s)`'"<>]*/g)].map((m) => ({ url: m[0], scheme: m[1]!, host: m[2]!.toLowerCase() }));
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?$|\.localhost(:\d+)?$/;
+
+// ---- language helpers ----
+
+/** Sentences that say the imagined customers were played by an AI, per language (negated or conditional sentences are fine). */
+const AI_PLAYED: Record<Lang, { claim: RegExp; ok: RegExp }> = {
+  en: {
+    claim: /\b(played|acted|voiced|role-?played|written) by (an |the |a )?(AI|model|language model|Claude)\b|\b(an |the )?AI (plays|played|role-?plays|acted)\b/i,
+    ok: /\b(not|no|never|isn't|aren't|wasn't|without|if|when|whenever|with your|would|could|instead)\b|n't\b/i,
+  },
+  de: {
+    claim: /\b(von|durch) (einer |der |einem )?(KI|AI|Sprachmodell|Claude) (gespielt|verkörpert|dargestellt|geschrieben)|\b(gespielt|verkörpert|dargestellt) (von|durch) (einer |der |einem )?(KI|AI|Sprachmodell|Claude)\b|\b(eine |die )?KI spielt\b/i,
+    ok: /\b(nicht|keine?|keinem|keiner|nie|wenn|falls|sobald|mit Ihrem|mit Ihrer|würde|statt)\b/i,
+  },
+  es: {
+    claim: /\b(interpretad|representad|jugad|escrit)[oa]s? por (una |la |un |el )?(IA|AI|modelo|Claude)\b|\b(la |una )?IA (interpreta|representa|juega)\b/i,
+    ok: /\b(no|nunca|ningún|ninguna|si|cuando|con tu|con su|en lugar)\b/i,
+  },
+  pl: {
+    claim: /\b(odgrywan|grane|grani|odegran|napisan)\w* przez (AI|SI|model|Claude)\b|\b(AI|SI|model) (odgrywa|gra)\b/i,
+    ok: /\b(nie|jeśli|jeżeli|gdy|kiedy|z twoim|zamiast)\b/i,
+  },
+};
+
+function aiPlayedClaims(text: string, lang: Lang): string[] {
+  const p = AI_PLAYED[lang];
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((s) => p.claim.test(s) && !p.ok.test(s))
+    .map((s) => `"${squash(s).slice(0, 120)}"`);
+}
+
+/** The element (balanced tags) that starts at `start` in an HTML string. */
+function elementAt(html: string, start: number): string {
+  const tag = /^<([a-z][a-z0-9-]*)/i.exec(html.slice(start))?.[1]?.toLowerCase();
+  if (!tag) return "";
+  const re = new RegExp(`<(/?)${tag}\\b[^>]*?(/?)>`, "gi");
+  re.lastIndex = start;
+  let depth = 0;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    if (m[2]) continue;
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(start, m.index + m[0].length);
+  }
+  return html.slice(start);
+}
+
+/** The smallest card/section around a piece of text: the nearest enclosing div/section/article/aside whose class says card (or any section). */
+function enclosing(html: string, index: number): string {
+  const opens = [...html.slice(0, index).matchAll(/<(div|section|article|aside)\b[^>]*>/gi)].reverse();
+  for (const m of opens) {
+    const el = elementAt(html, m.index ?? 0);
+    if ((m.index ?? 0) + el.length <= index) continue;
+    if (/^<(section|article|aside)/i.test(m[0]) || /class=["'][^"']*\b(card|box|panel|checkreal)/i.test(m[0])) return el;
+  }
+  return "";
+}
+
 // ---- docs / claims helpers ----
 
 const NEGATION = /\b(not|no|never|cannot|can't|isn't|doesn't|don't|won't|without|nor|neither|instead of)\b|n't\b/i;
@@ -689,28 +1128,69 @@ function ui(root: string): Promise<UiResult[]> {
     } catch (e) {
       return UI_CHECKS.map((c) => ({ id: c.id, ok: false, detail: `cannot open the site: ${msg(e).split("\n")[0]}` }));
     }
-    return runUiCheck({ root, base, token: demo.token, marker: demo.marker, shots: join(root, "qa/reports/ui") });
+    let betaBase: string | undefined;
+    let betaError: string | undefined;
+    try {
+      betaBase = (await betaServer(root)).base;
+    } catch (e) {
+      betaError = `the beta dev server (WHATIF_BETA_CODES set) did not start: ${msg(e).split("\n")[0]}`;
+    }
+    return runUiCheck({ root, base, token: demo.token, tokens: demo.tokens, lang: "de", marker: demo.marker, whyLabels: await whyLabels(root), betaBase, betaCode: BETA_CODE, betaError, shots: join(root, "qa/reports/ui") });
   })();
   return uiMemo;
 }
 
-/** The static report HTML for the demo (with rehearsal), rendered once. */
-let renderedMemo: Promise<{ b: Bundle; report: ReportMod; html: string; styles: string }> | null = null;
-function rendered(root: string) {
-  renderedMemo ??= (async () => {
-    const [b, report] = await Promise.all([bundle(root), reportMod(root)]);
-    const html = report.renderReport({ analysis: b.a, plan: b.plan, ...(b.summary ? { rehearsal: b.summary } : {}), status: "final" });
-    const styles = typeof report.reportStyles === "function" ? report.reportStyles() : "";
-    try {
-      const dir = join(root, "qa/reports/ui");
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "report-static.html"), `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>What-IF demo report (static)</title><style>${styles}</style><main>${html}</main></html>`);
-    } catch {
-      /* the copy for judges is a convenience */
-    }
-    return { b, report, html, styles };
-  })();
-  return renderedMemo;
+/** The static report HTML for the shipped demo in one language (with its rehearsal), rendered once; a copy goes to qa/reports/ui for the judges. */
+const renderedLangMemo = new Map<Lang, Promise<{ s: Shipped; html: string; styles: string }>>();
+function renderedLang(root: string, lang: Lang) {
+  let p = renderedLangMemo.get(lang);
+  if (!p) {
+    p = (async () => {
+      const [s, report] = await Promise.all([shippedDemo(root, lang), reportMod(root)]);
+      const html = await inLang(root, lang, () => report.renderReport({ analysis: s.a, plan: s.plan, ...(s.summary ? { rehearsal: s.summary } : {}), status: "final" }));
+      const styles = typeof report.reportStyles === "function" ? report.reportStyles() : "";
+      try {
+        const dir = join(root, "qa/reports/ui");
+        mkdirSync(dir, { recursive: true });
+        const name = lang === "en" ? "report-static.html" : `report-static.${lang}.html`;
+        writeFileSync(join(dir, name), `<!doctype html><html lang="${lang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>What-IF demo report (static, ${lang})</title><style>${styles}</style><main>${html}</main></html>`);
+      } catch {
+        /* the copy for judges is a convenience */
+      }
+      return { s, html, styles };
+    })();
+    renderedLangMemo.set(lang, p);
+  }
+  return p;
+}
+
+/** The English static report of the shipped demo, with the modules (most visual checks read this). */
+async function rendered(root: string): Promise<{ b: Bundle; report: ReportMod; html: string; styles: string }> {
+  const [b, report, en] = await Promise.all([bundle(root), reportMod(root), renderedLang(root, "en")]);
+  return { b, report, html: en.html, styles: en.styles };
+}
+
+/** Steps in a rendered report: data-step, id=step-N, a progress list or section.step (best signal wins). */
+function countSteps(html: string): { n: number; how: string } | null {
+  const dataStep = new Set([...html.matchAll(/data-step=["']?(\d+)/g)].map((m) => m[1]));
+  const idStep = new Set([...html.matchAll(/\bid=["']step-?(\d+)["']/g)].map((m) => m[1]));
+  const list = /<(ol|ul|nav)\b[^>]*class=["'][^"']*\b(steps|progress|pipeline|stepper)\b[^"']*["'][^>]*>([\s\S]*?)<\/\1>/i.exec(html);
+  const listItems = list ? (list[3]?.match(/<li\b/gi) ?? []).length : 0;
+  const sections = (html.match(/<section\b[^>]*class=["'][^"']*\bstep\b[^"']*["']/gi) ?? []).length;
+  const found = [
+    ["data-step", dataStep.size],
+    ["id=step-N", idStep.size],
+    ["progress list", listItems],
+    ["section.step", sections],
+  ] as const;
+  const best = found.find(([, n]) => n > 0);
+  return best ? { n: best[1], how: best[0] } : null;
+}
+
+/** English UI phrases in a non-English render: visible text and the aria-label/title/alt/placeholder attributes. */
+function englishLeaks(html: string): string[] {
+  const attrs = [...html.matchAll(/\b(?:aria-label|title|alt|placeholder)=["']([^"']+)["']/gi)].map((m) => decodeEntities(m[1] ?? "")).join(" \n ");
+  return englishHits(`${visibleText(html)}\n${attrs}`);
 }
 const needRehearsal = (b: Bundle) => (b.summary ? null : `the demo rehearsal could not run: ${b.simError ?? "unknown"}`);
 
@@ -941,6 +1421,193 @@ export const CHECKS: CheckDef[] = [
     command: "node --import tsx qa/run.ts --no-loop --only engine",
     run: (root) => browserSafe(root, ["src/engine"]),
   },
+  {
+    id: "engine-lang",
+    component: "engine",
+    title: "analyze(…, { lang }) writes the analysis in de/en/es/pl: Analysis.lang is set, the texts are translated, money is formatted per language (9,90 € in de, €9.90 in en)",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: async (root) => {
+      const e = await rawEngine(root);
+      const problems: string[] = [];
+      const texts = (a: Analysis) => [a.breakEven?.plain, a.worstCase?.plain, ...(a.scenarios ?? []).map((s) => s.plain), ...(a.lessons ?? []), a.biggestUncertainty?.plain].filter((x): x is string => typeof x === "string" && !!x.trim());
+      const by: Partial<Record<Lang, Analysis>> = {};
+      for (const lang of LANGS) {
+        try {
+          by[lang] = e.analyze("lunch_offer", e.demoInputs("lunch_offer"), { demo: true, lang });
+        } catch (err) {
+          problems.push(`${lang}: analyze threw: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      const en = by.en;
+      for (const lang of LANGS) {
+        const a = by[lang];
+        if (!a) continue;
+        if ((a as Analysis & { lang?: string }).lang !== lang) problems.push(`${lang}: Analysis.lang is ${JSON.stringify((a as Analysis & { lang?: string }).lang)}`);
+        const json = JSON.stringify(a);
+        if (lang === "en") {
+          if (!/€\d/.test(json)) problems.push("en: no money written as €9.90");
+        } else {
+          if (!/\d,\d{2}[\s  ]?€/.test(json)) problems.push(`${lang}: no money written as 9,90 €`);
+          if (/€\d/.test(json)) problems.push(`${lang}: money written the English way (${/€\d[\d.,]*/.exec(json)?.[0]})`);
+          if (en) {
+            const mine = texts(a), base = texts(en);
+            const same = mine.filter((t, i) => t === base[i]);
+            if (!mine.length) problems.push(`${lang}: no plain texts`);
+            else if (same.length > Math.floor(mine.length * 0.2)) problems.push(`${lang}: ${same.length} of ${mine.length} plain texts are still English, e.g. "${squash(same[0] ?? "").slice(0, 70)}"`);
+          }
+        }
+      }
+      return verdict(problems.slice(0, 10), `4 languages; de break-even: "${squash(by.de?.breakEven?.plain ?? "").slice(0, 90)}"`);
+    },
+  },
+  {
+    id: "engine-messages",
+    component: "engine",
+    title: "src/engine/messages.ts: every en key is translated in de, es and pl",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: (root) => catalogCheck(root, "src/engine/messages.ts"),
+  },
+  {
+    id: "engine-staff-hours",
+    component: "engine",
+    title: "staff cost is extra_staff_hours_per_day × staff_hourly_cost (fallback €13.90 minimum wage, tagged a guess; demo 1 h at €18); extra_staff_cost_per_day is gone",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: async (root) => {
+      const e = await engine(root);
+      const t = e.TEMPLATES.lunch_offer;
+      if (!t) return { ok: false, detail: "no lunch_offer template" };
+      const keys = t.fields.map((f) => f.key);
+      const problems: string[] = [];
+      for (const k of ["extra_staff_hours_per_day", "staff_hourly_cost"]) if (!keys.includes(k)) problems.push(`lunch_offer has no field ${k}`);
+      if (keys.includes("extra_staff_cost_per_day")) problems.push("lunch_offer still has extra_staff_cost_per_day (replaced by hours × hourly cost)");
+      if (problems.length) return { ok: false, detail: problems.join("\n") };
+      const demo = e.demoInputs("lunch_offer");
+      if (Number(demo.extra_staff_hours_per_day) !== 1 || Number(demo.staff_hourly_cost) !== 18) problems.push(`demo staff: ${demo.extra_staff_hours_per_day} h at ${demo.staff_hourly_cost} (want 1 h at €18.00)`);
+      const noCost: RawInputs = { ...demo, extra_staff_hours_per_day: 1 };
+      delete noCost.staff_hourly_cost;
+      const a = e.analyze("lunch_offer", noCost, { demo: false, business: "Café QA" });
+      const hc = a.inputs.find((i) => i.key === "staff_hourly_cost");
+      if (!hc) problems.push("staff_hourly_cost is not in the resolved inputs when the owner leaves it out");
+      else {
+        if (Math.abs(Number(hc.value) - 13.9) > 0.001) problems.push(`staff_hourly_cost falls back to ${hc.value} (want 13.90, the minimum wage since 1 Jan 2026)`);
+        if (hc.source !== "assumption") problems.push(`the fallback hourly cost is tagged "${hc.source}" (want "assumption": a guess)`);
+        if (!hc.note?.trim()) problems.push("the fallback hourly cost has no note (say real costs are higher once employer contributions are added)");
+      }
+      const net = (raw: RawInputs) => e.analyze("lunch_offer", raw, { demo: true }).scenarios.find((s) => s.id === "expected")?.netTest ?? NaN;
+      const days = Number(e.analyze("lunch_offer", demo, { demo: true }).inputs.find((i) => i.key === "test_days")?.value ?? 10);
+      const diff = net({ ...demo, extra_staff_hours_per_day: 2, staff_hourly_cost: 20 }) - net({ ...demo, extra_staff_hours_per_day: 0 });
+      if (!(Math.abs(diff + 40 * days) <= 1)) problems.push(`2 h × €20 a day over ${days} test days moves the expected result by ${fmt(diff)} (want −${40 * days})`);
+      return verdict(problems, `2 h × €20 over ${days} days = ${fmt(diff)}; fallback ${hc?.value} (${hc?.source})`);
+    },
+  },
+  {
+    id: "berlin-number-parsing",
+    component: "engine",
+    title: "German number writing parses: \"1.500 €\" → 1500, \"9,90\" → 9.9, \"ca. 40\" → 40 (lang de); English \"1,500\" → 1500 still works",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: async (root) => {
+      const e = await rawEngine(root, ["checkInputs", "demoInputs"]);
+      const problems: string[] = [];
+      const cases: [Lang, string, string, number][] = [
+        ["de", "cash_buffer", "1.500 €", 1500],
+        ["de", "lunch_spend", "9,90", 9.9],
+        ["de", "lunch_customers", "ca. 40", 40],
+        ["de", "monthly_fixed_costs", "16.500", 16500],
+        ["en", "cash_buffer", "1,500", 1500],
+        ["en", "lunch_spend", "9.90", 9.9],
+      ];
+      const got: string[] = [];
+      for (const lang of ["de", "en"] as const) {
+        const mine = cases.filter((c) => c[0] === lang);
+        const raw: RawInputs = { ...e.demoInputs("lunch_offer"), ...Object.fromEntries(mine.map((c) => [c[1], c[2]])) };
+        let c: InputCheck;
+        try {
+          c = await inLang(root, lang, () => e.checkInputs("lunch_offer", raw, { lang }));
+        } catch (err) {
+          problems.push(`${lang}: checkInputs threw: ${msg(err).split("\n")[0]}`);
+          continue;
+        }
+        for (const [, key, text, want] of mine) {
+          const v = c.resolved.find((r) => r.key === key)?.value;
+          got.push(`${lang} "${text}" → ${v}`);
+          if (typeof v !== "number" || Math.abs(v - want) > 1e-9) problems.push(`${lang}: ${key} "${text}" became ${JSON.stringify(v)} (want ${want})${c.problems.length ? `; problems: ${c.problems.join(" ").slice(0, 120)}` : ""}`);
+        }
+      }
+      return verdict(problems, got.join(", "));
+    },
+  },
+  {
+    id: "berlin-vat",
+    component: "engine",
+    title: "VAT: prices are gross and the engine works on net prices; vat_rate falls back to 10.6% (lunch) and 19% (price change) as guesses; more VAT means a smaller deal margin",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: async (root) => {
+      const e = await engine(root);
+      const problems: string[] = [];
+      const info: string[] = [];
+      for (const [t, fallback] of [["lunch_offer", 0.106], ["price_change", 0.19]] as const) {
+        const keys = (e.TEMPLATES[t]?.fields ?? []).map((f) => f.key);
+        if (!keys.includes("vat_rate")) {
+          problems.push(`${t} has no vat_rate field`);
+          continue;
+        }
+        const demo = e.demoInputs(t);
+        const raw: RawInputs = { ...demo };
+        delete raw.vat_rate;
+        const a = e.analyze(t, raw, { demo: false, business: "Café QA" });
+        const v = a.inputs.find((i) => i.key === "vat_rate");
+        if (!v) problems.push(`${t}: vat_rate is not in the resolved inputs when left out`);
+        else {
+          if (Math.abs(Number(v.value) - fallback) > 0.0005) problems.push(`${t}: vat_rate falls back to ${v.value} (want ${fallback})`);
+          if (v.source !== "assumption") problems.push(`${t}: the VAT fallback is tagged "${v.source}" (want "assumption")`);
+          if (!/steuerberater|tax adviser|accountant/i.test(v.note ?? "") && t === "lunch_offer") problems.push(`${t}: the VAT fallback note does not say to ask the Steuerberater ("${(v.note ?? "").slice(0, 80)}")`);
+        }
+        const at = (rate: number) => e.analyze(t, { ...demo, vat_rate: rate }, { demo: true });
+        const lo = at(0.07), hi = at(0.19);
+        const nlo = lo.scenarios.find((s) => s.id === "expected")?.netTest ?? NaN, nhi = hi.scenarios.find((s) => s.id === "expected")?.netTest ?? NaN;
+        if (t === "lunch_offer") {
+          if (!(nhi < nlo)) problems.push(`lunch_offer: the expected result is ${fmt(nlo)} at 7% VAT and ${fmt(nhi)} at 19% (more VAT must leave less per deal)`);
+          if (!(hi.breakEven.value >= lo.breakEven.value)) problems.push(`lunch_offer: break-even ${lo.breakEven.value} at 7% and ${hi.breakEven.value} at 19% (it cannot fall when VAT rises)`);
+          if (!/\bVAT\b/.test(JSON.stringify(lo))) problems.push("lunch_offer: the analysis never says VAT (the owner should see that prices are counted without it)");
+        } else if (!(Math.abs(nhi - nlo) > 0.5)) problems.push(`price_change: the VAT rate does not change the result (${fmt(nlo)} at 7%, ${fmt(nhi)} at 19%)`);
+        info.push(`${t}: ${fmt(nlo)} at 7% → ${fmt(nhi)} at 19%`);
+      }
+      return verdict(problems, info.join("; "));
+    },
+  },
+  {
+    id: "berlin-facts",
+    component: "engine",
+    title: "Analysis.facts lists the public facts the numbers used (VAT rates, minimum wage), each with a source, an https URL and a date",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: async (root) => {
+      const e = await engine(root);
+      const raw: RawInputs = { ...e.demoInputs("lunch_offer"), extra_staff_hours_per_day: 1 };
+      delete raw.vat_rate;
+      delete raw.staff_hourly_cost;
+      const a = e.analyze("lunch_offer", raw, { demo: false, business: "Café QA" }) as Analysis & { facts?: Json[] };
+      const facts = a.facts;
+      if (!Array.isArray(facts)) return { ok: false, detail: "Analysis.facts is missing (want PublicFact[]: id, label, value, source, url, asOf)" };
+      const problems: string[] = [];
+      const text = (f: Json) => `${f?.id ?? ""} ${f?.label ?? ""} ${f?.source ?? ""}`;
+      const vat = facts.filter((f) => /vat|mwst|ust\b|umsatzsteuer|mehrwert/i.test(text(f)));
+      const wage = facts.filter((f) => /mindestlohn|minimum.?wage|min.?wage/i.test(text(f)));
+      if (!vat.length) problems.push("no VAT fact (VAT 7% food / 19% drinks since 1 Jan 2026)");
+      if (!wage.length) problems.push("no minimum-wage fact (€13.90 since 1 Jan 2026), although the hourly cost fell back to it");
+      for (const f of facts) {
+        const id = String(f?.id ?? f?.label ?? "?");
+        for (const k of ["label", "value", "source"]) if (!String(f?.[k] ?? "").trim()) problems.push(`${id}: no ${k}`);
+        if (!/^https:\/\/[^\s]+\.[a-z]{2,}/i.test(String(f?.url ?? ""))) problems.push(`${id}: url ${JSON.stringify(f?.url)} is not an https link`);
+        const d = String(f?.asOf ?? "");
+        if (!/^\d{4}-\d{2}-\d{2}/.test(d) || Number.isNaN(Date.parse(d))) problems.push(`${id}: asOf ${JSON.stringify(f?.asOf)} is not an ISO date`);
+      }
+      const demoFacts = (e.analyze("lunch_offer", e.demoInputs("lunch_offer"), { demo: true }) as Analysis & { facts?: Json[] }).facts ?? [];
+      if (!demoFacts.length) problems.push("the demo analysis lists no public facts (its prices still count VAT)");
+      const price = (e.analyze("price_change", e.demoInputs("price_change"), { demo: true }) as Analysis & { facts?: Json[] }).facts ?? [];
+      if (!price.some((f) => /vat|mwst|ust\b|umsatzsteuer|mehrwert/i.test(text(f)))) problems.push("the price-change analysis lists no VAT fact");
+      return verdict(problems.slice(0, 10), `${facts.length} facts: ${facts.map((f) => `${f?.label ?? f?.id} (${f?.asOf})`).join("; ")}`);
+    },
+  },
 
   // ==================== rehearsal ====================
   {
@@ -1051,8 +1718,9 @@ export const CHECKS: CheckDef[] = [
       const e = await engine(root);
       const sim = await simMod(root, ["startRehearsal", "roundBriefs", "submitRound", "ruleBasedReactions", "interviewBriefs"]);
       // distinctive owner numbers, so a match is a leak and not a coincidence
-      const canary: RawInputs = { monthly_fixed_costs: 23456, cash_buffer: 4321, offer_cost: 3.17, setup_cost: 247.31, extra_staff_cost_per_day: 19.37, variable_cost_share: 0.291, marketing_per_week: 27.13 };
-      const leaks = [/23[.,\s]?456/, /\b4[.,\s]?321\b/, /\b3[.,]17\b/, /\b247[.,]31\b/, /\b19[.,]37\b/, /\b29[.,]1\s?%|\b0[.,]291\b/, /\b27[.,]13\b/];
+      // v0.2: staff cost is hours × hourly cost (extra_staff_cost_per_day is gone; it is ignored if still sent).
+      const canary: RawInputs = { monthly_fixed_costs: 23456, cash_buffer: 4321, offer_cost: 3.17, setup_cost: 247.31, extra_staff_hours_per_day: 1.5, staff_hourly_cost: 19.37, variable_cost_share: 0.291, marketing_per_week: 27.13 };
+      const leaks = [/23[.,\s]?456/, /\b4[.,\s]?321\b/, /\b3[.,]17\b/, /\b247[.,]31\b/, /\b19[.,]37\b/, /\b29[.,]1\s?%|\b0[.,]291\b/, /\b27[.,]13\b/, /\b29[.,]06\b/];
       const a = e.analyze("lunch_offer", { ...e.demoInputs("lunch_offer"), ...canary }, { demo: false, business: "Café QA" });
       let r = sim.startRehearsal(a, { seed: 9 });
       const briefs: PersonaBrief[] = [];
@@ -1200,6 +1868,169 @@ export const CHECKS: CheckDef[] = [
     title: "src/sim uses no Node APIs (it runs in the report page)",
     command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
     run: (root) => browserSafe(root, ["src/sim"]),
+  },
+  {
+    id: "sim-messages",
+    component: "rehearsal",
+    title: "src/sim/messages.ts: every en key is translated in de, es and pl",
+    command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
+    run: (root) => catalogCheck(root, "src/sim/messages.ts"),
+  },
+  {
+    id: "sim-lang",
+    component: "rehearsal",
+    title: "the rehearsal follows the analysis language: briefs ask for answers in German/Spanish/Polish, the rule-based text and the caveat are translated",
+    command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
+    run: async (root) => {
+      const e = await rawEngine(root);
+      const sim = await simMod(root);
+      const problems: string[] = [];
+      const name: Record<Lang, RegExp> = { de: /German|Deutsch/i, en: /English/i, es: /Spanish|Español|espanol|castellano/i, pl: /Polish|polsk/i };
+      const runs: Partial<Record<Lang, { caveat: string; thought: string }>> = {};
+      for (const lang of LANGS) {
+        try {
+          const a = e.analyze("lunch_offer", e.demoInputs("lunch_offer"), { demo: true, lang });
+          const r0 = await inLang(root, lang, () => sim.startRehearsal(a, { seed: 3 }));
+          const brief = sim.roundBriefs(r0)[0]?.prompt ?? "";
+          if (lang !== "en" && !name[lang].test(brief)) problems.push(`${lang}: the round-1 brief does not tell the imagined customer to write in ${name[lang].source.split("|")[0]}`);
+          const r = await inLang(root, lang, () => playAll(sim, r0));
+          runs[lang] = { caveat: sim.summarize(r).caveat ?? "", thought: r.reactions[0]?.thought ?? "" };
+        } catch (err) {
+          problems.push(`${lang}: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      for (const lang of LANGS.filter((l) => l !== "en")) {
+        const x = runs[lang], en = runs.en;
+        if (!x || !en) continue;
+        if (x.caveat === en.caveat) problems.push(`${lang}: the summary caveat is still English ("${x.caveat.slice(0, 60)}…")`);
+        if (x.thought && x.thought === en.thought) problems.push(`${lang}: the rule-based customers still think in English ("${x.thought.slice(0, 60)}")`);
+      }
+      return verdict(problems, `de caveat: "${(runs.de?.caveat ?? "").slice(0, 90)}…"`);
+    },
+  },
+  {
+    id: "sim-honest-method",
+    component: "rehearsal",
+    title: "honesty: a rule-based rehearsal (summary, caveat and report) never says the customers were played by an AI, in any of the four languages",
+    command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
+    run: async (root) => {
+      const e = await rawEngine(root);
+      const sim = await simMod(root);
+      const report = await reportMod(root).catch(() => null);
+      const problems: string[] = [];
+      const methods: string[] = [];
+      for (const lang of LANGS) {
+        try {
+          const a = e.analyze("lunch_offer", e.demoInputs("lunch_offer"), { demo: true, lang });
+          const r = await inLang(root, lang, () => playAll(sim, sim.startRehearsal(a, { seed: 11 })));
+          const s = await inLang(root, lang, () => sim.summarize(r));
+          methods.push(`${lang}: ${s.method}`);
+          if (s.method !== "rule-based") problems.push(`${lang}: summary.method is "${s.method}" for a run played only by the rule-based stand-in`);
+          const claims = aiPlayedClaims([s.caveat, ...(s.checkWithRealCustomers ?? [])].join("\n"), lang);
+          if (claims.length) problems.push(`${lang}: the summary says an AI played the customers: ${claims[0]}`);
+          if (report) {
+            const html = await inLang(root, lang, () => report.renderReport({ analysis: a, rehearsal: s, status: "final" }));
+            const inReport = aiPlayedClaims(visibleText(html), lang);
+            if (inReport.length) problems.push(`${lang}: the report says an AI played these rule-based customers: ${inReport[0]}`);
+          }
+        } catch (err) {
+          problems.push(`${lang}: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      // The shipped demo (what /r#demo shows) too.
+      try {
+        const { html, s } = await renderedLang(root, "en");
+        if (s.summary?.method === "rule-based") {
+          const c = aiPlayedClaims(visibleText(html), "en");
+          if (c.length) problems.push(`the shipped demo report says an AI played its rule-based customers: ${c[0]}`);
+        }
+      } catch {
+        /* covered above */
+      }
+      return verdict([...new Set(problems)].slice(0, 10), `no "played by an AI" for rule-based runs (${methods.join(", ")})`);
+    },
+  },
+  {
+    id: "sim-kiez-mix",
+    component: "rehearsal",
+    title: "the Kiez input changes the imagined customer mix (same seed, different Kiez, different people) and shows up in the rehearsal",
+    command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
+    run: async (root) => {
+      const e = await engine(root);
+      const sim = await simMod(root);
+      const problems: string[] = [];
+      const keys = (e.TEMPLATES.lunch_offer?.fields ?? []).map((f) => f.key);
+      if (!keys.includes("kiez")) return { ok: false, detail: "lunch_offer has no kiez field yet (docs/ARCHITECTURE.md: optional text choice from BERLIN_KIEZE)" };
+      const kieze = ["Neukölln", "Charlottenburg", "Prenzlauer Berg", "Spandau", "Mitte"];
+      const mixOf = (kiez: string, seed: number) => {
+        const a = e.analyze("lunch_offer", { ...e.demoInputs("lunch_offer"), kiez }, { demo: true });
+        const r = sim.startRehearsal(a, { seed });
+        return { mix: r.personas.map((p) => p.segment).sort().join(","), json: JSON.stringify(r) };
+      };
+      let differing = 0;
+      const seen: string[] = [];
+      for (const seed of [1, 2, 3]) {
+        const mixes = kieze.map((k) => mixOf(k, seed));
+        const distinct = new Set(mixes.map((m) => m.mix)).size;
+        if (distinct > 1) differing++;
+        seen.push(`seed ${seed}: ${distinct} mixes`);
+        if (seed === 1)
+          for (const [i, k] of kieze.entries()) if (!(mixes[i]?.json ?? "").includes(k)) problems.push(`the rehearsal for ${k} never mentions ${k}`);
+      }
+      if (differing < 2) problems.push(`the Kiez barely changes who is imagined (${seen.join("; ")}): with ${kieze.length} Kieze and the same seed the segment mix should differ`);
+      try {
+        const k = await loadExport<unknown>(root, "BERLIN_KIEZE", ["src/engine/index.ts", "src/sim/index.ts"]);
+        const list = Array.isArray(k.value) ? k.value : Object.keys(k.value as object);
+        if (list.length < 18) problems.push(`BERLIN_KIEZE (${k.file}) has ${list.length} entries (want the 18 Kieze plus "other")`);
+      } catch (err) {
+        problems.push(msg(err));
+      }
+      return verdict(problems, `${seen.join("; ")}; every Kiez named in its rehearsal`);
+    },
+  },
+  {
+    id: "sim-berlin-events",
+    component: "rehearsal",
+    title: "BERLIN_EVENTS has the 8 owner \"what if\" events (BVG strike, rain week, 32 °C heatwave, Baustelle, school holidays, a rival café with an €8.50 lunch, a Kiez festival, a Christmas market), each with texts in de/en/es/pl",
+    command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
+    run: async (root) => {
+      const found = await loadExport<unknown>(root, "BERLIN_EVENTS", ["src/sim/index.ts", "src/sim/events.ts", "src/engine/index.ts"]);
+      const raw = found.value;
+      const entries: [string, Json][] = Array.isArray(raw) ? raw.map((x: Json, i: number) => [String(x?.id ?? `#${i}`), x]) : raw && typeof raw === "object" ? Object.entries(raw as object) : [];
+      const textsOf = (x: Json): Partial<Record<Lang, string>> => {
+        const t = x?.text ?? x?.texts ?? x?.label ?? x?.labels ?? x;
+        if (typeof t === "function") return Object.fromEntries(LANGS.map((l) => [l, String(t(l) ?? "")]));
+        if (t && typeof t === "object") return Object.fromEntries(LANGS.map((l) => [l, typeof t[l] === "string" ? t[l] : ""]));
+        return {};
+      };
+      const problems: string[] = [];
+      if (entries.length < 8) problems.push(`${entries.length} events (want 8)`);
+      const topics: [string, RegExp][] = [
+        ["BVG strike", /bvg|strike|streik/i],
+        ["a week of rain", /rain|regen/i],
+        ["heatwave 32 °C", /heat|hitze/i],
+        ["Baustelle outside", /baustelle|construction|roadwork|building.?site/i],
+        ["Berlin school holidays", /holiday|ferien|vacation/i],
+        ["a new café two doors down, €8.50 lunch", /competitor|rival|new.?caf|two doors|8[.,]50/i],
+        ["Kiez street festival", /festival|street.?party|stra(ss|ß)enfest|kiezfest/i],
+        ["Christmas market", /christmas|weihnacht|xmas/i],
+      ];
+      const used = new Set<string>();
+      for (const [label, re] of topics) {
+        const hit = entries.find(([id, x]) => !used.has(id) && re.test(`${id} ${textsOf(x).en ?? ""}`));
+        if (!hit) problems.push(`no event for "${label}"`);
+        else used.add(hit[0]);
+      }
+      for (const [id, x] of entries) {
+        const t = textsOf(x);
+        const missing = LANGS.filter((l) => !t[l]?.trim());
+        if (missing.length) problems.push(`${id}: no text in ${missing.join(", ")}`);
+        else if (new Set(LANGS.map((l) => t[l])).size < 4) problems.push(`${id}: some languages repeat another language's text`);
+      }
+      const heat = entries.find(([id, x]) => /heat|hitze/i.test(`${id} ${textsOf(x).en}`));
+      if (heat && !/32/.test(textsOf(heat[1]).de ?? "")) problems.push(`${heat[0]}: the German text does not say 32 °C`);
+      return verdict(problems.slice(0, 10), `${entries.length} events in ${found.file}: ${entries.map(([id]) => id).join(", ")}`);
+    },
   },
 
   // ==================== mcp ====================
@@ -1361,7 +2192,7 @@ export const CHECKS: CheckDef[] = [
       const s = await mcp(root);
       const t = await templates(root);
       const inputs = t.demoInputs("lunch_offer");
-      const res = await toolCall(s, "whatif_run_scenarios", { template: "lunch_offer", inputs, demo: true, business: t.DEMO_BUSINESS, question: question(t, "lunch_offer") }, 10);
+      const res = await toolCall(s, "whatif_run_scenarios", { template: "lunch_offer", inputs, demo: true, business: t.DEMO_BUSINESS, question: question(t, "lunch_offer"), lang: "en" }, 10);
       const problems: string[] = [];
       if (res.isError) return { ok: false, detail: `the tool returned an error: ${toolText(res).slice(0, 300)}` };
       const first = res.content?.[0];
@@ -1394,7 +2225,7 @@ export const CHECKS: CheckDef[] = [
       const t = await templates(root);
       const inputs = t.demoInputs("lunch_offer");
       const problems: string[] = [];
-      const start = await toolCall(s, "whatif_rehearsal_start", { template: "lunch_offer", inputs, demo: true }, 20);
+      const start = await toolCall(s, "whatif_rehearsal_start", { template: "lunch_offer", inputs, demo: true, lang: "en" }, 20);
       if (start.isError) return { ok: false, detail: `whatif_rehearsal_start failed: ${toolText(start).slice(0, 300)}` };
       const state1 = start.structuredContent?.state;
       const briefs = findBriefs(start.structuredContent);
@@ -1432,11 +2263,11 @@ export const CHECKS: CheckDef[] = [
       const problems: string[] = [];
       const inputs: RawInputs = t.demoInputs("lunch_offer");
       delete inputs.offer_price;
-      const r1 = await s.call("tools/call", { name: "whatif_run_scenarios", arguments: { template: "lunch_offer", inputs } }, 30);
+      const r1 = await s.call("tools/call", { name: "whatif_run_scenarios", arguments: { template: "lunch_offer", inputs, lang: "en" } }, 30);
       const say1 = r1.body?.result ? toolText(r1.body.result) : (r1.body?.error?.message ?? "");
       if (r1.status >= 500) problems.push(`missing input: HTTP ${r1.status}`);
       else if (!/price|offer_price/i.test(say1)) problems.push(`missing input: the answer does not say what to ask ("${say1.slice(0, 120)}")`);
-      const r2 = await s.call("tools/call", { name: "whatif_run_scenarios", arguments: { template: "open_a_zoo", inputs: {} } }, 31);
+      const r2 = await s.call("tools/call", { name: "whatif_run_scenarios", arguments: { template: "open_a_zoo", inputs: {}, lang: "en" } }, 31);
       const say2 = r2.body?.result ? toolText(r2.body.result) : (r2.body?.error?.message ?? "");
       if (r2.status >= 500) problems.push(`unknown template: HTTP ${r2.status}`);
       else if (!/lunch_offer/.test(say2)) problems.push(`unknown template: the answer does not list the templates ("${say2.slice(0, 120)}")`);
@@ -1540,6 +2371,125 @@ export const CHECKS: CheckDef[] = [
       }
     },
   },
+  {
+    id: "mcp-lang",
+    component: "mcp",
+    title: "tools take an optional lang (default German): whatif_run_scenarios answers in German by default, in English with lang en, and the report link carries the language",
+    command: "node scripts/dev.mjs  (then whatif_run_scenarios with and without lang)",
+    timeoutMs: 150_000,
+    run: async (root) => {
+      const s = await mcp(root);
+      const t = await templates(root);
+      const st = await stateMod(root);
+      const problems: string[] = [];
+      const list = await s.call("tools/list", {}, 50);
+      const tools = (list.body?.result?.tools ?? []) as Json[];
+      for (const name of ["whatif_start", "whatif_run_scenarios", "whatif_rehearsal_start"]) {
+        const tool = tools.find((x) => x?.name === name);
+        if (tool && !tool.inputSchema?.properties?.lang) problems.push(`${name} has no lang input`);
+      }
+      const args = { template: "lunch_offer", inputs: t.demoInputs("lunch_offer"), demo: true };
+      const call = async (lang: Lang | undefined, id: number) => {
+        const res = await toolCall(s, "whatif_run_scenarios", lang ? { ...args, lang } : args, id);
+        const url = findReportUrl(res);
+        let tokenLang: unknown = "(no link)";
+        if (url) {
+          try {
+            tokenLang = (st.decodeState(url.slice(url.indexOf("#") + 1)) as ShareState & { lang?: string }).lang;
+          } catch (err) {
+            tokenLang = `(bad token: ${msg(err)})`;
+          }
+        }
+        return { text: toolText(res), tokenLang, isError: !!res.isError };
+      };
+      const def = await call(undefined, 51);
+      const en = await call("en", 52);
+      const pl = await call("pl", 53);
+      if (def.isError || en.isError || pl.isError) problems.push(`run_scenarios returned an error: ${(def.isError ? def : en.isError ? en : pl).text.slice(0, 160)}`);
+      if (def.text === en.text) problems.push("the answer without lang is the English one (the default is German)");
+      if (en.text === pl.text) problems.push("lang pl answers in the same text as lang en");
+      if (def.tokenLang !== "de" && def.tokenLang !== undefined) problems.push(`the default report link carries lang ${JSON.stringify(def.tokenLang)} (want "de")`);
+      if (en.tokenLang !== "en") problems.push(`the report link for lang en carries lang ${JSON.stringify(en.tokenLang)}`);
+      if (pl.tokenLang !== "pl") problems.push(`the report link for lang pl carries lang ${JSON.stringify(pl.tokenLang)}`);
+      return verdict(problems, `default: "${squash(def.text).slice(0, 80)}…" (link lang ${def.tokenLang ?? "unset = de"})`);
+    },
+  },
+  {
+    id: "mcp-beta-codes",
+    component: "mcp",
+    title: "closed beta: with WHATIF_BETA_CODES set, POST /api/mcp without a code is 401 (a German + English message), ?code=, x-whatif-code and Bearer work, GET ?code= says beta.valid; the code is never echoed",
+    command: "set WHATIF_BETA_CODES=test-code-123 && node scripts/dev.mjs --no-build  (then POST initialize to /api/mcp with and without ?code=)",
+    timeoutMs: 200_000,
+    run: async (root) => {
+      const dev = await betaServer(root);
+      const url = `${dev.base}/api/mcp`;
+      const problems: string[] = [];
+      const init = (u: string, headers: Record<string, string> = {}, id = 60) => rpc(u, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "what-if-qa", version: "1.0.0" } }, id, headers);
+      const none = await init(url);
+      if (none.status !== 401) problems.push(`no code: HTTP ${none.status} (want 401)`);
+      const m = String(none.body?.error?.message ?? "");
+      if (!none.body?.error) problems.push(`no code: the 401 has no JSON-RPC error (${none.raw.slice(0, 100)})`);
+      else {
+        if (!/beta/i.test(m) || !/berlin/i.test(m)) problems.push(`no code: the message does not say it is a closed beta for Berlin cafés ("${m.slice(0, 120)}")`);
+        if (!/\b(der|die|das|und|ist|für|Sie)\b/.test(m) || !/\b(the|is|for|and|ask)\b/i.test(m)) problems.push(`no code: the message is not in German and English ("${m.slice(0, 120)}")`);
+        if (!m.includes(BETA_CONTACT)) problems.push(`no code: the message does not say how to ask for a code (WHATIF_BETA_CONTACT=${BETA_CONTACT} is not in it)`);
+      }
+      const wrong = await init(`${url}?code=wrong-code-999`, {}, 61);
+      if (wrong.status !== 401) problems.push(`a wrong code: HTTP ${wrong.status} (want 401)`);
+      const ok: string[] = [];
+      for (const [label, u, h] of [
+        ["?code=", `${url}?code=${BETA_CODE}`, {}],
+        ["x-whatif-code", url, { "x-whatif-code": BETA_CODE }],
+        ["Bearer", url, { authorization: `Bearer ${BETA_CODE}` }],
+      ] as const) {
+        const r = await init(u, h, 62);
+        if (r.status !== 200 || !r.body?.result?.serverInfo) problems.push(`code via ${label}: HTTP ${r.status} ${r.raw.slice(0, 100)}`);
+        else ok.push(label);
+      }
+      const tl = await rpc(`${url}?code=${BETA_CODE}`, "tools/list", {}, 63);
+      if (!(tl.body?.result?.tools?.length > 0)) problems.push(`tools/list with ?code=: HTTP ${tl.status}, no tools`);
+      const get = async (q: string) => {
+        const res = await fetch(`${url}${q}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+        const raw = await res.text();
+        let j: Json = null;
+        try {
+          j = JSON.parse(raw);
+        } catch {
+          /* not JSON */
+        }
+        return { status: res.status, raw, beta: j?.beta };
+      };
+      const gGood = await get(`?code=${BETA_CODE}`);
+      const gBad = await get("?code=wrong-code-999");
+      if (gGood.beta?.required !== true || gGood.beta?.valid !== true) problems.push(`GET ?code=<valid>: beta ${JSON.stringify(gGood.beta)} (want { required: true, valid: true })`);
+      if (gBad.beta?.valid !== false) problems.push(`GET ?code=<wrong>: beta ${JSON.stringify(gBad.beta)} (want valid: false)`);
+      const echoed = [["the 401", none.raw], ["GET ?code=", gGood.raw], ["the dev server log", dev.out.join("")]].filter(([, s]) => (s ?? "").includes(BETA_CODE)).map(([w]) => w);
+      if (echoed.length) problems.push(`the invite code is echoed or logged in ${echoed.join(", ")}`);
+      return verdict(problems, `401 without a code ("${m.slice(0, 70)}…"); accepted via ${ok.join(", ")}; GET reports beta.valid`);
+    },
+  },
+  {
+    id: "mcp-beta-open",
+    component: "mcp",
+    title: "without WHATIF_BETA_CODES the server stays open: POST without a code works and GET says beta.required false",
+    command: "node scripts/dev.mjs  (then GET /api/mcp)",
+    timeoutMs: 150_000,
+    run: async (root) => {
+      const s = await mcp(root);
+      const problems: string[] = [];
+      const plain = await rpc(s.url, "tools/list", {}, 70, s.headers);
+      if (plain.status !== 200 || !plain.body?.result) problems.push(`POST without a code: HTTP ${plain.status}`);
+      const res = await fetch(s.url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+      let beta: Json;
+      try {
+        beta = (JSON.parse(await res.text()) as Json)?.beta;
+      } catch {
+        beta = "(not JSON)";
+      }
+      if (beta !== undefined && beta?.required !== false) problems.push(`GET says beta ${JSON.stringify(beta)} while no codes are configured (want required: false)`);
+      return verdict(problems, `open: POST without a code works; GET beta ${JSON.stringify(beta ?? "(not reported)")}`);
+    },
+  },
 
   // ==================== visual ====================
   {
@@ -1578,21 +2528,10 @@ export const CHECKS: CheckDef[] = [
     title: "the demo report is a six-step lesson (progress header / step sections)",
     command: "node --import tsx qa/run.ts --no-loop --only visual  (static copy: qa/reports/ui/report-static.html)",
     run: async (root) => {
-      const { html } = await rendered(root);
-      const dataStep = new Set([...html.matchAll(/data-step=["']?(\d+)/g)].map((m) => m[1]));
-      const idStep = new Set([...html.matchAll(/\bid=["']step-?(\d+)["']/g)].map((m) => m[1]));
-      const list = /<(ol|ul|nav)\b[^>]*class=["'][^"']*\b(steps|progress|pipeline|stepper)\b[^"']*["'][^>]*>([\s\S]*?)<\/\1>/i.exec(html);
-      const listItems = list ? (list[3]?.match(/<li\b/gi) ?? []).length : 0;
-      const sections = (html.match(/<section\b[^>]*class=["'][^"']*\bstep\b[^"']*["']/gi) ?? []).length;
-      const found = [
-        ["data-step", dataStep.size],
-        ["id=step-N", idStep.size],
-        ["progress list", listItems],
-        ["section.step", sections],
-      ] as const;
-      const best = found.find(([, n]) => n > 0);
+      const { html, b } = await rendered(root);
+      const best = countSteps(html);
       if (!best) return { ok: false, detail: "no steps found (mark them with data-step=\"1\"…\"6\", ids step-1…step-6, an <ol class=\"steps\"> header, or <section class=\"step\">)" };
-      return best[1] === 6 ? { ok: true, detail: `6 steps (${best[0]})` } : { ok: false, detail: `${best[1]} steps by ${best[0]} (want 6: question, numbers, outcomes, the one number, rehearsal, your test)` };
+      return best.n === 6 ? { ok: true, detail: `6 steps (${best.how}); evidence from ${b.source}` } : { ok: false, detail: `${best.n} steps by ${best.how} (want 6: question, numbers, outcomes, the one number, rehearsal, your test)` };
     },
   },
   {
@@ -1647,12 +2586,16 @@ export const CHECKS: CheckDef[] = [
       const buttons = [...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/gi)].filter((m) => /show (the )?maths?|how (is|was) this calculated/i.test(visibleText(m[1] ?? "")));
       const toggles = summaries.length + buttons.length;
       const text = visibleText(html);
-      const maths = [b.a.breakEven.maths, b.a.worstCase.maths, ...b.a.scenarios.flatMap((s) => s.figures.map((f) => f.maths))].filter((m): m is string => !!m && !!m.trim());
+      // The maths of every calculated figure the report shows (a guess has no working; a figure the report leaves out is not counted).
+      const shown = b.a.scenarios.flatMap((s) => s.figures).filter((f) => f.source === "calculation" && !!f.label && text.includes(squash(f.label)));
+      const must = [b.a.breakEven.maths, b.a.worstCase.maths].filter((m): m is string => !!m && !!m.trim());
+      const maths = [...must, ...shown.map((f) => f.maths)].filter((m): m is string => !!m && !!m.trim());
       const present = maths.filter((m) => text.includes(squash(m)));
       const problems: string[] = [];
       if (toggles < 3) problems.push(`${toggles} "show the maths" toggles (want at least one per scenario: <details><summary>Show the maths</summary>…)`);
-      if (present.length < Math.ceil(maths.length * 0.8)) problems.push(`${present.length} of ${maths.length} maths strings appear in the report`);
-      return verdict(problems, `${toggles} toggles; ${present.length}/${maths.length} maths strings shown`);
+      for (const m of must) if (!text.includes(squash(m))) problems.push(`the ${m === b.a.breakEven.maths ? "break-even" : "worst-case"} maths is not in the report ("${squash(m).slice(0, 70)}")`);
+      if (present.length < Math.ceil(maths.length * 0.8)) problems.push(`${present.length} of ${maths.length} maths strings of the shown calculated figures appear in the report, e.g. missing "${squash(maths.find((m) => !text.includes(squash(m))) ?? "").slice(0, 80)}"`);
+      return verdict(problems, `${toggles} toggles; ${present.length}/${maths.length} maths strings of the shown calculated figures`);
     },
   },
   {
@@ -1666,7 +2609,10 @@ export const CHECKS: CheckDef[] = [
       if (no) return { ok: false, detail: no };
       const text = visibleText(html);
       const problems: string[] = [];
-      if (!text.includes(squash(b.summary!.caveat))) problems.push("the summary's caveat text is not in the report");
+      // The summary's own caveat, or a caveat block the report writes for this run's method (says "imagined" and what it is not).
+      const blocks = [...html.matchAll(/<[a-z]+\b[^>]*(?:class|id)=["'][^"']*caveat[^"']*["'][^>]*>/gi)].map((m) => visibleText(elementAt(html, m.index ?? 0)));
+      const ownCaveat = blocks.some((t) => /imagin/i.test(t) && NEGATION.test(t));
+      if (!text.includes(squash(b.summary!.caveat)) && !ownCaveat) problems.push("neither the summary's caveat nor a caveat block (class/id \"caveat\", saying the customers are imagined and what they are not) is in the report");
       if (!/can(not|'t| not) tell|can and cannot/i.test(text)) problems.push("no \"what a simulation can and cannot tell you\" box");
       if (!/imagined/i.test(text)) problems.push("the rehearsal is not labelled as imagined");
       return verdict(problems, `caveat shown: "${b.summary!.caveat.slice(0, 80)}…"`);
@@ -1754,13 +2700,13 @@ export const CHECKS: CheckDef[] = [
   {
     id: "site-pages-built",
     component: "visual",
-    title: "the build has index.html, r.html, connect.html and bundled JS; every page has lang, viewport and a title; local assets resolve",
+    title: "the build has index.html, r.html, connect.html, try.html and bundled JS; every page has lang, viewport and a title; local assets resolve",
     command: "npm run build",
     run: (root) => {
       const st = join(root, ".vercel/output/static");
       if (!existsSync(st)) return { ok: false, detail: ".vercel/output/static does not exist (run npm run build)" };
       const problems: string[] = [];
-      for (const p of ["index.html", "r.html", "connect.html"]) if (!existsSync(join(st, p))) problems.push(`static/${p} is missing`);
+      for (const p of ["index.html", "r.html", "connect.html", "try.html"]) if (!existsSync(join(st, p))) problems.push(`static/${p} is missing`);
       const js = listFiles(join(st, "assets"), (f) => /\.m?js$/.test(f));
       if (!js.length) problems.push("static/assets/ has no .js bundle");
       const pages = listFiles(st, (f) => /\.html$/.test(f));
@@ -1769,7 +2715,7 @@ export const CHECKS: CheckDef[] = [
         const s = readFileSync(p, "utf8");
         if (!/<html\b[^>]*\blang=/i.test(s)) problems.push(`${rel}: no <html lang>`);
         if (!/<meta\b[^>]*name=["']viewport/i.test(s)) problems.push(`${rel}: no viewport meta`);
-        if (!/<title>[^<]+<\/title>/i.test(s)) problems.push(`${rel}: no title`);
+        if (!/<title\b[^>]*>[^<]+<\/title>/i.test(s)) problems.push(`${rel}: no title`);
         for (const m of s.matchAll(/<(?:script|link)\b[^>]*\b(?:src|href)=["']([^"'#?]+)/gi)) {
           const ref = m[1] ?? "";
           if (/^(https?:|\/\/|data:|mailto:)/.test(ref) || !/\.(m?js|css)$/.test(ref)) continue;
@@ -1778,6 +2724,121 @@ export const CHECKS: CheckDef[] = [
         }
       }
       return verdict(problems.slice(0, 10), `${pages.length} pages, ${js.length} JS bundles`);
+    },
+  },
+  {
+    id: "visual-langs",
+    component: "visual",
+    title: "the shipped demo renders as six steps in de, en, es and pl; the German report contains no English UI phrases (text, aria-label, title, alt)",
+    command: "node --import tsx qa/run.ts --no-loop --only visual  (static copies: qa/reports/ui/report-static.<lang>.html)",
+    run: async (root) => {
+      const problems: string[] = [];
+      const info: string[] = [];
+      for (const lang of LANGS) {
+        try {
+          const { html } = await renderedLang(root, lang);
+          const steps = countSteps(html);
+          if (!steps || steps.n !== 6) problems.push(`${lang}: ${steps ? `${steps.n} steps (${steps.how})` : "no steps"} (want 6)`);
+          if (lang !== "en") {
+            const leaks = englishLeaks(html);
+            if (lang === "de" && leaks.length) problems.push(`de: English UI text in the German report: ${leaks.slice(0, 6).map((x) => `"${x}"`).join(", ")}${leaks.length > 6 ? ` (+${leaks.length - 6})` : ""}`);
+            info.push(`${lang}: ${leaks.length ? `${leaks.length} English phrases (${leaks.slice(0, 3).join(", ")})` : "no English phrases"}`);
+          }
+        } catch (err) {
+          problems.push(`${lang}: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      return verdict(problems, `six steps in de, en, es, pl; ${info.join("; ")}`);
+    },
+  },
+  {
+    id: "visual-checklist-chip",
+    component: "visual",
+    title: "honesty: the \"check these with real customers\" card carries no \"Your number\" chip (it holds questions, not the owner's numbers)",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: async (root) => {
+      const problems: string[] = [];
+      const seen: string[] = [];
+      for (const lang of ["en", "de"] as const) {
+        const { html, s } = await renderedLang(root, lang);
+        if (!s.summary) return { ok: false, detail: s.simError ?? "the shipped demo has no rehearsal" };
+        const first = s.summary.checkWithRealCustomers?.[0];
+        let card = "";
+        const byClass = /<[a-z]+\b[^>]*class=["'][^"']*\bwi-checkreal\b[^"']*["'][^>]*>/i.exec(html);
+        if (byClass) card = elementAt(html, byClass.index);
+        if (!card && first) {
+          const i = html.indexOf(first.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").slice(0, 40));
+          if (i >= 0) card = enclosing(html, i);
+        }
+        if (!card) {
+          problems.push(`${lang}: the "check these with real customers" card was not found (class wi-checkreal, or the first question's text)`);
+          continue;
+        }
+        const chips = [...card.matchAll(/<span\b[^>]*class=["'][^"']*\bwi-chip--([a-z]+)[^>]*>|data-source=["']([a-z]+)["']/gi)].map((m) => m[1] ?? m[2] ?? "");
+        if (chips.includes("owner")) problems.push(`${lang}: the card wears a "Your number" chip (data-source="owner")`);
+        seen.push(`${lang}: chips ${chips.length ? [...new Set(chips)].join(", ") : "none"}`);
+      }
+      return verdict(problems, seen.join("; "));
+    },
+  },
+  {
+    id: "visual-facts-card",
+    component: "visual",
+    title: "the report shows a \"Berlin facts used\" card: every public fact with its source, a link to the source and its date",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: async (root) => {
+      const e = await engine(root);
+      const report = await reportMod(root);
+      const raw: RawInputs = { ...e.demoInputs("lunch_offer"), extra_staff_hours_per_day: 1 };
+      delete raw.vat_rate;
+      delete raw.staff_hourly_cost;
+      const problems: string[] = [];
+      for (const lang of ["en", "de"] as const) {
+        const a = e.analyze("lunch_offer", raw, { demo: false, business: "Café QA", lang }) as Analysis & { facts?: Json[] };
+        if (!Array.isArray(a.facts) || !a.facts.length) return { ok: false, detail: "the analysis has no facts to show (see berlin-facts)" };
+        const html = await inLang(root, lang, () => report.renderReport({ analysis: a }));
+        const text = visibleText(html);
+        for (const f of a.facts) {
+          const id = String(f?.id ?? f?.label);
+          const url = String(f?.url ?? "");
+          if (url && !new RegExp(`href=["']${url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/&/g, "&(amp;)?")}["']`).test(html)) problems.push(`${lang}: ${id}: no link to ${url}`);
+          if (f?.source && !text.includes(squash(String(f.source)).slice(0, 30))) problems.push(`${lang}: ${id}: the source "${String(f.source).slice(0, 40)}" is not shown`);
+          const year = /^(\d{4})/.exec(String(f?.asOf ?? ""))?.[1];
+          if (year && !text.includes(year)) problems.push(`${lang}: ${id}: no date shown (${f.asOf})`);
+        }
+      }
+      return verdict([...new Set(problems)].slice(0, 10), "every fact shown with its source, link and date (en, de)");
+    },
+  },
+  {
+    id: "report-messages",
+    component: "visual",
+    title: "src/report/messages.ts: every en key is translated in de, es and pl",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: (root) => catalogCheck(root, "src/report/messages.ts"),
+  },
+  {
+    id: "site-messages",
+    component: "visual",
+    title: "site/src/messages.ts: every en key is translated in de, es and pl",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: (root) => catalogCheck(root, "site/src/messages.ts"),
+  },
+  {
+    id: "site-no-placeholders",
+    component: "visual",
+    title: "the built site has no template placeholders left ({{SITE_URL}}, {{BETA_CONTACT}}, {{VERSION}} …) in its pages, scripts or styles",
+    command: "npm run build",
+    run: (root) => {
+      const st = join(root, ".vercel/output/static");
+      if (!existsSync(st)) return { ok: false, detail: ".vercel/output/static does not exist (run npm run build)" };
+      const files = listFiles(st, (f) => TEXT_FILE.test(f) && !/[\\/]skill[\\/]/.test(f));
+      const hits: string[] = [];
+      for (const f of files) {
+        const m = /\{\{\s*[A-Z][A-Z0-9_]*\s*\}\}/.exec(readFileSync(f, "utf8"));
+        if (m) hits.push(`${posix(relative(st, f))}: ${m[0]}`);
+      }
+      return verdict(hits.slice(0, 10), `${files.length} built files, no {{PLACEHOLDER}} left`);
     },
   },
   ...UI_CHECKS.map(
@@ -1914,6 +2975,56 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
+    id: "skill-zip-no-placeholders",
+    component: "skill",
+    title: "no \"{{\" placeholder is left in the built skill zip (or the static skill/ copies)",
+    command: "npm run build",
+    run: async (root) => {
+      const zipPath = join(root, ".vercel/output/static/what-if-skill.zip");
+      if (!existsSync(zipPath)) return { ok: false, detail: ".vercel/output/static/what-if-skill.zip does not exist (run npm run build)" };
+      const { files, error } = await unzipText(zipPath);
+      if (error) return { ok: false, detail: error };
+      const hits: string[] = [];
+      const scan = (name: string, s: string) => {
+        const i = s.indexOf("{{");
+        if (i >= 0) hits.push(`${name}: "${squash(s.slice(Math.max(0, i - 20), i + 30))}"`);
+      };
+      for (const [n, s] of Object.entries(files)) scan(n, s);
+      for (const f of listFiles(join(root, ".vercel/output/static/skill"), (x) => TEXT_FILE.test(x))) scan(`static/${posix(relative(join(root, ".vercel/output/static"), f))}`, readFileSync(f, "utf8"));
+      return verdict(hits.slice(0, 10), `${Object.keys(files).length} text files in the zip, no "{{" left`);
+    },
+  },
+  {
+    id: "skill-zip-prod-url",
+    component: "skill",
+    title: "in a production-like build (WHATIF_SITE_URL=https://example.vercel.app) the skill zip's MCP URL is https and not localhost",
+    command: "set WHATIF_SITE_URL=https://example.vercel.app && npm run build  (qa builds it in node_modules/.cache/what-if-qa/prod-build)",
+    timeoutMs: 360_000,
+    run: async (root) => {
+      const b = await prodBuild(root);
+      if (!b.zip) return { ok: false, detail: "the production-like build wrote no what-if-skill.zip" };
+      const { strFromU8 } = (await import("fflate")) as typeof import("fflate");
+      const problems: string[] = [];
+      const urls: { file: string; url: string; scheme: string; host: string }[] = [];
+      const local: string[] = [];
+      for (const [n, d] of Object.entries(b.zip)) {
+        if (n.endsWith("/") || !(TEXT_FILE.test(n) || !extname(n))) continue;
+        const s = strFromU8(d);
+        urls.push(...mcpUrls(s).map((u) => ({ file: n, ...u })));
+        if (s.includes("{{")) problems.push(`${n} still has a "{{" placeholder`);
+        if (/localhost|127\.0\.0\.1/.test(s)) local.push(n);
+      }
+      if (!urls.length) problems.push("no …/api/mcp URL in the zipped skill");
+      for (const u of urls) {
+        if (u.scheme !== "https") problems.push(`${u.file}: ${u.url} is not https`);
+        if (LOCAL_HOST.test(u.host)) problems.push(`${u.file}: ${u.url} points at ${u.host}`);
+      }
+      if (!urls.some((u) => u.url.startsWith(`${PROD_URL}/api/mcp`))) problems.push(`no MCP URL uses the site URL the build was given (${PROD_URL})`);
+      const hosts = [...new Set(urls.map((u) => u.url.replace(/[?#].*$/, "")))];
+      return verdict([...new Set(problems)].slice(0, 10), `${urls.length} MCP URLs: ${hosts.join(", ")}${local.length ? ` (localhost also mentioned in ${local.join(", ")}, not as the MCP URL)` : ""}`);
+    },
+  },
+  {
     id: "skill-server-instructions",
     component: "skill",
     title: "src/mcp/instructions.ts exports SERVER_INSTRUCTIONS: the \"what if\" trigger, the report link at every step, no hand-made maths",
@@ -1964,10 +3075,11 @@ export const CHECKS: CheckDef[] = [
           problems.push(`${where} is missing`);
           continue;
         }
+        // The landing page is German by default now; accept the four languages.
         const t = visibleText(s);
-        if (!/caf[eé]/i.test(t)) problems.push(`${where} does not say it is for café owners`);
-        if (!/learn|teach|lesson|educat|understand/i.test(t)) problems.push(`${where} does not say what the owner learns`);
-        if (!/what if/i.test(t)) problems.push(`${where} has no "what if…" example`);
+        if (!/caf[eé]|kawiarn/i.test(t)) problems.push(`${where} does not say it is for café owners`);
+        if (!/learn|teach|lesson|educat|understand|lern|versteh|aprend|enseñ|entend|uczy|nauk|zrozum/i.test(t)) problems.push(`${where} does not say what the owner learns`);
+        if (!/what if|was wäre,? wenn|was,? wenn|qué pasa(r[ií]a)? si|y si\b|co jeśli|co gdyby|a gdyby/i.test(t)) problems.push(`${where} has no "what if…" example`);
       }
       return verdict(problems, "README and landing page name the audience, the learning and a what-if example");
     },
@@ -2205,6 +3317,67 @@ export const CHECKS: CheckDef[] = [
     },
   },
   {
+    id: "devex-gitattributes",
+    component: "docs-devex",
+    title: ".gitattributes makes text files LF in every checkout (a Windows clone with core.autocrlf=true gets the same bytes)",
+    command: "git check-attr text eol -- site/assets/site.css src/report/styles.ts test/report.test.ts",
+    run: (root) => {
+      const ga = readText(root, ".gitattributes");
+      if (ga === null) return { ok: false, detail: ".gitattributes is missing (add `* text=auto eol=lf`)" };
+      const sample = ["site/assets/site.css", "src/report/styles.ts", "test/report.test.ts", "skill/what-if/SKILL.md"].filter((f) => existsSync(join(root, f)));
+      const r = spawnSync("git", ["check-attr", "text", "eol", "--", ...sample], { cwd: root, encoding: "utf8", windowsHide: true });
+      if (r.status !== 0) return { ok: false, detail: `git check-attr failed: ${tail(`${r.stdout}${r.stderr}`, 300)}` };
+      const attrs = new Map<string, Record<string, string>>();
+      for (const line of r.stdout.split(/\r?\n/).filter(Boolean)) {
+        const m = /^(.+?): (text|eol): (.+)$/.exec(line);
+        if (!m) continue;
+        const cur = attrs.get(m[1]!) ?? {};
+        cur[m[2]!] = m[3]!;
+        attrs.set(m[1]!, cur);
+      }
+      const problems: string[] = [];
+      for (const f of sample) {
+        const a = attrs.get(f) ?? {};
+        if (a.eol !== "lf") problems.push(`${f}: eol is ${a.eol ?? "unset"} (want lf)`);
+        if (a.text === "unset" || a.text === "unspecified" || a.text === undefined) problems.push(`${f}: text is ${a.text ?? "unset"} (want auto or set)`);
+      }
+      return verdict(problems, `${ga.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("#")).slice(0, 3).join(" | ")}; ${sample.length} sample files resolve to eol=lf`);
+    },
+  },
+  {
+    id: "devex-crlf-tests",
+    component: "docs-devex",
+    title: "npm test passes on a CRLF checkout too (every text file converted to CRLF in a scratch copy): no test depends on line endings",
+    command: "node --import tsx qa/run.ts --no-loop --only docs-devex  (copy in node_modules/.cache/what-if-qa/crlf)",
+    timeoutMs: 300_000,
+    run: (root) => {
+      const tests = existsSync(join(root, "test")) ? readdirSync(join(root, "test")).filter((f) => f.endsWith(".test.ts")).sort() : [];
+      if (!tests.length) return { ok: false, detail: "test/*.test.ts matches nothing" };
+      // The same tests on an LF copy and a CRLF copy: only the failures the CRLF copy adds are line-ending problems.
+      const runIn = (eol: "lf" | "crlf") => {
+        const dir = scratchCopy(root, eol, eol);
+        try {
+          const r = proc(process.execPath, ["--import", "tsx", "--test", ...tests.map((t) => `test/${t}`)], dir, 4 * 60_000);
+          const count = (re: RegExp) => Number(re.exec(r.out)?.[1] ?? 0);
+          const failed = new Set([...r.out.matchAll(/^\s*(?:not ok \d+ - |✖ )(.+?)(?: \(\d[\d.]*m?s\))?$/gm)].map((m) => (m[1] ?? "").trim()).filter((n) => n && !/^failing tests:?$/i.test(n)));
+          return { pass: count(/^\s*(?:#|ℹ)\s*pass (\d+)/m), fail: count(/^\s*(?:#|ℹ)\s*fail (\d+)/m), failed, out: r.out };
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+          scratchDirs.delete(dir);
+        }
+      };
+      const lf = runIn("lf");
+      const crlf = runIn("crlf");
+      if (lf.pass === 0) return { ok: false, detail: `cannot tell: the tests do not run on an LF copy either (${lf.fail} failed; see the *-tests checks)\n${tail(lf.out, 400)}` };
+      const extra = [...crlf.failed].filter((n) => !lf.failed.has(n));
+      if (!extra.length && crlf.pass >= lf.pass) return { ok: true, detail: `${tests.length} test files: ${crlf.pass} pass on CRLF as on LF${lf.fail ? ` (${lf.fail} fail on both: not a line-ending problem)` : ""}` };
+      return {
+        ok: false,
+        detail: `on a CRLF checkout ${crlf.pass} pass and ${crlf.fail} fail (LF: ${lf.pass} pass, ${lf.fail} fail) — normalise \\r\\n before comparing file contents (e.g. readFileSync(f, "utf8").replace(/\\r\\n/g, "\\n"))${extra.length ? `\nfails only on CRLF: ${extra.slice(0, 6).join(" | ")}` : ""}\n${tail(crlf.out, 500)}`,
+      };
+    },
+  },
+  {
     id: "devex-lockfile",
     component: "docs-devex",
     title: "package-lock.json is present and not ignored",
@@ -2216,7 +3389,12 @@ export const CHECKS: CheckDef[] = [
   },
 ];
 
-/** Stops the dev server and anything else started by the checks. */
+/** Stops the dev servers and removes the scratch copies made by the checks. */
 export function cleanup(): void {
   stopDev();
+  try {
+    removeScratch();
+  } catch {
+    /* a locked file on Windows; the next run starts by deleting the folder */
+  }
 }

@@ -4,6 +4,8 @@ The report is **the lesson**. Every tool result ends with a `report_url`; share 
 
 Paste the link exactly. It is long because it carries the data; never shorten, edit or rebuild it. If the app breaks long links, put the full URL on its own line.
 
+The report opens in the language you passed as `lang` and has a **language switcher (DE · EN · ES · PL)**: the same link redraws in another language, with the numbers recomputed and the imagined customers' own words left as they were written. The report viewer needs no invite code, so the owner can share a link with a partner or their Steuerberater. Anyone with the link sees the numbers in it.
+
 ## What the report shows, step by step
 
 The report is a six-step lesson with a progress header at the top. Talk the owner through the step that matters right now, not all six.
@@ -20,6 +22,10 @@ Every input with a **source chip**: *Your number*, *A guess*, *Calculated*, *Ima
 
 *How to talk about it:* "Look at the chips. 'Your number' is what you told me; 'a guess' is something nobody knows yet. If a guess looks wrong to you, tell me and we'll change it."
 *Teaching question:* "Which of these could you check on your till this week?"
+
+A **"Berlin facts used"** card lists every public fact the numbers rely on (VAT 7% on food and 19% on drinks since 1 Jan 2026, the €13.90 minimum wage), each with its source and date.
+
+*How to talk about it:* "These are the only outside facts in your report, with where they come from. Everything else is yours, a guess, or calculated."
 
 ### 3. Possible outcomes
 
@@ -78,25 +84,25 @@ Rules:
 
 Scale: take the largest gain `max` (0 if none) and the largest loss `min` (0 if none). With a plot area from y = 40 to y = 200 (160 px high), each euro is `160 / (max − min)` px, and the zero line sits at `y0 = 40 + max × 160 / (max − min)`. A gain bar runs from its top down to `y0`; a loss bar from `y0` down. This is only chart geometry: the money values themselves come from the tool.
 
-Demo café over the 10-day test (−€371, −€56.02, €385): max 384.98, min −371.02, so 0.2116 px per euro and y0 ≈ 121.5.
+Demo café over the 10-day test (−€385, −€118, €257): max 256.80, min −385.20, so 0.2492 px per euro and y0 ≈ 104.0. Write the title, labels and footnote in the owner's language.
 
 ```html
 <svg viewBox="0 0 360 250" width="360" role="img" aria-labelledby="t d" style="font: 13px system-ui, sans-serif; color: inherit">
   <title id="t">Three possible outcomes over the 10-day test</title>
-  <desc id="d">Cautious: minus 371 euros. Expected: minus 56 euros. Optimistic: plus 385 euros. Calculated by What-IF.</desc>
+  <desc id="d">Cautious: minus 385 euros. Expected: minus 118 euros. Optimistic: plus 257 euros. Calculated by What-IF.</desc>
   <text x="0" y="18" fill="currentColor" font-weight="600">Result over the 10-day test</text>
   <!-- zero line -->
-  <line x1="20" x2="340" y1="121.5" y2="121.5" stroke="currentColor" stroke-opacity="0.5" />
-  <text x="342" y="125" fill="currentColor" font-size="11" text-anchor="end" dy="-6">€0</text>
-  <!-- cautious: loss of 371.02 → 78.5 px below zero -->
-  <rect x="45" y="121.5" width="70" height="78.5" rx="4" fill="#e34948" />
-  <text x="80" y="216" fill="currentColor" text-anchor="middle">−€371</text>
-  <!-- expected: loss of 56.02 → 11.9 px below zero -->
-  <rect x="145" y="121.5" width="70" height="11.9" rx="4" fill="#e34948" />
-  <text x="180" y="150" fill="currentColor" text-anchor="middle">−€56.02</text>
-  <!-- optimistic: gain of 384.98 → 81.5 px above zero -->
-  <rect x="245" y="40" width="70" height="81.5" rx="4" fill="#2a78d6" />
-  <text x="280" y="34" fill="currentColor" text-anchor="middle">+€385</text>
+  <line x1="20" x2="340" y1="104" y2="104" stroke="currentColor" stroke-opacity="0.5" />
+  <text x="342" y="108" fill="currentColor" font-size="11" text-anchor="end" dy="-6">€0</text>
+  <!-- cautious: loss of 385.20 → 96.0 px below zero -->
+  <rect x="45" y="104" width="70" height="96" rx="4" fill="#e34948" />
+  <text x="80" y="216" fill="currentColor" text-anchor="middle">−€385</text>
+  <!-- expected: loss of 117.70 → 29.3 px below zero -->
+  <rect x="145" y="104" width="70" height="29.3" rx="4" fill="#e34948" />
+  <text x="180" y="150" fill="currentColor" text-anchor="middle">−€118</text>
+  <!-- optimistic: gain of 256.80 → 64.0 px above zero -->
+  <rect x="245" y="40" width="70" height="64" rx="4" fill="#2a78d6" />
+  <text x="280" y="34" fill="currentColor" text-anchor="middle">+€257</text>
   <!-- category labels -->
   <text x="80" y="236" fill="currentColor" text-anchor="middle" font-size="12">Cautious (3/day)</text>
   <text x="180" y="236" fill="currentColor" text-anchor="middle" font-size="12">Expected (8/day)</text>
@@ -106,9 +112,11 @@ Demo café over the 10-day test (−€371, −€56.02, €385): max 384.98, mi
 
 Below it, in plain text: "Calculated by What-IF from your numbers and guesses. Possibilities, not promises. [Open your visual report](report_url) to move the slider."
 
+These demo figures follow `maths.md`; in a real session take every figure from the tool result. If they differ, the tool's numbers win.
+
 ### Break-even line (optional, second chart)
 
-From `sensitivity.points` (each has `x` and `netTest`): plot `x` along the bottom, `netTest` up the side, a zero line, a dot where the line crosses zero labelled with the tool's break-even ("9 a day"), and a dashed marker at the owner's likely guess. Same rules as above.
+From `sensitivity.points` (each has `x` and `netTest`): plot `x` along the bottom, `netTest` up the side, a zero line, a dot where the line crosses zero labelled with the tool's break-even ("11 a day"), and a dashed marker at the owner's likely guess. Same rules as above. For a price change, `x` is the change in sales and the line crosses zero at the sales you can afford to lose.
 
 ### Plain-text fallback
 
@@ -117,17 +125,17 @@ In a text-only chat, a small text chart still helps. Use the tool's figures:
 ```
 Result over the 10-day test (calculated)
                          loss │ gain
-Cautious   (3/day)   ████████ │            −€371
-Expected   (8/day)          █ │            −€56.02
-Optimistic (15/day)           │ ████████   +€385
+Cautious   (3/day)   ████████ │            −€385
+Expected   (8/day)         ██ │            −€118
+Optimistic (15/day)           │ █████      +€257
 ```
 
 Keep the bar lengths roughly proportional (about one block per €50 here), and always add the figures.
 
 ## Talking about charts so people learn
 
-- **Point first, then explain.** "See the middle bar, just under the line? That's the expected case."
-- **Connect the picture to the mechanism.** "It sits just under zero because 8 is one short of the break-even of 9."
-- **Invite a move.** "Drag the slider to 9 and watch the bar cross the line."
+- **Point first, then explain.** "See the middle bar, under the line? That's the expected case."
+- **Connect the picture to the mechanism.** "It sits under zero because 8 is three short of the break-even of 11."
+- **Invite a move.** "Drag the slider to 11 and watch the bar cross the line."
 - **Name the source.** "These bars are calculated; the 8 they rest on is your guess."
 - **One chart at a time.** Don't describe all six steps at once.

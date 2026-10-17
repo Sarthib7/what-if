@@ -1,0 +1,422 @@
+[
+  {
+    "file": "landing-hero-en.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Landing page, top of the page (EN): \"What if…?\" hero with the three-futures chart and the source-label chips"
+  },
+  {
+    "file": "landing-hero-de.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Landing page, top of the page (DE): \"What if…?\" hero with the three-futures chart and the source-label chips"
+  },
+  {
+    "file": "landing-method-en.png",
+    "width": 2880,
+    "height": 3528,
+    "what": "Landing page: the six-step method section (\"Six steps from what if to let's try it\")"
+  },
+  {
+    "file": "try-start-en.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "/try first screen: the three choices (lunch deal, price change, log a test result)"
+  },
+  {
+    "file": "try-question-en.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "/try question screen (EN): lunch customers today, with \"why it matters\" and a rough answer typed (\"about 40\")"
+  },
+  {
+    "file": "try-question-de.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "/try question screen (DE): lunch customers today, with \"why it matters\" and a rough answer typed (\"ca. 40\")"
+  },
+  {
+    "file": "report-top-en.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Demo report /r#demo, top: header, demo ribbon, the question and the six-step progress header"
+  },
+  {
+    "file": "report-top-de.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Demo report /r#demo in German, top: header, demo ribbon, question, progress header"
+  },
+  {
+    "file": "report-whodid-en.png",
+    "width": 1760,
+    "height": 550,
+    "what": "\"Who did what in this report\" card: demo data, calculated, guesses, imagined, and what the AI did"
+  },
+  {
+    "file": "report-short-en.png",
+    "width": 1760,
+    "height": 478,
+    "what": "Step 1 \"The short answer\" tiles: break-even 11 a day, likely result -€118 over the 10-day test, worst case -€546 (captured after the step-4 guess, so the break-even tile is revealed)"
+  },
+  {
+    "file": "report-chips-en.png",
+    "width": 1760,
+    "height": 728,
+    "what": "Step 2: \"Each number wears a label for where it came from\" plus the two labelled groups (Demo data / A guess chips on every number) — the report's source-label legend in use"
+  },
+  {
+    "file": "report-numbers-en.png",
+    "width": 1760,
+    "height": 1594,
+    "what": "Step 2 \"Your numbers\", collapsed: the guesses, key facts, the closed \"see all numbers\" lists and the Berlin facts"
+  },
+  {
+    "file": "report-facts-en.png",
+    "width": 1760,
+    "height": 434,
+    "what": "\"Berlin facts used\" card with sources and dates"
+  },
+  {
+    "file": "report-outcomes-en.png",
+    "width": 1760,
+    "height": 2338,
+    "what": "Step 3: three possible outcomes as a bar chart plus the scenario cards (cautious / expected / optimistic)"
+  },
+  {
+    "file": "report-worst-en.png",
+    "width": 1760,
+    "height": 512,
+    "what": "Step 3: the worst-case box with the cash meter (how much of the spare cash it would use)"
+  },
+  {
+    "file": "report-predict-en.png",
+    "width": 1760,
+    "height": 548,
+    "what": "Step 4: predict-then-check, \"Before you look: make a guess\" (break-even still hidden)"
+  },
+  {
+    "file": "report-predict-revealed-en.png",
+    "width": 1760,
+    "height": 1418,
+    "what": "Step 4 after guessing 8: the feedback on the guess and the revealed break-even"
+  },
+  {
+    "file": "report-breakeven-en.png",
+    "width": 1676,
+    "height": 706,
+    "what": "Step 4: the big break-even number (11 extra lunch customers a day), what it means, and the owner's guess next to it"
+  },
+  {
+    "file": "slider-00.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 0/23 (Extra lunch customers a day: 0): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-01.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 1/23 (Extra lunch customers a day: 1): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-02.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 2/23 (Extra lunch customers a day: 2): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-03.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 3/23 (Extra lunch customers a day: 3): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-04.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 4/23 (Extra lunch customers a day: 4): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-05.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 5/23 (Extra lunch customers a day: 5): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-06.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 6/23 (Extra lunch customers a day: 6): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-07.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 7/23 (Extra lunch customers a day: 7): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-08.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 8/23 (Extra lunch customers a day: 8) — the owner's own guess: chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-09.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 9/23 (Extra lunch customers a day: 9): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-10.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 10/23 (Extra lunch customers a day: 10): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-11.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 11/23 (Extra lunch customers a day: 11): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-12.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 12/23 (Extra lunch customers a day: 12): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-13.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 13/23 (Extra lunch customers a day: 13): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-14.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 14/23 (Extra lunch customers a day: 14): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-15.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 15/23 (Extra lunch customers a day: 15): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-16.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 16/23 (Extra lunch customers a day: 16): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-17.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 17/23 (Extra lunch customers a day: 17): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-18.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 18/23 (Extra lunch customers a day: 18): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-19.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 19/23 (Extra lunch customers a day: 19): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-20.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 20/23 (Extra lunch customers a day: 20): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-21.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 21/23 (Extra lunch customers a day: 21): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-22.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 22/23 (Extra lunch customers a day: 22): chart + \"Why this changed\""
+  },
+  {
+    "file": "slider-23.png",
+    "width": 1760,
+    "height": 1934,
+    "what": "Break-even explorer at slider position 23/23 (Extra lunch customers a day: 23): chart + \"Why this changed\""
+  },
+  {
+    "file": "report-rehearsal-cards-en.png",
+    "width": 1760,
+    "height": 1446,
+    "what": "Step 5: \"Meet the 6 imagined customers\" persona cards"
+  },
+  {
+    "file": "report-rehearsal-grid-en.png",
+    "width": 1692,
+    "height": 1298,
+    "what": "Step 5: round-by-round grid of what each imagined customer did"
+  },
+  {
+    "file": "report-rehearsal-funnel-en.png",
+    "width": 1692,
+    "height": 646,
+    "what": "Step 5: \"How far it spread\" — the imagined customers' uptake funnel"
+  },
+  {
+    "file": "report-rehearsal-caveat-en.png",
+    "width": 1760,
+    "height": 682,
+    "what": "Step 5: \"What a simulation can and cannot tell you\""
+  },
+  {
+    "file": "report-rehearsal-feed-en.png",
+    "width": 1692,
+    "height": 1364,
+    "what": "Step 5: \"The neighbourhood feed\" tab (imagined posts, reviews, word of mouth)"
+  },
+  {
+    "file": "report-rehearsal-network-en.png",
+    "width": 1692,
+    "height": 1310,
+    "what": "Step 5: \"Who told whom\" network tab"
+  },
+  {
+    "file": "report-interview-en.png",
+    "width": 1760,
+    "height": 1008,
+    "what": "Step 5: interview question with every imagined customer's answer"
+  },
+  {
+    "file": "report-uncertainty-en.png",
+    "width": 1760,
+    "height": 1086,
+    "what": "Step 6: \"Which guess matters most\" bars (how much each guess swings the result)"
+  },
+  {
+    "file": "report-testcard-en.png",
+    "width": 1760,
+    "height": 1236,
+    "what": "Step 6: the printable test card — 10 weekdays, the keep / tweak / stop rule agreed up front"
+  },
+  {
+    "file": "report-learned-en.png",
+    "width": 1760,
+    "height": 1108,
+    "what": "\"What you learned\", including the AI lesson: what was calculated, what was a guess, what was imagined"
+  },
+  {
+    "file": "report-result-en.png",
+    "width": 1760,
+    "height": 2176,
+    "what": "/r#demo-result: \"Where reality landed\" — the counted result against the three guesses and the keep/tweak/stop verdict"
+  },
+  {
+    "file": "report-lang-switch-de.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Demo report top after switching to DE with the report's own DE·EN·ES·PL switcher (scroll 0)"
+  },
+  {
+    "file": "report-lang-switch-es.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Demo report top after switching to ES with the report's own switcher (scroll 0)"
+  },
+  {
+    "file": "report-lang-switch-pl.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "Demo report top after switching to PL with the report's own switcher (scroll 0)"
+  },
+  {
+    "file": "price-breakeven-en.png",
+    "width": 1676,
+    "height": 650,
+    "what": "/r#demo-price (flat white +20 cents): the break-even — how many sales you can lose before the price rise stops paying"
+  },
+  {
+    "file": "connect-en.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "/connect: invite code BERLIN-DEMO accepted, \"2. Your personal link\" (http://localhost:3340/api/mcp?code=BERLIN-DEMO) and \"3. Add it to your AI app\" with the four Claude steps and ChatGPT"
+  },
+  {
+    "file": "connect-beta-en.png",
+    "width": 1768,
+    "height": 554,
+    "what": "/connect: the invite-code box with BERLIN-DEMO entered (state: ok)"
+  },
+  {
+    "file": "report-phone-en.png",
+    "width": 1170,
+    "height": 2532,
+    "what": "Demo report on a phone (390×844 @3x), top of /r#demo"
+  },
+  {
+    "file": "try-phone-de.png",
+    "width": 1170,
+    "height": 2532,
+    "what": "/try question screen (DE, phone 390×844): lunch customers today, with \"why it matters\" and a rough answer typed (\"ca. 40\")"
+  },
+  {
+    "file": "report-top-ai-en.png",
+    "width": 2880,
+    "height": 1800,
+    "what": "AI-coached report (ai-rehearsal-link.txt), top: header, demo ribbon, question, progress header; the bottom edge shows \"Imagined: 6 customers, each played by its own AI helper\""
+  },
+  {
+    "file": "report-whodid-ai-en.png",
+    "width": 1760,
+    "height": 594,
+    "what": "\"Who did what\" for the AI-coached report: the coach and 6 AI agents played the imagined customers; code did the maths"
+  },
+  {
+    "file": "report-rehearsal-ai-cards-en.png",
+    "width": 1760,
+    "height": 1444,
+    "what": "AI rehearsal: \"Meet the 6 imagined customers\" persona cards"
+  },
+  {
+    "file": "report-rehearsal-ai-grid-en.png",
+    "width": 1692,
+    "height": 1326,
+    "what": "AI rehearsal: round-by-round grid of what each AI-played customer did (owner event before round 3)"
+  },
+  {
+    "file": "report-rehearsal-ai-funnel-en.png",
+    "width": 1692,
+    "height": 646,
+    "what": "AI rehearsal: \"How far it spread\" funnel over 4 rounds"
+  },
+  {
+    "file": "report-rehearsal-ai-caveat-en.png",
+    "width": 1760,
+    "height": 636,
+    "what": "AI rehearsal: \"What a simulation can and cannot tell you\" — These are imagined customers, each played by an AI from a short description. They show reactions worth checking, not what will happen. Nothi"
+  },
+  {
+    "file": "report-rehearsal-ai-feed-en.png",
+    "width": 1692,
+    "height": 714,
+    "what": "AI rehearsal: \"The neighbourhood feed\" tab, written by the AI-played customers"
+  },
+  {
+    "file": "report-rehearsal-ai-questions-en.png",
+    "width": 1760,
+    "height": 3764,
+    "what": "AI rehearsal: \"Check these with real customers\", then (with the rows in between folded) \"In their own words\" — quotes and the questions the AI-played customers asked the owner"
+  },
+  {
+    "file": "report-rehearsal-ai-interview-en.png",
+    "width": 1760,
+    "height": 1378,
+    "what": "AI rehearsal: the interview question with each AI-played customer's answer"
+  }
+]

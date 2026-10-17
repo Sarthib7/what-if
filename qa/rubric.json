@@ -11,37 +11,60 @@
       "id": "engine",
       "title": "Scenario engine (maths)",
       "weight": 0.15,
-      "paths": ["src/engine", "test/engine.test.ts"],
-      "judge": "Every formula matches a hand calculation of the demo café (break-even in extra lunch customers a day, worst case, the cost of regulars switching to the deal). Every number carries a source tag and a 'show the maths' string with the owner's own numbers in it. Edge cases (deal price below its cost, zero lunch customers, an unreachable break-even, a price rise with no lost sales) give plain warnings, never NaN. Deterministic. Code a reviewer can follow. Tests pin the demo numbers and the invariants."
+      "paths": [
+        "src/engine",
+        "test/engine.test.ts"
+      ],
+      "judge": "Every formula matches a hand calculation of the demo café (break-even in extra lunch customers a day, worst case, the cost of regulars switching to the deal), now on net prices: VAT (7% food / 19% drinks since 1 Jan 2026; blended fallback 10.6% for lunch, 19% for coffee) and staff cost as hours × hourly cost (fallback €13.90 minimum wage). Public facts carry a source, a link and a date. German owners can type numbers their way (\"1.500 €\", \"9,90\", \"ca. 40\"). Every number carries a source tag and a show-the-maths string with the owner's own numbers in it, in the owner's language and number format. Edge cases give plain warnings, never NaN. Deterministic. Code a reviewer can follow. Tests pin the demo numbers and the invariants."
     },
     {
       "id": "rehearsal",
       "title": "Customer rehearsal (simulation)",
       "weight": 0.15,
-      "paths": ["src/sim", "test/sim.test.ts"],
-      "judge": "Imagined customers feel like real Neukölln locals and differ in ways that matter for this decision (price sensitivity, routine, attitude). The rounds tell a story: launch day, first week, second week, after the test. The neighbourhood feed and the diaries give continuity, and owner-injected events change behaviour plausibly. Briefs are self-contained and leak nothing private. Validation is strict but lets the host retry one persona. The summary only describes (counts of imagined people), is never scaled up and ends in questions to ask real customers. MiroFish ideas are borrowed without its AGPL code."
+      "paths": [
+        "src/sim",
+        "test/sim.test.ts"
+      ],
+      "judge": "Imagined customers feel like real Berlin locals of the chosen Kiez (the mix changes with the Kiez and is labelled a rough guess, never statistics) and differ in ways that matter for this decision. The rounds tell a story; the Berlin events (BVG strike, rain week, heatwave, Baustelle, school holidays, a rival café, a Kiez festival, a Christmas market) change behaviour plausibly and are never presented as facts. Briefs are self-contained, leak nothing private and ask for answers in the owner's language. Validation is strict but lets the host retry one persona. The summary only describes, is never scaled up, says truthfully who played the customers (rule-based or an AI) and ends in questions to ask real customers. MiroFish ideas are borrowed without its AGPL code."
     },
     {
       "id": "mcp",
       "title": "Public MCP server and build",
       "weight": 0.15,
-      "paths": ["src/mcp", "src/state.ts", "scripts", "test/mcp.test.ts"],
-      "judge": "Tool design works in any MCP host. Descriptions make a model call whatif_start on 'what if…'. A model can fill the inputs from a chat. Each result gives plain text first, then structured JSON, then a report_url. Stateless and safe as a public endpoint: input limits, no external calls, no storage, CORS. Errors say what to ask the owner. The Vercel bundle is self-contained. The stdio server matches the HTTP one."
+      "paths": [
+        "src/mcp",
+        "src/state.ts",
+        "scripts",
+        "test/mcp.test.ts"
+      ],
+      "judge": "Tool design works in any MCP host; descriptions make a model call whatif_start on \"what if…\" and pass the owner's language (default German). Each result gives plain text first, then structured JSON, then a report_url. Stateless and safe as a public endpoint: input limits, no external calls, no storage, CORS, and for the closed beta invite codes checked in constant time, never logged or echoed, with a plain German and English 401. Errors say what to ask the owner. The Vercel bundle is self-contained. The stdio server matches the HTTP one."
     },
     {
       "id": "visual",
       "title": "Visual report and website",
       "weight": 0.2,
-      "paths": ["src/report", "site", "test/report.test.ts"],
-      "judge": "Does the report teach visually? Look for: a six-step progress header; source chips with a legend; scenario bars with a zero line; a break-even slider whose 'Why this changed' explains the mechanism; persona cards and a round-by-round timeline; an uptake chart; a who-told-whom view; a printable test card; a glossary and a privacy card. It works at 390 px and in dark mode, is accessible and fast, and uses no chart library. The landing page teaches the method in under a minute, and the connect page gets a non-technical helper connected in two minutes. Persona judges: Selin, a hackathon judge and a learning-design educator.",
-      "judges": ["reviewer", "selin", "hackathon", "educator"]
+      "paths": [
+        "src/report",
+        "site",
+        "test/report.test.ts"
+      ],
+      "judge": "Does the report teach visually, in German, English, Spanish and Polish? Look for: a six-step progress header; source chips with a legend, never on things that are not numbers; scenario bars with a zero line; a break-even slider whose 'Why this changed' explains the mechanism; a Berlin facts card with sources; persona cards and a round-by-round timeline; a printable one-page test card; a glossary and a privacy card. It works at 390 px (under 14 screens with sections collapsed), in dark mode and in print, is accessible and fast, and uses no chart library. The landing page teaches the method in under a minute and counts the same steps as the report; the connect page and the closed-beta /try wizard get a café owner from an invite code to her own report without help. Persona judges: Selin (reads German first), a hackathon judge and a learning-design educator.",
+      "judges": [
+        "reviewer",
+        "selin",
+        "hackathon",
+        "educator"
+      ]
     },
     {
       "id": "skill",
       "title": "Skill",
       "weight": 0.1,
-      "paths": ["skill/what-if", "src/mcp/instructions.ts"],
-      "judge": "Triggers on 'what if…' business questions and not on unrelated ones. The coaching asks one focused question at a time and says why it matters. It never computes money itself and shares the report link at every step. It runs the rehearsal as parallel subagents where the host has them, and in context otherwise. It explains how to connect the MCP in each app. Progressive disclosure: a short SKILL.md, with references read on demand. Valid for a claude.ai upload."
+      "paths": [
+        "skill/what-if",
+        "src/mcp/instructions.ts"
+      ],
+      "judge": "Triggers on 'what if…' business questions and not on unrelated ones. The coaching asks one focused question at a time, says why it matters and answers in the owner's language. It never computes money itself and shares the report link at every step. It runs the rehearsal as parallel subagents where the host has them, and in context otherwise. It explains how to connect the MCP in each app, with the closed-beta invite code in the URL. The built zip has a real https MCP URL and no placeholders. Progressive disclosure: a short SKILL.md, with references read on demand. Valid for a claude.ai upload."
     },
     {
       "id": "product",
@@ -49,16 +72,34 @@
       "weight": 0.15,
       "automatedWeight": 0.2,
       "judgeWeight": 0.8,
-      "paths": ["vision.md", "docs/PRD.md", "README.md", "site"],
-      "judge": "The idea itself, measured against vision.md and the hackathon theme 'AI education for everyone'. Does a café owner with no finance or AI background learn something transferable about the decision (break-even, worst case, which guess matters) and about AI (what came from them, what is maths, what is a guess, what is imagined)? Is the learning visual and hands-on? Is it honest: possibilities, not promises, and a small reversible test first? Is it more useful than a general chatbot? Persona judges: Selin (café owner), a hackathon judge and a learning-design educator. The reviewer also proposes the three highest-impact refinements of the idea (qa/judge/refine.json).",
-      "judges": ["reviewer", "selin", "hackathon", "educator"]
+      "paths": [
+        "vision.md",
+        "docs/PRD.md",
+        "README.md",
+        "site"
+      ],
+      "judge": "The idea itself, measured against vision.md and the hackathon theme 'AI education for everyone', now as a closed beta for independent Berlin cafés in four languages. Does a café owner with no finance or AI background learn something transferable about the decision (break-even, worst case, which guess matters, VAT and wages as Berlin facts) and about AI (what came from them, what is maths, what is a guess, what is imagined, who played the customers)? Can she try it with her own numbers from an invite code, in German, without an AI app? Is the learning visual and hands-on? Is it honest: possibilities, not promises, and a small reversible test first? Is it more useful than a general chatbot? Persona judges: Selin (café owner, reads German first), a hackathon judge and a learning-design educator. The reviewer also proposes the three highest-impact refinements of the idea (qa/judge/refine.json).",
+      "judges": [
+        "reviewer",
+        "selin",
+        "hackathon",
+        "educator"
+      ]
     },
     {
       "id": "docs-devex",
       "title": "Docs and developer experience",
       "weight": 0.1,
-      "paths": ["README.md", "docs", "package.json", ".gitignore", "qa"],
-      "judge": "From the README, a judge understands the product and how to try it in 60 seconds. Local setup is one command on Windows and Unix. Every documented command exists and works, and ARCHITECTURE.md matches the code. The docs are honest about what is demo data and what is not built. Scripts, naming and structure are clear. No secrets, the lockfile is committed and the QA bot is reproducible."
+      "paths": [
+        "README.md",
+        "docs",
+        "package.json",
+        ".gitignore",
+        "qa"
+      ],
+      "judge": "From the README, a judge understands the product, the closed beta and how to try it in 60 seconds. Local setup is one command on Windows and Unix, and a fresh Windows clone (CRLF) passes the same tests. Every documented command exists and works, and ARCHITECTURE.md matches the code (languages, Berlin facts, invite codes, /try). The docs are honest about what is demo data and what is not built. Scripts, naming and structure are clear. No secrets (invite codes only in the Vercel env), the lockfile is committed and the QA bot is reproducible."
     }
-  ]
+  ],
+  "version": 2,
+  "loopNotes": "Loop 2 (v0.2, Berlin closed beta): judges also check de/en/es/pl, the Berlin facts card, the closed-beta /try flow, and whether the loop-1 improvements were addressed (qa/judges.md §1, §9)."
 }

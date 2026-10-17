@@ -4,15 +4,26 @@ The QA bot (`qa/run.ts`) scores every component from automated checks and from j
 
 A component's score is `0.6 × automated + 0.4 × judge` (product uses `0.2 / 0.8`, see `qa/rubric.json`). The judge score is the mean of every judge file for that component. Without a judge file, the judge part falls back to the automated score.
 
+## 0. Loop 2: what changed (v0.2, Berlin closed beta)
+
+What-IF is now a **closed beta for independent cafés in Berlin**, with **invite codes**, in **German (the default), English, Spanish and Polish**. Read the last section of `docs/ARCHITECTURE.md` ("Berlin closed beta (v0.2)") before you judge. In loop 2 every judge also checks:
+
+1. **The four languages.** The evidence is German first (`report-phone.png`, `report.txt`, `landing.txt` are the German pages). Also look at `report-en-phone.png`, `report-es-phone.png` and `report-pl-phone.png` with their `.txt` files, and `report-static.<lang>.html`. Look for English left in other languages, awkward or machine-like translation, the wrong number format (German: "9,90 €", "1.500 €") and a switcher (DE · EN · ES · PL) that keeps the same report.
+2. **The Berlin facts card** ("Berlin facts used"): VAT (7% food / 19% drinks since 1 Jan 2026) and the minimum wage (€13.90 since 1 Jan 2026), each with a source, a link and a date. A fact without a source or date is a defect. A fact that is wrong is a wrong money figure (§4).
+3. **The closed-beta flow:** `/try` with an invite code. The evidence is `try-beta-code.png` (the code screen), `try-beta-first-question.png`, `try-walkthrough.txt` (every screen the keyboard run passed), `try-done-report.png`, `connect-beta.txt` and `connect-beta-phone.png` (the personal `…/api/mcp?code=` URL). Could a café owner go from an invite code to her own report, alone, on her phone?
+4. **Whether the loop-1 improvements were addressed.** Read your loop-1 file first (it is still in `qa/judge/`) and fill the `loop1` field (§2, §9). Loop-1 findings that a check now covers are listed in §9 with the check id.
+
 ## 1. Before you judge
 
-1. Run `npm run qa:dry`. It does not count as a loop. It refreshes the evidence:
+1. Run `npm run qa:dry`. It does not count as a loop. It refreshes the evidence. Every report screenshot and text is built from the **shipped demo** (`src/report/demo.ts`, what `/r#demo` shows), not from a private QA run:
    - `qa/reports/dry-run.md`: the scores, every failing check and the command to reproduce it.
-   - `qa/reports/ui/*-desktop.png`, `*-phone.png` (390 px) and `*-dark.png`: the landing page, the connect page and the demo report. Also `report-slider-moved.png`.
-   - `qa/reports/ui/landing.txt`, `connect.txt` and `report.txt`: the visible text of each page.
-   - `qa/reports/ui/report-static.html`: the demo report as `renderReport()` draws it.
-2. If the evidence is missing (Playwright not installed), say so in `notes` and judge from `report-static.html` and the code.
-3. If your judge file already exists, read it first. It holds the last loop's verdict. Say what changed since then.
+   - `qa/reports/ui/*-desktop.png`, `*-phone.png` (390 px) and `*-dark.png`: the landing page, the connect page, the `/try` wizard and the demo report (German). Also `report-slider-moved.png` and, when the report has collapsible sections, `report-phone-collapsed.png`.
+   - `qa/reports/ui/report-en-phone.png`, `report-es-phone.png`, `report-pl-phone.png` and `report-en.txt`, `report-es.txt`, `report-pl.txt`: the same demo in the other languages. `report-switched-en.txt`: the German report after choosing EN in its switcher.
+   - `qa/reports/ui/landing.txt`, `connect.txt`, `try.txt` and `report.txt`: the visible text of each page.
+   - `qa/reports/ui/try-walkthrough.txt`, `try-done-report.png`: the keyboard-only run through `/try`. `try-beta-code.png`, `try-beta-first-question.png`, `connect-beta.txt`, `connect-beta-phone.png`: the closed-beta flow on a server with `WHATIF_BETA_CODES` set (test code `test-code-123`).
+   - `qa/reports/ui/report-static.html` (English) and `report-static.de.html`, `.es.html`, `.pl.html`: the demo report as `renderReport()` draws it.
+2. If the evidence is missing (Playwright not installed), say so in `notes` and judge from the `report-static.*.html` files and the code.
+3. If your judge file already exists, read it first. It holds the last loop's verdict. Say what changed since then, and fill `loop1` (§9).
 
 ## 2. Output
 
@@ -24,9 +35,14 @@ Write exactly one JSON file per judging task (the persona judges write two, see 
   "notes": "≤ 200 words: what you checked, what is strong, what holds the score back. Cite evidence (file:line, screenshot, check id).",
   "improvements": [
     "Ranked by impact. Each one names where (file or screen), what to change, why (which criterion) and how to tell it worked."
+  ],
+  "loop1": [
+    { "improvement": "your loop-1 improvement, shortened", "status": "fixed | partly | not fixed | no longer applies", "evidence": "file:line, screenshot or check id" }
   ]
 }
 ```
+
+`loop1` lists **every** improvement from your loop-1 file, in its order. A judge without a loop-1 file writes `"loop1": []`. An improvement marked `fixed` needs evidence you looked at in this loop, not the docs saying so.
 
 - `score`: from 1 to 10, one decimal allowed.
 - `improvements`: 3 to 6 items. Do not write vague ones like "improve the UX" or "add more tests". A good one: "src/report/steps.ts:212: the worst-case card says 'max loss'. Say 'the most this test can cost you: €410' and show it as a share of the spare cash. Selin did not know what 'max loss' covered."
@@ -64,6 +80,12 @@ Hard caps, whatever else is good:
 - The report breaks at 390 px, or is unreadable in dark mode: visual ≤ 6.
 - Owner cost numbers leak into persona briefs, or imagined counts are scaled up to real customers: rehearsal ≤ 5.
 - A tool that needs server memory, or a secret in the repo: mcp ≤ 5 / docs-devex ≤ 4.
+- Loop 2 (v0.2):
+  - A public fact (VAT rate, minimum wage) that is wrong, or used without a source and date: engine ≤ 5.
+  - A rule-based rehearsal presented as played by an AI (or the reverse), anywhere the owner reads it: rehearsal ≤ 6, product ≤ 6.
+  - The German report or `/try` shows English UI text an owner meets on the main path, or numbers in the English format: visual ≤ 7.
+  - With invite codes set, the MCP answers without a code, or a code is logged, echoed or put in a report link: mcp ≤ 5.
+  - The closed-beta flow cannot be finished without help (no code screen, a valid code refused, `/try` stuck): visual ≤ 6, product ≤ 7.
 
 ## 5. Component reviewers
 
@@ -91,6 +113,12 @@ node --import tsx -e "import('./src/engine/index.ts').then(e => console.log(JSON
 
 **9+:** you could not find a wrong number, every figure explains itself, and the tests would catch a formula change.
 
+**Loop 2 also:** redo the demo break-even on **net prices**: deal price ÷ (1 + VAT) minus its cost, with the VAT the analysis used (the lunch fallback is 10.6%: 70% food at 7% + 30% drinks at 19%). Check that staff cost is hours × hourly cost (demo 1 h × €18.00; fallback €13.90, the minimum wage since 1 Jan 2026, tagged a guess with the payroll note). Check every entry of `analysis.facts`: is the value right, is the source the one ARCHITECTURE.md names, does the link open the right page, is the date right? Run the demo with `{ lang: "de" }` and read the maths strings as a German owner: "9,90 €", "1.500 €", decimal commas, no English left. Type "1.500 €", "9,90" and "ca. 40" into `checkInputs` (check `berlin-number-parsing`).
+
+```
+node --import tsx -e "import('./src/engine/index.ts').then(e => console.log(JSON.stringify(e.analyze('lunch_offer', e.demoInputs('lunch_offer'), { demo: true, lang: 'de' }), null, 2)))"
+```
+
 ### 5.2 rehearsal: Customer rehearsal (simulation)
 
 **Read:** `src/sim/*.ts`, `test/sim.test.ts`, `docs/research/mirofish-notes.md`, and the rehearsal section of `qa/reports/ui/report.txt`.
@@ -116,6 +144,8 @@ Read the brief as the subagent that will receive it. Could you answer well from 
 
 **9+:** reading the timeline feels like watching a neighbourhood react, and the owner leaves with sharper questions for real customers, not a forecast.
 
+**Loop 2 also:** run the rehearsal for two different Kieze (`kiez: "Neukölln"` and `kiez: "Charlottenburg"`) and judge whether the people, names, alternatives (Bäckerei, Späti, Döner, Kantine…) and channels (Instagram, Google Maps, nebenan.de, the Kiez WhatsApp group) feel like that Kiez, and whether the mix is labelled a rough guess, not statistics. Inject two `BERLIN_EVENTS` (a BVG strike, the rival café's €8.50 lunch) and read whether behaviour changes plausibly. Read one German brief and one German rule-based round: do the imagined customers think in natural German (Sie/du as a local would), and does the brief ask for answers in German? Check that the summary says truthfully who played the customers (check `sim-honest-method`).
+
 ### 5.3 mcp: Public MCP server and build
 
 **Read:** `src/mcp/*.ts`, `src/state.ts`, `scripts/build.mjs`, `scripts/dev.mjs`, `test/mcp.test.ts`, and the tools table in `docs/ARCHITECTURE.md`.
@@ -135,6 +165,8 @@ Read the brief as the subagent that will receive it. Could you answer well from 
 
 **9+:** a model in any MCP host could coach a full session from the tool descriptions and results alone.
 
+**Loop 2 also:** the closed beta. Start a server with `WHATIF_BETA_CODES=test-code-123` (`node scripts/dev.mjs --no-build` after a build) and read the 401 a code-less client gets: would an owner's AI app relay it so that she knows what to do (German and English, how to ask for a code)? Look for codes in logs, report links, error texts and the GET info (check `mcp-beta-codes`). Read the tool descriptions for `lang`: will a model pass the language the owner writes in, and is German the default?
+
 ### 5.4 visual: Visual report and website
 
 **Read:** the screenshots in `qa/reports/ui/` (phone first, then desktop, then dark), `report.txt`, `landing.txt`, `connect.txt`, `report-static.html`, `src/report/*.ts`, `site/*.html` and `site/src/*.ts`, and §7 of `docs/PRD.md`.
@@ -152,6 +184,8 @@ Read the brief as the subagent that will receive it. Could you answer well from 
 **Red flags:** walls of numbers; jargon (sensitivity, elasticity, contribution margin) without a plain word beside it; colour as the only signal; a slider with no visible effect; demo data not labelled.
 
 **9+:** someone who has never seen a break-even chart understands it from the report, on a phone.
+
+**Loop 2 also:** judge the German report first (`report-phone.png`), then compare one screen each in English, Spanish and Polish. Check the switcher on every page, the "Berlin facts used" card, the phone length (check `ui-report-height` reports the pixels; loop 1 was 23,943 px), the printed test card (check `ui-print-card`; loop 1 printed 15 pages) and the `/try` wizard: one question per screen, "why it matters" on every screen, demo values as placeholders, rough numbers welcome, keyboard-only (check `ui-try-keyboard`, `try-walkthrough.txt`), and the invite-code screen (`try-beta-code.png`).
 
 The persona judges in §6 also write `visual.<persona>.json`.
 
@@ -179,6 +213,8 @@ The persona judges in §6 also write `visual.<persona>.json`.
 
 **9+:** you could hand the zip to a café owner's nephew, and their first "what if" would go well.
 
+**Loop 2 also:** run conversation 1 in German ("Was wäre, wenn ich einen Mittagstisch anbiete?") and one in Polish or Spanish: does the skill answer in the owner's language and pass `lang`? Read how it explains the invite code and the personal connector URL (`…/api/mcp?code=…`), and what it says when the server answers 401. Unzip the built zip from a production-like build (check `skill-zip-prod-url`): the MCP URL must be https and not localhost, with no `{{…}}` left.
+
 ### 5.6 product: Product idea (reviewer)
 
 **Read:** `vision.md` (especially "What-IF is not"), `docs/PRD.md`, `README.md`, the landing page and the demo report (screenshots and text), and any persona files already written (`qa/judge/product.*.json`).
@@ -193,6 +229,8 @@ The persona judges in §6 also write `visual.<persona>.json`.
 | A judge gets it in 60 seconds | 10% |
 
 **9+:** the idea is clearly about teaching, not just answering; the persona judges agree; you would not change the core.
+
+**Loop 2 also:** is the Berlin focus a real improvement for the owner (VAT and the minimum wage taught as dated facts, the Kiez, Berlin events), or decoration? Does a closed beta with invite codes fit the product and the hackathon (who gets a code, how, and what she can do without one)? Can Selin now use her own numbers without an AI app (`/try`)?
 
 After the persona files exist, also write `qa/judge/refine.json` (§7).
 
@@ -212,15 +250,19 @@ After the persona files exist, also write `qa/judge/refine.json` (§7).
 
 **Red flags:** commands that do not exist; claimed features that are not built; stale paths; secrets; machine-specific paths.
 
+**Loop 2 also:** does the README explain the closed beta (what a code is, how to ask for one, `WHATIF_BETA_CODES` and `WHATIF_BETA_CONTACT` in Vercel, and that unset means open)? Does a fresh Windows clone pass `npm test` (checks `devex-gitattributes`, `devex-crlf-tests`)? Does ARCHITECTURE.md match the code for languages, catalogs, facts, codes and `/try`?
+
 ## 6. Persona judges (product and visual)
 
 Each persona writes **two** files: `qa/judge/product.<persona>.json` (would this idea work and teach, from where they sit) and `qa/judge/visual.<persona>.json` (does the report and site work for them). Same JSON as §2, with the extra fields listed for each persona. The notes are written in the persona's own voice. The improvements are concrete and say which screen they are about.
 
 ### 6.1 Selin (persona id `selin`): café owner
 
-Selin, 46, has run a 28-seat café in Neukölln for nine years. Two part-time staff; she is open 7:30 to 18:00. She knows her numbers from the till's daily Z-report and a notebook: about 140 customers on a weekday, rent, wages. She has no finance training and has never heard "contribution margin". She uses WhatsApp and Instagram daily and has used ChatGPT twice, to write an Instagram post. She worries about cash, time and her regulars, and about looking cheap. Her English is fluent and plain. She reads on her phone, between customers.
+Selin, 46, has run a 28-seat café in Neukölln for nine years. Two part-time staff; she is open 7:30 to 18:00. She knows her numbers from the till's daily Z-report and a notebook: about 140 customers on a weekday, rent, wages. She has no finance training and has never heard "contribution margin". She uses WhatsApp and Instagram daily and has used ChatGPT twice, to write an Instagram post. She worries about cash, time and her regulars, and about looking cheap. She reads on her phone, between customers.
 
-**How to judge as Selin:** use only what she would see: `landing-phone.png`, `report-phone.png`, `connect-phone.png`, `report.txt` and `landing.txt`. Never the code. Read in order and stop where she would give up. Note the exact words that lost her.
+**Selin reads German first.** She runs her café in German: her till, her Steuerberater, her suppliers and most regulars speak German. Her English is fluent but plain, so she opens What-IF in German and switches to English only when the German is unclear. She is in the closed beta: a friend from the Kiez WhatsApp group passed her an invite code (`test-code-123` in the evidence). She has no AI app with connectors; she uses `/try`.
+
+**How to judge as Selin:** use only what she would see, in this order: `landing-phone.png` and `landing.txt` (German), `try-beta-code.png`, `try-beta-first-question.png` and `try-walkthrough.txt` (the invite code, then her own numbers), `report-phone.png` and `report.txt` (the German report), `connect-beta-phone.png` and `connect-beta.txt`. If the German loses her, look at `report-en-phone.png` as she would, and say so. Never the code. Read in order and stop where she would give up. Note the exact words that lost her, in the language she read them in.
 
 **Answer, in her voice:**
 - What did you understand? Can you say the break-even in your own words, the most the test could cost you, and which guess matters most?
@@ -228,8 +270,11 @@ Selin, 46, has run a 28-seat café in Neukölln for nine years. Two part-time st
 - Do you believe the numbers? Why or why not?
 - What did you learn about AI: what did it calculate, what did it guess, and what did it imagine?
 - Would you run the test next Monday? What would stop you?
+- **German first:** does the German read like a person wrote it for you ("Sie", short sentences, no finance jargon without a plain word)? Quote any English left, any awkward or wrong German, and any number in the wrong format ("€9.90" instead of "9,90 €").
+- **The Berlin facts:** do you understand why the report takes VAT out of your prices and what the minimum wage has to do with your staff cost? Would you show the facts card to your Steuerberater?
+- **The invite code and `/try`:** could you get from the code to your own report alone, between customers? Where did you hesitate?
 
-**Extra fields:** `"understood": ["…"]`, `"confused": ["exact words or section"]`, `"wouldTry": "yes | maybe | no, because …"`, `"learnedAboutAI": "…"`.
+**Extra fields:** `"understood": ["…"]`, `"confused": ["exact words or section"]`, `"wouldTry": "yes | maybe | no, because …"`, `"learnedAboutAI": "…"`, `"germanFirst": "how the German read, with quotes"`, `"englishLeft": ["English words met on the German path"]`, `"betaFlow": "code → own report: done alone | needed help at …"`.
 
 **Scores:** product: would she use it for a real decision and come away wiser? Visual: could she follow it on her phone without help?
 
@@ -243,7 +288,7 @@ A judge for the "AI education for everyone" track with five minutes per project.
 - execution and demo;
 - originality.
 
-**Read:** `README.md` (give it 60 seconds), then the landing page, the demo report and the connect page (screenshots). Optionally `vision.md`.
+**Read:** `README.md` (give it 60 seconds), then the landing page, the demo report and the connect page (screenshots). Optionally `vision.md`. Loop 2: the demo is German by default; use the switcher evidence (`report-en-phone.png`, `report-switched-en.txt`) and judge whether four languages and a closed beta for Berlin cafés make the impact on the named audience more credible, and whether `/try` lets a judge try it in a minute.
 
 **Answer:**
 - Does the owner learn something **transferable about AI**? For example: sources are labelled; maths is done by code, not the model; imagined customers are not data; AI explains and simulates but does not know the future.
@@ -251,6 +296,7 @@ A judge for the "AI education for everyone" track with five minutes per project.
 - Is the learning **visual**, and is it active rather than passive reading?
 - Is it more than "ChatGPT with a template"? What is original?
 - Would you believe a real owner tried it?
+- Loop 2: is the Berlin focus (VAT and the minimum wage as dated public facts, the Kiez, Berlin events) a teaching gain or just localisation? Is a closed beta with invite codes a sensible way to reach real owners?
 
 **Extra fields:** `"pitchIn60s": "what you would tell the other judges"`, `"standout": "…"`, `"weakest": "…"`.
 
@@ -258,7 +304,7 @@ A judge for the "AI education for everyone" track with five minutes per project.
 
 A learning designer who teaches money skills to small-business owners at a Volkshochschule (adult education) and designs self-paced digital lessons. Lens: scaffolding, cognitive load, worked examples, active learning with feedback, misconceptions, transfer.
 
-**Read:** the demo report (screenshots and `report.txt`), the landing page, and `src/report/` where the copy lives.
+**Read:** the demo report (screenshots and `report.txt`, German; `report-en.txt` for English), the landing page, `try-walkthrough.txt`, and `src/report/` where the copy lives (the catalogs in `src/report/messages.ts` and `site/src/messages.ts`).
 
 **Answer:**
 - **Scaffolding:** does it go from concrete (my numbers, one deal) to the general rule (break-even), with a worked example in the owner's own numbers?
@@ -266,8 +312,9 @@ A learning designer who teaches money skills to small-business owners at a Volks
 - **Active learning and feedback:** does moving the slider lead to an explanation of the mechanism ("Why this changed")? Is there a moment where the owner predicts and then checks?
 - **Misconceptions about AI predictions:** which does the report prevent, and which might it create? For example: "the AI predicted my sales"; "the expected scenario is what will happen"; "imagined customers are a survey"; "break-even means profit"; "more customers is always better".
 - **Transfer:** "use this method again", a glossary, a test card the owner can run and report back on.
+- **Loop 2, language and facts:** is the German as plain as the English (same cognitive load, no new jargon; a word such as "Deckungsbeitrag" avoided or explained once)? Does the facts card teach that some numbers are public, dated rules (not guesses, not the owner's own numbers), and do the source chips keep that distinction? Does `/try` scaffold the inputs (one question per screen, why it matters, a worked example as the placeholder)?
 
-**Extra fields:** `"misconceptionsRisked": ["…"]`, `"scaffoldingGaps": ["…"]`.
+**Extra fields:** `"misconceptionsRisked": ["…"]`, `"scaffoldingGaps": ["…"]`, `"languageLoad": "how the German (and one of es/pl) compares with the English"`.
 
 ## 7. Refine the idea (`qa/judge/refine.json`)
 
@@ -292,6 +339,30 @@ Run `npm run qa:dry` first, then launch the subagents in parallel. That means se
 
 Prompt template, one per judge:
 
-> You are the **<role>** judge for What-IF, QA loop <N>. Read `qa/judges.md`: §2 Output, §3 Rules, §4 Calibration, and §<section> for your role. The evidence is `qa/reports/dry-run.md` and `qa/reports/ui/`. Do not edit any file except `qa/judge/<file>.json`. Write `{ "score", "notes", "improvements" }` there, plus any extra fields your section lists. Then reply with your score and your top three improvements.
+> You are the **<role>** judge for What-IF, QA loop <N>. Read `qa/judges.md`: §0 Loop 2, §2 Output, §3 Rules, §4 Calibration, §<section> for your role and §9 Loop-1 findings. The evidence is `qa/reports/dry-run.md` and `qa/reports/ui/` (German first; the other languages are `report-<lang>-*`). First read your loop-1 verdict `qa/judge/<file>.json`, then overwrite it. Do not edit any other file. Write `{ "score", "notes", "improvements", "loop1" }` there, plus any extra fields your section lists. Then reply with your score, your top three improvements and how many loop-1 improvements are fixed.
 
 The report marks judge files written before the last counted loop as **stale**. Re-run every judge before each loop.
+
+## 9. Loop-1 findings to re-check in loop 2
+
+The loop-1 judges found things the automated checks missed. Each is now covered by a check (the report shows it as `ok` or `FAIL`, with the numbers) or stays with the judges. Confirm a fix with the evidence, not with the check's word alone, and record it in `loop1`.
+
+| Loop-1 finding (judges) | Now checked by | Judges look at |
+|---|---|---|
+| The skill zip points at `http://localhost:3000/api/mcp` (skill) | `skill-zip-prod-url`, `skill-zip-no-placeholders` | the unzipped SKILL.md and connect.md from a production-like build |
+| "1.500 €" is read as €1.50, "ca. 40" is refused (skill) | `berlin-number-parsing` | the coaching text: does the skill read numbers back in the owner's format? |
+| The rehearsal caveat says "played by an AI" for a rule-based run (educator, hackathon, Selin, visual) | `sim-honest-method` | step 5 in every language: exactly one true statement of who played the customers |
+| "Check these with real customers" wears a "Your number" chip (visual, Selin, rehearsal) | `visual-checklist-chip` | every chip sits beside a value of that kind |
+| The phone report is about 24,000 px (visual, Selin, hackathon) | `ui-report-height` (under 14 screens with sections collapsed; it reports the height) | whether the collapsed sections still teach, and what is open by default |
+| The landing says seven steps, the report six (educator, visual, Selin, hackathon) | `ui-landing-steps` | the landing's step names against the report's |
+| "Print this test card" prints 15 pages (visual) | `ui-print-card` (at most 2 A4 pages) | the printed card: readable, complete, fillable by hand |
+| Dimmed landing steps at about 3.1:1 contrast (visual) | `ui-dark-mode` (now with opacity and the method steps) | the landing autoplay on a phone |
+| The QA evidence used seed 42, not the shipped demo (rehearsal) | the evidence itself (`src/report/demo.ts`, in every language) | that the screenshots match `/r#demo` |
+| `npm test` fails on a fresh Windows clone (CRLF) (docs-devex) | `devex-gitattributes`, `devex-crlf-tests` | a fresh clone, if you can |
+| Selin cannot use her own numbers without an AI app (Selin) | `ui-try`, `ui-try-keyboard`, `ui-try-invite` | the whole `/try` flow on a phone, in German |
+| −€56.02 against a maths line that gives −€56.00; maths strings that do not reproduce their values (engine, Selin, visual, educator) | judges only | redo every "Why this changed" and every maths line by hand |
+| "The most it can cost" stated as a ceiling while it rests on the switching guess (engine, educator) | judges only | the worst-case and cost-cap wording |
+| The test card's rounded rule and compareResult's exact thresholds disagree (engine, educator) | judges only | a grid of results against the printed keep / tweak / stop rule |
+| "Not around" hides "went elsewhere"; duplicate or contradictory rule-based lines (rehearsal, visual) | judges only | the round-by-round grid under the owner event |
+| whatif_start sends lunch questions for "hire a part-timer"; state tokens inflate without a cap; the interview tool points at submit (mcp, skill) | judges only (`mcp-live-errors` covers bad JSON and 2 MB bodies) | `src/mcp/tools.ts` and `src/state.ts` |
+| No live URL in the README; the stdio fallback is a dead domain (docs-devex, mcp, skill, hackathon) | judges only | README links and `src/mcp/stdio.ts` |

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>(function(){var d=document.documentElement,l="de";try{l=new URLSearchParams(location.search).get("lang")||localStorage.getItem("whatif.lang")||l}catch(e){}if(String(l).slice(0,2).toLowerCase()!=="en"){d.className+=" s-i18n-wait";setTimeout(function(){d.classList.remove("s-i18n-wait")},1500)}})();</script>
+<title data-i18n="t.title">Try What-IF with your numbers</title>
+<meta name="description" data-i18n-attr="content:t.desc" content="Rehearse a lunch deal or a price change with your own café's numbers, one question at a time. Worked out in your browser; nothing is stored on our server.">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#f6f3ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Try What-IF with your numbers">
+<meta property="og:description" content="One question at a time, about 3 minutes, worked out in your browser. Closed beta for Berlin cafés.">
+<meta property="og:url" content="{{SITE_URL}}/try">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+<script type="module" src="/assets/lang.js"></script>
+<script type="module" src="/assets/try.js"></script>
+</head>
+<body class="s-page s-try">
+<a class="s-skip" href="#main" data-i18n="c.skip">Skip to the content</a>
+<header class="s-head">
+  <div class="s-wrap s-head-in">
+    <a class="s-brand" href="/" aria-label="What-IF home" data-i18n-attr="aria-label:c.home_aria">
+      <svg class="s-logo" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" class="s-logo-bg"/><path d="M5.5 16h7.5M13 16c4.2 0 6.2-7 12-7M13 16h12M13 16c4.2 0 6.2 7 12 7" fill="none" class="s-logo-line" stroke-width="2.6" stroke-linecap="round"/><circle cx="25" cy="9" r="2.7" class="s-logo-up"/><circle cx="25" cy="16" r="2.7" class="s-logo-mid"/><circle cx="25" cy="23" r="2.7" class="s-logo-down"/><circle cx="5.8" cy="16" r="2.7" class="s-logo-line-fill"/></svg>
+      <span>What-IF</span>
+    </a>
+    <span class="s-beta" data-i18n="c.badge">Closed beta · Berlin</span>
+    <div class="s-lang" data-lang-switch></div>
+  </div>
+</header>
+
+<main id="main" class="s-try-main">
+  <div class="s-wrap s-try-wrap">
+    <p class="s-eyebrow" data-i18n="t.eyebrow">What-IF · Try with your numbers</p>
+    <h1 class="s-try-h1" data-i18n="t.h1">Try it with your numbers</h1>
+    <p class="s-try-lede" data-i18n="t.lede">One question at a time, about 3 minutes. Rough numbers are fine. Everything is worked out in your browser; your numbers go into the report link, not to our server.</p>
+    <div class="s-wizard" data-try>
+      <p class="s-loading-t" data-i18n="t.loading">Getting the questions ready…</p>
+      <noscript><p data-i18n="t.noscript">This page needs JavaScript: it works out your report in your browser, so your numbers never leave it.</p></noscript>
+    </div>
+  </div>
+</main>
+
+<footer class="s-foot">
+  <div class="s-wrap s-foot-in">
+    <p class="s-foot-honest" data-i18n-html="c.foot_honest_html"><b>Possibilities, not promises.</b> What-IF shows what could happen and why. It does not predict the future, and it does not replace your Steuerberater or other professional advice.</p>
+    <nav class="s-foot-nav" aria-label="Footer" data-i18n-attr="aria-label:c.foot_aria">
+      <a href="/" data-i18n="c.home_aria">What-IF home</a>
+      <a href="/r#demo" data-i18n="c.foot_demo">Demo report</a>
+      <a href="/connect" data-i18n="c.foot_connect">Add to your AI</a>
+      <a href="#" data-beta-contact="{{BETA_CONTACT}}" hidden data-i18n="c.invite">Request an invite</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

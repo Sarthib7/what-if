@@ -122,3 +122,38 @@ The server also exposes MCP `instructions` (how to coach, the "what if" trigger,
 | Any chat app with the MCP connected (Claude.ai, ChatGPT, Cursor…) | the model plays each persona in turn from its brief only and submits with `method: "in-context"` |
 | Skill without the MCP connected | the skill tells the user how to connect it (URL + per-app steps); meanwhile it can follow `references/maths.md` by hand |
 | No model (site demo, QA) | `whatif_rehearsal_autoplay` / `ruleBasedReactions` |
+
+## Berlin closed beta (v0.2) — contract additions
+
+What-IF now targets **independent cafés in Berlin**, as a **closed beta with invite codes**, in **four languages: German (default), English, Spanish, Polish**.
+
+### Languages (`src/i18n/index.ts`, written)
+
+- `Lang = "de" | "en" | "es" | "pl"`; `setLang`, `getLang`, `normaliseLang`, `makeT(catalog)`, `plural(n, forms)` (Polish needs one/few/many), `LOCALE`.
+- Every module keeps its owner-facing strings in its own catalog file (e.g. `src/engine/messages.ts`, `src/sim/messages.ts`, `src/report/messages.ts`, `site/src/messages.ts`) with `en` complete and `de`, `es`, `pl` translated. **No owner-facing English string literals outside catalogs.** Plain, warm, café-owner language in every language (German: "Sie", short sentences; avoid finance jargon or explain it once).
+- `src/engine/format.ts` formats money and percentages by the current language via `Intl` ("9,90 €" in de/es/pl, "€9.90" in en).
+- `analyze(..., { lang })` sets the language for the whole analysis; `Analysis.lang` records it. `startRehearsal` / `summarize` / `renderReport` use the analysis language. Persona briefs tell the imagined customer to write `thought`, `saysPublicly`, `questionForOwner`, `diary` in that language (the brief instructions themselves may stay in English).
+- `ShareState.lang` carries the language in report links; the report page also has a language switcher (DE · EN · ES · PL) that re-renders the same link in another language (numbers are recomputed, guesses unchanged; imagined customers' own words stay as they were written).
+- MCP tools take an optional `lang` (default `"de"`); the coach passes the language the owner writes in.
+
+### Berlin specifics (engine + sim)
+
+- **VAT (Mehrwertsteuer)**: prices the owner enters are what customers pay (gross). Since **1 Jan 2026** food in restaurants and cafés is taxed at **7%** (eat-in and take-away); **drinks stay at 19%** (milk drinks with ≥ 75% milk: 7%). Source: Steueränderungsgesetz 2025 / §12 (2) Nr. 15 UStG; BMF letter of 22 Dec 2025 accepts a flat 30% drinks share for combined offers like buffets. The engine works on net prices: `net = gross / (1 + vat)`.
+  - Lunch offer: new optional field `vat_rate` ("VAT in your lunch prices, blended"), fallback **10.6%** (70% food at 7% + 30% drinks at 19%), tagged as a guess with that explanation and "ask your Steuerberater for your real split". Used for both the deal and today's lunch spend. `variable_cost_share` stays a share of the price customers pay.
+  - Price change: new optional field `vat_rate`, fallback **19%** (coffee drinks), with the 7% food / milk-drink note.
+- **Staff cost**: `extra_staff_cost_per_day` is replaced by `extra_staff_hours_per_day` (choice, default 0) × `staff_hourly_cost` (fact, fallback **€13.90** = statutory minimum wage since 1 Jan 2026, €14.60 from 1 Jan 2027, tagged as a guess with the note "your real cost per hour is higher once employer contributions are added; check your payroll"). Demo: 1 hour at €18.00.
+- **Kiez**: new optional field `kiez` (text choice from `BERLIN_KIEZE`: Neukölln, Kreuzberg, Friedrichshain, Prenzlauer Berg, Mitte, Wedding, Moabit, Schöneberg, Charlottenburg, Friedenau, Pankow, Lichtenberg, Treptow, Tempelhof, Steglitz, Köpenick, Spandau, Weißensee; plus "other"). Demo: Neukölln. The rehearsal uses it for the persona mix (a labelled rough guess, never statistics), names, alternatives (Bäckerei, Späti, Döner, Kantine, Mensa…), channels (Instagram, Google Maps, nebenan.de, the Kiez WhatsApp group, the board outside) and scene details.
+- **Berlin events** for the rehearsal (owner-injected "what if"s, never presented as facts): `BERLIN_EVENTS` with ids and translated texts — BVG strike day, a week of rain, a heatwave (32 °C), a Baustelle outside (pavement half closed), Berlin school holidays, a new café opens two doors down with an €8.50 lunch, a big Kiez street festival weekend, the Christmas market opens nearby. `whatif_start` and the site list them.
+- **Public facts card**: `Analysis.facts: PublicFact[]` lists every public fact the numbers used (VAT rates, minimum wage) with source, URL and date. The report shows them in a "Berlin facts used" card. Sources: BMF / Bundesrat (Steueränderungsgesetz 2025, VAT 7% food from 1 Jan 2026), Mindestlohnkommission / Bundesregierung (Fünfte Mindestlohnanpassungsverordnung, €13.90 from 1 Jan 2026). Never add a fact without a source and date.
+
+### Closed beta: invite codes
+
+- `WHATIF_BETA_CODES` (Vercel env, comma-separated, each ≥ 6 chars). **Unset = open** (local dev, tests).
+- MCP: when set, every POST to `/api/mcp` needs a valid code via `?code=XXXX` in the URL (what owners paste into their AI app), or header `x-whatif-code`, or `Authorization: Bearer XXXX`. Otherwise HTTP 401 with a JSON-RPC error whose message, in German and English, says What-IF is a closed beta for Berlin cafés and how to ask for a code (`WHATIF_BETA_CONTACT`, an email or URL; omitted if unset). Constant-time comparison; codes never logged or echoed.
+- `GET /api/mcp?code=XXXX` (browser / site) returns the info JSON plus `beta: { required, valid }`, so the site can check a code without storing anything.
+- Site: a "Closed beta · Berlin" badge; the connect page and the new **"Try with your numbers"** page (`/try`) ask for the invite code (remembered in localStorage), check it via the GET above, and build the personal connector URL `https://<site>/api/mcp?code=XXXX`. The report viewer `/r#…` stays open (links are shared and carry their own data).
+- `WHATIF_BETA_CONTACT` is templated into the site and skill like `{{SITE_URL}}` (as `{{BETA_CONTACT}}`; hide the request button when empty).
+
+### "Try with your numbers" (`/try`, site)
+
+Selin (persona judge) could not use her own numbers without an AI app. `/try` is a one-question-per-screen wizard in the four languages: Kiez → the 6 required facts → the plan → the likely guess (with "why it matters" on every screen, demo values as placeholders, rough numbers welcome) → builds a `ShareState` (lang, inputs, demo:false) → `/r#token`. It needs a valid invite code when the beta is on. No server storage.

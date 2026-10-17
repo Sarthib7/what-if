@@ -1,0 +1,294 @@
+{
+  "v": 1,
+  "template": "lunch_offer",
+  "inputs": {
+    "kiez": "Neukölln",
+    "weekday_customers": 140,
+    "avg_spend": 7.4,
+    "variable_cost_share": 0.32,
+    "monthly_fixed_costs": 16500,
+    "lunch_customers": 38,
+    "lunch_spend": 11.2,
+    "cash_buffer": 1500,
+    "offer_price": 9.9,
+    "offer_cost": 3.6,
+    "setup_cost": 180,
+    "extra_staff_hours_per_day": 1,
+    "staff_hourly_cost": 18,
+    "marketing_per_week": 25,
+    "test_days": 10,
+    "extra_low": 3,
+    "extra_likely": 8,
+    "extra_high": 15,
+    "switch_share": 0.3
+  },
+  "demo": true,
+  "business": "Café Lindenblatt (demo café, Berlin-Neukölln)",
+  "question": "What if I run a weekday lunch offer to bring in more customers?",
+  "currency": "EUR",
+  "lang": "en",
+  "madeBy": "coach",
+  "rehearsal": {
+    "seed": 36,
+    "personas": 6,
+    "rounds": 4,
+    "events": [
+      {
+        "beforeRound": 3,
+        "text": "A new café opens two doors down with an €8.50 lunch."
+      }
+    ],
+    "reactions": [
+      {
+        "personaId": "p1",
+        "round": 1,
+        "action": "notices_offer",
+        "thought": "I'd see the board walking past with the pram. €9.90 is a bit under what I usually spend on lunch, but I remember that reheated quiche special, so I'm curious, not convinced.",
+        "questionForOwner": "Which of the soups and sandwiches contain nuts, and is the soup made fresh each day?",
+        "diary": "Saw the €9.90 lunch deal on the board outside; cheaper than my usual lunch, but I still remember the reheated quiche.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p2",
+        "round": 1,
+        "action": "notices_offer",
+        "thought": "I'm in most days, so I walked right past the board. A fixed price for soup, sandwich and drink is under my usual €12.20 and would save me deciding on a short break. Curious, not changing anything yet.",
+        "questionForOwner": "Can I pick which soup and sandwich, or is it one fixed combo? And does the drink include coffee?",
+        "diary": "Saw the new €9.90 lunch deal board outside; it's cheaper than my usual €12.20 and might spare me the decision.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p3",
+        "round": 1,
+        "action": "notices_offer",
+        "thought": "The sponsored post came up on my feed. €9.90 is two euros over my usual soup and flat white, and I don't always want a sandwich. I noticed it, but it doesn't change my plans yet.",
+        "questionForOwner": "Can I get just the soup and a drink for less, without the sandwich?",
+        "diary": "Lindenblatt now has a €9.90 soup, sandwich and drink deal; that's €2 over my usual lunch, so I'm just watching for now.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p4",
+        "round": 1,
+        "action": "notices_offer",
+        "thought": "Walking home after my shift I passed the new board. Soup, sandwich and a drink for €9.90 is a little under my usual lunch, so it caught my eye. I'll see how it looks when I'm in next, no rush.",
+        "questionForOwner": "Does the drink in the deal include mint tea, and is the sandwich the sandwich of the day?",
+        "diary": "Lindenblatt has a €9.90 soup, sandwich and drink lunch deal on weekdays; I saw the board and will check it next time.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p5",
+        "round": 1,
+        "action": "notices_offer",
+        "thought": "Saw the chalkboard on my way to the U-Bahn. €9.90 is almost €3 more than my usual lunch and the Mensa is cheaper, so nothing changes for me yet. But I clocked the price.",
+        "questionForOwner": "Is there a student price or a smaller option for under €8?",
+        "diary": "Café Lindenblatt's lunch deal is €9.90, over my €7.20 budget, so the Mensa stays unless there's a cheaper option.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p6",
+        "round": 1,
+        "action": "notices_offer",
+        "thought": "Saw the Instagram post and the board. €9.90 is just above my usual €9.30, but soup, sandwich and a drink is fair. It only matters if it's quick, since I'm between drop-off and pick-up.",
+        "questionForOwner": "Is the deal served fast at 11:30, and can I take the soup and sandwich to go?",
+        "diary": "Saw the €9.90 lunch deal on the board and Instagram; fair price, but only if it's served fast.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p2",
+        "round": 2,
+        "action": "tries_deal",
+        "thought": "Short break, short queue, and the board has already made the decision for me. €9.90 is under my usual €12.20, so I'll just try it today.",
+        "questionForOwner": "Does the soup change every day, or is it red lentil all week?",
+        "diary": "Tuesday of week one I took the €9.90 deal: no deciding, and cheaper than my usual €12.20.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p3",
+        "round": 2,
+        "action": "usual_order",
+        "thought": "I'm here to work anyway, and the lentil soup smells good. But €9.90 is €2 more than I planned for lunch, so I'll just get my soup and a flat white and skip the sandwich.",
+        "questionForOwner": "Can I get the deal with just soup and a drink for less, without the sandwich?",
+        "diary": "Lindenblatt's deal is still €2 over my lunch budget, so I had my usual soup and flat white; I'd come back for it on a good invoice week.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p4",
+        "round": 2,
+        "action": "tries_deal",
+        "thought": "I said I'd check it next time. It's less than my usual €10.20 and I get soup too, so I'll just order it and see. I'd only come back if it's not a smaller sandwich.",
+        "questionForOwner": "Does the drink include my mint tea, and is the sandwich the normal sandwich of the day?",
+        "diary": "Tried the €9.90 lunch deal on Tuesday; cheaper than my usual order, and I'll see if it's worth switching.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p5",
+        "round": 2,
+        "action": "eats_elsewhere",
+        "thought": "The soup smells good, but €9.90 is €2.70 more than I spend on lunch. The Mensa is cheaper and on my way to the U-Bahn anyway, so I walk past again.",
+        "questionForOwner": "Is there a soup-only or half-sandwich option for under €7?",
+        "diary": "Board still says €9.90, so the Mensa won again; I'd only go in for a cheaper soup or half-sandwich deal.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p6",
+        "round": 2,
+        "action": "tries_deal",
+        "thought": "Short queue, soup already steaming and sandwiches ready under glass, so it should be quick. €9.90 is close to what I'd spend on lunch anyway. I'll give it a go while I have the time.",
+        "questionForOwner": "Can I get the sandwich wrapped to take away if I'm running short on time?",
+        "diary": "Ordered the €9.90 deal Tuesday at 12:30: short queue, food ready. Worth repeating if it stays quick.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p1",
+        "round": 3,
+        "action": "eats_elsewhere",
+        "thought": "It's packed, so no room for a pram, and I still remember that reheated quiche. The new place two doors down does lunch for €8.50 and I've got no bad memory of it, so I'll try that.",
+        "questionForOwner": "Do the soup and sandwiches in the deal contain nuts, and is the soup made fresh that day?",
+        "diary": "Wed of week two: Lindenblatt was packed with no room for the pram, so I tried the new €8.50 place two doors down.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p2",
+        "round": 3,
+        "action": "comes_back_for_deal",
+        "thought": "Same as last week: no deciding, and it's cheaper than my usual €12.20. The new place two doors down is €8.50, but I don't know it and my break is short, so I stay with what I know.",
+        "questionForOwner": "Will the deal stay at €9.90, and does the soup change during the week?",
+        "diary": "Second week, Wednesday: took the €9.90 deal again; the €8.50 place two doors down didn't tempt me yet.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p3",
+        "round": 3,
+        "action": "eats_elsewhere",
+        "thought": "The new place two doors down has an €8.50 lunch, €1.40 less than Lindenblatt's deal and closer to my budget. I'll try it, or go to the döner if it looks pricey.",
+        "questionForOwner": "Could you do a smaller soup-and-drink deal for around €8?",
+        "diary": "Week 2: skipped Lindenblatt's €9.90 deal for the new café's €8.50 lunch two doors down; still watching prices.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p4",
+        "round": 3,
+        "action": "comes_back_for_deal",
+        "thought": "The deal beat my usual by 30 cents and I get soup too. The new place's €8.50 is cheaper, but I know the staff here and it's busy for a reason. I'll take the deal again.",
+        "questionForOwner": "Does mint tea count as the drink in the deal, and how long will it run?",
+        "diary": "Week 2 Wednesday: took the €9.90 deal again; noted the new café's €8.50 but I stay for the staff.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p5",
+        "round": 3,
+        "action": "eats_elsewhere",
+        "thought": "Still €9.90 on the board, still over my €7.20. The new place two doors down is €8.50, closer but still too much for me, and this one looks packed. Mensa it is.",
+        "questionForOwner": "Do you ever do a soup-only or half-sandwich option for around €6-7?",
+        "diary": "Week two, board still €9.90 and the new café is €8.50; Mensa won again, only a €6-7 soup or half-sandwich deal would get me in.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p6",
+        "round": 3,
+        "action": "comes_back_for_deal",
+        "thought": "Busy at 12:45, but I have a window before pick-up and the deal was quick last time. The cheaper place two doors down is tempting, but I'll give this one another go.",
+        "questionForOwner": "Can I order the deal ahead on WhatsApp or Instagram so it's ready when I get there? I only have a short window.",
+        "diary": "Second visit for the €9.90 deal, Wednesday 12:45: busy but I came back; a cheaper €8.50 place opened nearby, so speed decides it.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p1",
+        "round": 4,
+        "action": "eats_elsewhere",
+        "thought": "I read the note walking past with the pram. Last time there was no room for the pram, and the place two doors down is cheaper at €8.50. I'm not going to fight for a table here.",
+        "questionForOwner": "Are the soup and sandwich nut-free, and is there ever a quieter time with room for a pram?",
+        "diary": "Friday of week two: read the 'tell us' note under the board, but kept going to the cheaper place two doors down.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p2",
+        "round": 4,
+        "action": "keeps_coming",
+        "thought": "It's Friday, 12:30, and the deal is still the easiest choice. It costs less than my usual €12.20 and I don't have to decide. The €8.50 place hasn't pulled me away. I'd just keep taking it.",
+        "questionForOwner": "Is the deal staying after the test, and will the soup or sandwich change, or is it always the same?",
+        "diary": "End of the test, Friday: took the €9.90 deal again and hope they keep it, because it spares me deciding.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p3",
+        "round": 4,
+        "action": "eats_elsewhere",
+        "thought": "I saw the note on my way past. The deal is still €9.90, which is €2 over what I spend and more than the new place's €8.50 lunch. I'm eating there again. Not worth writing a review.",
+        "questionForOwner": "Would you ever do a soup and flat white combo for around €7.50? That's what I actually buy.",
+        "diary": "End of test: ate at the cheaper café two doors down again; Lindenblatt's €9.90 deal stays out of my budget.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p4",
+        "round": 4,
+        "action": "keeps_coming",
+        "thought": "I'm here anyway on a Friday and €9.90 for soup, sandwich and a drink beats my usual €10.20. The new place is cheaper, but I stay for the staff. I hope they keep the deal.",
+        "questionForOwner": "Are you keeping the €9.90 deal after the test, and will it stay on weekdays?",
+        "diary": "End of test Friday: took the €9.90 deal again; hoping they keep it, still choosing Lindenblatt over the €8.50 place for the staff.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p5",
+        "round": 4,
+        "action": "eats_elsewhere",
+        "thought": "Saw the note, but the deal is still €9.90 and my lunch budget is €7.20. The Mensa is cheaper and the new café is €8.50. I'm not going to write a review for a place I've never eaten in.",
+        "questionForOwner": "Would you ever do a smaller soup or half-sandwich lunch for €6-7?",
+        "diary": "Two weeks on, the Lindenblatt deal is still €9.90, so the Mensa wins; I'd only come in for a €6-7 option.",
+        "method": "subagent"
+      },
+      {
+        "personaId": "p6",
+        "round": 4,
+        "action": "keeps_coming",
+        "thought": "Third time I'm in for the deal. It's fair at €9.90 and it's ready fast, which matters on my lunch break. The €8.50 place is cheaper, but I'd rather save the 1.40 than lose time. I won't write anything.",
+        "questionForOwner": "Will you keep the lunch deal, and can you keep it quick when it's busy? That's the only reason I'd pick it over the cheaper place.",
+        "diary": "Friday after the test: back for the €9.90 deal a third time; I stay as long as it's fast and doesn't cost more.",
+        "method": "subagent"
+      }
+    ],
+    "interviews": [
+      {
+        "question": "What would make you come back for the lunch deal next week?",
+        "answers": [
+          {
+            "personaId": "p1",
+            "name": "Noor",
+            "answer": "Room for the pram, mainly. If I could count on a spot without a fight, and the board said what's in it and whether it has nuts, I'd try it. At €9.90 I'd still compare to the €8.50 place, though. Honestly I'm not sure a deal alone would do it.",
+            "method": "subagent"
+          },
+          {
+            "personaId": "p2",
+            "name": "Chiara",
+            "answer": "Just keep it as it is: same price, same soup-sandwich-drink, available by 12:30 on weekdays. It saves me deciding on a short break and costs less than my usual lunch. The €8.50 place doesn't tempt me. If it disappears, I'd be back to my lunchbox or the bakery.",
+            "method": "subagent"
+          },
+          {
+            "personaId": "p3",
+            "name": "Paweł",
+            "answer": "Honestly, a soup-and-drink option around €8, no sandwich needed. At €9.90 I'm paying €2 more for food I don't want, and the place two doors down is €8.50. Maybe on a good invoice week, but probably not next week.",
+            "method": "subagent"
+          },
+          {
+            "personaId": "p4",
+            "name": "Murat",
+            "answer": "Honestly, I'd come anyway if the deal is still there at €9.90 and the sandwich isn't smaller. I'm in most days and I like the staff. If it went above my usual €10.20, I'd just go back to my sandwich and mint tea.",
+            "method": "subagent"
+          },
+          {
+            "personaId": "p5",
+            "name": "Greta",
+            "answer": "A cheaper option. If there was a soup or half-sandwich deal for €6-7, I'd come in. At €9.90 the Mensa wins every time, so I probably won't be back next week. Nothing else would really change my mind.",
+            "method": "subagent"
+          },
+          {
+            "personaId": "p6",
+            "name": "Jan",
+            "answer": "Mainly that it stays fast. I'm between drop-off and pick-up, so soup and sandwich ready quickly is what counts. €9.90 is fair; I'd stay if it doesn't cost more. The €8.50 place is cheaper, but I'd rather save time than 1.40.",
+            "method": "subagent"
+          }
+        ]
+      }
+    ]
+  }
+}

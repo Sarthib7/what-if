@@ -1,12 +1,12 @@
 {
   "name": "what-if",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "What-IF: a Claude plugin that helps café owners rehearse a decision before they spend money. Transparent scenario maths, an imagined-customer rehearsal run by Claude subagents, and a visual report that teaches as it explains.",
+  "description": "What-IF helps café owners rehearse a decision before they spend money: a public remote MCP server, a \"what if\" skill and a website. Transparent scenario maths, an imagined-customer rehearsal, and a visual report that teaches as it explains. Closed beta for Berlin cafés in German, English, Spanish and Polish.",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "build": "node scripts/build.mjs",

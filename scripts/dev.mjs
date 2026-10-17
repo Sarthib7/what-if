@@ -7,6 +7,9 @@
  *   node scripts/dev.mjs             build, then serve
  *   node scripts/dev.mjs --no-build  serve the existing .vercel/output
  *   node scripts/dev.mjs --watch     rebuild when site/, src/ or skill/ change
+ *
+ * Closed beta locally: set WHATIF_BETA_CODES (and WHATIF_BETA_CONTACT) in the shell first;
+ * unset = open. The request log prints paths only, never query strings, so codes stay out of it.
  */
 import { spawnSync } from "node:child_process";
 import { createReadStream, existsSync, readFileSync, statSync, watch } from "node:fs";
@@ -175,7 +178,12 @@ server.listen(PORT, () => {
   console.log(`[dev]   site     ${SITE_URL}/`);
   console.log(`[dev]   report   ${SITE_URL}/r#<token>`);
   console.log(`[dev]   connect  ${SITE_URL}/connect`);
-  console.log(`[dev]   MCP      ${SITE_URL}/api/mcp  (claude mcp add --transport http what-if-local ${SITE_URL}/api/mcp)`);
+  console.log(`[dev]   try      ${SITE_URL}/try`);
+  const codes = (process.env.WHATIF_BETA_CODES ?? "").split(",").map((c) => c.trim()).filter(Boolean).length;
+  const closed = (process.env.WHATIF_BETA_CODES ?? "").trim() !== "";
+  const mcpUrl = closed ? `"${SITE_URL}/api/mcp?code=YOUR-INVITE-CODE"` : `${SITE_URL}/api/mcp`;
+  console.log(`[dev]   MCP      ${SITE_URL}/api/mcp  (claude mcp add --transport http what-if-local ${mcpUrl})`);
+  console.log(`[dev]   beta     ${closed ? `closed: ${codes} invite code${codes === 1 ? "" : "s"} from WHATIF_BETA_CODES` : "open (WHATIF_BETA_CODES is not set)"}`);
 });
 
 if (args.has("--watch")) {

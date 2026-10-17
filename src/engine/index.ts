@@ -1,21 +1,47 @@
 /**
  * The What-IF scenario engine: deterministic, browser-safe maths.
  * Every number the owner sees is computed here, never by the model.
+ * Every word the owner sees comes from the catalog in messages.ts (de, en, es, pl).
  */
+import { isLang, normaliseLang, setLang } from "../i18n/index.ts";
+import type { Lang } from "../i18n/index.ts";
+import { berlinFact } from "./berlin.ts";
+import type { FactId } from "./berlin.ts";
 import { getCurrency, setCurrency } from "./format.ts";
 import { checkInputs } from "./inputs.ts";
 import { analyzeLunch } from "./lunch-offer.ts";
+import { msg } from "./messages.ts";
 import { analyzePrice } from "./price-change.ts";
-import { DEMO_BUSINESS, getTemplate } from "./templates.ts";
-import type { Analysis, DecisionTemplate, InputCheck, RawInputs, ResolvedInput, TemplateId } from "./types.ts";
+import { demoBusiness, getTemplate } from "./templates.ts";
+import type { Analysis, DecisionTemplate, InputCheck, PublicFact, RawInputs, ResolvedInput, Source, TemplateId } from "./types.ts";
 
-export { checkInputs, show } from "./inputs.ts";
-export { TEMPLATES, getTemplate, demoInputs, DEMO_BUSINESS } from "./templates.ts";
+export { checkInputs, parseNumber, show } from "./inputs.ts";
+export type { ParsedNumber } from "./inputs.ts";
+export { TEMPLATES, getTemplate, demoInputs, demoBusiness, demoFallbackKeys, DEMO_BUSINESS, LUNCH_OFFER, PRICE_CHANGE } from "./templates.ts";
 export { planTest } from "./experiment.ts";
-export { compareResult, whatChanged, OBSERVED_FIELDS } from "./compare.ts";
+export { compareResult, whatChanged, OBSERVED_FIELDS, observedFields } from "./compare.ts";
+export { lunchThresholds, priceThresholds, verdictFor } from "./decision.ts";
+export type { Verdict } from "./decision.ts";
 export { WEEKDAYS_PER_MONTH } from "./lunch-offer.ts";
 export { WEEKS_PER_MONTH } from "./price-change.ts";
 export { money, price, pct, num, signed, signedPct, setCurrency } from "./format.ts";
+export {
+  BERLIN_FACTS,
+  BERLIN_KIEZE,
+  KIEZ_OTHER,
+  DEMO_KIEZ,
+  berlinFact,
+  berlinFacts,
+  normaliseKiez,
+  isBerlinKiez,
+  VAT_FOOD,
+  VAT_DRINKS,
+  LUNCH_VAT_BLENDED,
+  MIN_WAGE_2026,
+  MIN_WAGE_2027,
+} from "./berlin.ts";
+export type { FactId, Kiez } from "./berlin.ts";
+export { engineMessage, sourceLabel, ENGINE_MESSAGES } from "./messages.ts";
 export * from "./types.ts";
 
 export interface AnalyzeOptions {
@@ -23,6 +49,8 @@ export interface AnalyzeOptions {
   question?: string;
   demo?: boolean;
   currency?: string;
+  /** Language of every string in the analysis (default "en" for old call sites; the product passes "de"). */
+  lang?: Lang | string;
   /** Fixes the id; by default it is a hash of the template and the inputs. */
   id?: string;
   /** Fixes the timestamp (tests, replays); by default the current time. */
@@ -49,16 +77,26 @@ export function analysisId(template: TemplateId, inputs: ResolvedInput[]): strin
 }
 
 function notReadyMessage(t: DecisionTemplate, check: InputCheck): string {
-  const lines = [`What-IF needs a little more before it can run the numbers for "${t.title}".`];
+  const lines = [msg("err.notReady", { title: t.title })];
   if (check.missing.length) {
-    lines.push("Still needed:");
+    lines.push(msg("err.stillNeeded"));
     for (const m of check.missing) lines.push(`- ${m.label}: ${m.ask}`);
   }
   if (check.problems.length) {
-    lines.push("Please check:");
+    lines.push(msg("err.pleaseCheck"));
     for (const p of check.problems) lines.push(`- ${p}`);
   }
   return lines.join("\n");
+}
+
+/** The public facts (VAT rates, minimum wage) the numbers relied on: the fallbacks What-IF filled in. */
+export function factsUsed(template: TemplateId, inputs: ResolvedInput[], lang: Lang): PublicFact[] {
+  const ids: FactId[] = [];
+  const fell = (k: string) => inputs.find((i) => i.key === k)?.filledBy === "fallback";
+  if (fell("vat_rate")) ids.push(...(template === "lunch_offer" ? (["vat_food_7", "vat_drinks_19"] as const) : (["vat_drinks_19", "vat_food_7"] as const)));
+  const hours = inputs.find((i) => i.key === "extra_staff_hours_per_day")?.value;
+  if (template === "lunch_offer" && fell("staff_hourly_cost") && typeof hours === "number" && hours > 0) ids.push("min_wage_2026", "min_wage_2027");
+  return ids.map((id) => berlinFact(id, lang));
 }
 
 /**
@@ -66,17 +104,21 @@ function notReadyMessage(t: DecisionTemplate, check: InputCheck): string {
  * the missing questions and problems when the inputs are not ready.
  */
 export function analyze(template: TemplateId, raw: RawInputs, opts: AnalyzeOptions = {}): Analysis {
-  const t = getTemplate(template);
+  const lang: Lang = opts.lang === undefined ? "en" : isLang(opts.lang) ? opts.lang : normaliseLang(opts.lang, "en");
+  setLang(lang);
+  const t = getTemplate(template, lang);
   setCurrency((opts.currency ?? "EUR").toUpperCase());
   const demo = opts.demo === true;
-  const check = checkInputs(t.id, raw ?? {}, { demo });
+  const check = checkInputs(t.id, raw ?? {}, { demo, lang });
   if (!check.ready) throw new Error(notReadyMessage(t, check));
   const body = t.id === "lunch_offer" ? analyzeLunch(check.resolved, demo) : analyzePrice(check.resolved, demo);
   return {
     id: opts.id ?? analysisId(t.id, check.resolved),
     template: t.id,
+    lang,
+    facts: factsUsed(t.id, check.resolved, lang),
     createdAt: opts.createdAt ?? new Date().toISOString(),
-    business: opts.business?.trim() || (demo ? DEMO_BUSINESS : "Your café"),
+    business: opts.business?.trim() || (demo ? demoBusiness(lang) : msg("demo.yourCafe")),
     question: opts.question?.trim() || t.exampleQuestion,
     demo,
     currency: getCurrency(),
@@ -84,3 +126,6 @@ export function analyze(template: TemplateId, raw: RawInputs, opts: AnalyzeOptio
     ...body,
   };
 }
+
+/** The source tag's words in a language ("Ihre Zahl", "Eine Schätzung"…). */
+export type { Source };

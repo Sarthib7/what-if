@@ -36,6 +36,8 @@ interface Component {
 }
 interface Rubric {
   name?: string;
+  /** 2 = loop 2 (v0.2): judge files carry a `loop1` follow-up of the previous loop's improvements. */
+  version?: number;
   passScore: number;
   maxLoops: number;
   automatedWeight: number;
@@ -64,6 +66,8 @@ interface JudgeEntry {
   improvements: string[];
   at: string;
   stale: boolean;
+  /** The judge's follow-up of its loop-1 improvements: counts per status (fixed, partly, not fixed, …). */
+  loop1?: Record<string, number>;
 }
 interface ComponentScore {
   id: string;
@@ -193,7 +197,7 @@ function readJudges(comp: Component): JudgeEntry[] {
   for (const f of readdirSync(judgeDir).filter((x) => x.endsWith(".json")).sort()) {
     if (f !== `${comp.id}.json` && !f.startsWith(`${comp.id}.`)) continue;
     const path = join(judgeDir, f);
-    let j: { score?: unknown; notes?: unknown; improvements?: unknown; issues?: unknown };
+    let j: { score?: unknown; notes?: unknown; improvements?: unknown; issues?: unknown; loop1?: unknown };
     try {
       j = JSON.parse(readFileSync(path, "utf8")) as typeof j;
     } catch (e) {
@@ -207,6 +211,14 @@ function readJudges(comp: Component): JudgeEntry[] {
     }
     const list = Array.isArray(j.improvements) ? j.improvements : Array.isArray(j.issues) ? j.issues : [];
     const mtime = statSync(path).mtime;
+    let loop1: Record<string, number> | undefined;
+    if (Array.isArray(j.loop1)) {
+      loop1 = {};
+      for (const x of j.loop1 as { status?: unknown }[]) {
+        const st = String(x?.status ?? "unstated").toLowerCase().trim() || "unstated";
+        loop1[st] = (loop1[st] ?? 0) + 1;
+      }
+    } else if ((rubric.version ?? 1) >= 2) warnings.push(`qa/judge/${f} has no "loop1" follow-up of the loop-1 improvements (qa/judges.md §2, §9)`);
     out.push({
       file: `qa/judge/${f}`,
       judge: f === `${comp.id}.json` ? "reviewer" : f.slice(comp.id.length + 1, -".json".length),
@@ -215,6 +227,7 @@ function readJudges(comp: Component): JudgeEntry[] {
       improvements: list.map((x) => (typeof x === "string" ? x : JSON.stringify(x))),
       at: mtime.toISOString(),
       stale: !!lastLoopAt && mtime.getTime() < Date.parse(lastLoopAt),
+      ...(loop1 ? { loop1 } : {}),
     });
   }
   return out;
@@ -356,6 +369,7 @@ for (const c of components) {
   md.push(`Automated ${c.automated} (${c.passed}/${c.total} checks${c.criticalFailed.length ? `; capped at ${cap} by ${c.criticalFailed.join(", ")}` : ""}). Judge ${c.judge ?? "none (fell back to automated)"}.`, "");
   for (const j of c.judges) {
     md.push(`**Judge: ${j.judge}** (${j.score}/10, ${j.file}, ${j.at.slice(0, 16).replace("T", " ")}${j.stale ? ", stale" : ""})`, "");
+    if (j.loop1) md.push(`Loop-1 improvements: ${Object.entries(j.loop1).map(([k, n]) => `${n} ${k}`).join(", ") || "none listed"}.`, "");
     if (j.notes) md.push(j.notes, "");
     if (j.improvements.length) {
       md.push("Improvements:");

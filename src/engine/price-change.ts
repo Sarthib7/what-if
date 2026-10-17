@@ -2,53 +2,35 @@
  * Price change on one item: the deterministic maths.
  *
  * The guess that drives the result is v, the change in weekly sales (a share: −0.04 = 4% fewer).
+ * Prices are what customers pay; margins use the price after VAT: net = price ÷ (1 + vat_rate).
  *
- *   margin now          m_old = current_price − unit_cost
- *   margin at new price m_new = new_price − unit_cost
+ *   margin now          m_old = current_price ÷ (1 + vat) − unit_cost
+ *   margin at new price m_new = new_price ÷ (1 + vat) − unit_cost
  *   weekly, old         units × m_old
- *   weekly, new(v)      units × (1 + v) × m_new
- *   delta_week(v)  = new(v) − old ;  delta_month = × 4.33 ;  delta over test = delta_week × test_days / 7
- *   break-even v   = m_old / m_new − 1  (the change in sales at which you make exactly what you make now)
+ *   weekly, new(v)      units × (1 + v) × m_new        (units × (1 + v) to one decimal)
+ *   delta_week(v)  = new(v) − old ;  delta_month = delta_week × 4.33 ;  delta over test = delta_week × test_days ÷ 7
+ *   break-even v   = m_old ÷ m_new − 1  (the change in sales at which you make exactly what you make now; never below −100%)
+ *
+ * Every building block is rounded to the cent before it is used again, so each maths line checks out by hand.
  */
-import { money, num, pct, price, round, signed, signedPct } from "./format.ts";
-import type { Analysis, Figure, ResolvedInput, Scenario, SensitivityPoint, Source, Unit } from "./types.ts";
+import { VAT_DRINKS } from "./berlin.ts";
+import { EPS, eur, has, n, num, pc, price, r1, r2, round, seur, signedPct, signedPrice } from "./format.ts";
+import type { Values } from "./format.ts";
+import { continueSentence, fig, filledIn, fromSources, sourcesOf, valuesOf } from "./figures.ts";
+import { msg as t } from "./messages.ts";
+import { pluralItem } from "./plural.ts";
+import type { Analysis, Figure, ResolvedInput, Scenario, SensitivityPoint } from "./types.ts";
 
 export const WEEKS_PER_MONTH = 4.33;
-const EPS = 1e-9;
 
-type Values = Record<string, number | string>;
 type Body = Pick<
   Analysis,
   "current" | "scenarios" | "breakEven" | "worstCase" | "biggestUncertainty" | "sensitivity" | "lessons" | "nextQuestions" | "warnings"
 >;
 
-const n = (v: Values, k: string, d = 0): number => {
-  const x = v[k];
-  return typeof x === "number" && Number.isFinite(x) ? x : d;
-};
-const pc = (s: number): string => pct(s, Number.isInteger(Math.round(s * 1e6) / 1e4) ? 0 : 1);
 const spc = (s: number): string => signedPct(s);
-/** Totals in plain sentences: whole euros from €10 up; the maths strings keep the cents. */
-const eur = (x: number): string => money(x, Math.abs(x) < 10 && Math.abs(x) >= 0.005);
-const seur = (x: number): string => (x > 0 ? `+${eur(x)}` : eur(x));
 
-function fig(id: string, label: string, value: number, unit: Unit, source: Source, maths: string): Figure {
-  return { id, label, value: unit === "share" ? round(value, 4) : round(value, 2), unit, source, maths };
-}
-
-function fromSources(src: Record<string, Source>, keys: string[]): Source {
-  const s = keys.map((k) => src[k]);
-  if (s.includes("demo")) return "demo";
-  if (s.includes("assumption")) return "assumption";
-  return "calculation";
-}
-
-/** "flat white" → "flat whites", "sandwich" → "sandwiches", "pastry" → "pastries". */
-export function pluralItem(item: string): string {
-  if (/(s|x|z|ch|sh)$/i.test(item)) return `${item}es`;
-  if (/[^aeiou]y$/i.test(item)) return `${item.slice(0, -1)}ies`;
-  return `${item}s`;
-}
+export { pluralItem };
 
 export interface PriceModel {
   item: string;
@@ -56,6 +38,10 @@ export interface PriceModel {
   oldPrice: number;
   newPrice: number;
   unitCost: number;
+  vat: number;
+  vatDiv: number;
+  netOld: number;
+  netNew: number;
   units: number;
   days: number;
   mOld: number;
@@ -63,11 +49,15 @@ export interface PriceModel {
   rise: boolean;
   weekOld: number;
   reachable: boolean;
-  /** The change in sales (share) at which you make exactly what you make now. */
+  /** The change in sales (share) at which you make exactly what you make now (−1 when today's price already loses money). */
   beV: number | null;
   /** Sales a week you can lose (price rise) or must gain (price cut) at break-even, in whole items. */
   beUnits: number | null;
+  /** Sales a week that keep you level: units × m_old ÷ m_new (one decimal). */
+  levelUnits: number | null;
   unitsAt(v: number): number;
+  /** Measured: the difference over `days` between selling `after` at the new price and `before` at the old one. */
+  deltaMeasured(before: number, after: number, days: number): number;
   weekNew(v: number): number;
   deltaWeek(v: number): number;
   deltaMonth(v: number): number;
@@ -75,24 +65,33 @@ export interface PriceModel {
 }
 
 export function priceModel(v: Values): PriceModel {
-  const item = typeof v.item === "string" && v.item.trim() ? v.item.trim() : "item";
+  const item = typeof v.item === "string" && v.item.trim() ? v.item.trim() : t("price.itemFallback");
+  const vat = has(v, "vat_rate") ? n(v, "vat_rate") : VAT_DRINKS;
+  const vatDiv = round(1 + vat, 4);
   const oldPrice = n(v, "current_price"), newPrice = n(v, "new_price"), unitCost = n(v, "unit_cost");
   const units = n(v, "units_per_week"), days = Math.max(1, n(v, "test_days", 14));
-  const mOld = oldPrice - unitCost, mNew = newPrice - unitCost;
-  const weekOld = units * mOld;
+  const mOld = r2(oldPrice / vatDiv - unitCost), mNew = r2(newPrice / vatDiv - unitCost);
+  const weekOld = r2(units * mOld);
   const reachable = mNew > EPS;
-  const beV = reachable ? mOld / mNew - 1 : null;
+  const beV = reachable ? Math.max(-1, mOld / mNew - 1) : null;
   let beUnits: number | null = null;
-  if (beV !== null) beUnits = beV <= 0 ? Math.max(0, Math.floor(units * -beV + EPS)) : Math.ceil(units * beV - EPS);
-  const weekNew = (x: number) => units * (1 + x) * mNew;
-  const deltaWeek = (x: number) => weekNew(x) - weekOld;
+  let levelUnits: number | null = null;
+  if (beV !== null) {
+    levelUnits = Math.max(0, (units * Math.max(0, mOld)) / mNew);
+    beUnits = beV <= 0 ? Math.max(0, Math.floor(units * -beV + EPS)) : Math.ceil(units * beV - EPS);
+  }
+  const unitsAt = (x: number) => r1(units * (1 + x));
+  const weekNew = (x: number) => r2(unitsAt(x) * mNew);
+  const deltaWeek = (x: number) => r2(weekNew(x) - weekOld);
   return {
-    item, items: pluralItem(item), oldPrice, newPrice, unitCost, units, days, mOld, mNew, rise: newPrice >= oldPrice, weekOld, reachable, beV, beUnits,
-    unitsAt: (x) => units * (1 + x),
+    item, items: pluralItem(item), oldPrice, newPrice, unitCost, vat, vatDiv, netOld: r2(oldPrice / vatDiv), netNew: r2(newPrice / vatDiv), units, days, mOld, mNew,
+    rise: newPrice >= oldPrice, weekOld, reachable, beV, beUnits, levelUnits,
+    unitsAt,
+    deltaMeasured: (before, after, d) => r2((r2(r2(after * mNew) - r2(before * mOld)) * d) / 7),
     weekNew,
     deltaWeek,
-    deltaMonth: (x) => deltaWeek(x) * WEEKS_PER_MONTH,
-    deltaTest: (x) => (deltaWeek(x) * days) / 7,
+    deltaMonth: (x) => r2(deltaWeek(x) * WEEKS_PER_MONTH),
+    deltaTest: (x) => r2((deltaWeek(x) * days) / 7),
   };
 }
 
@@ -102,115 +101,126 @@ export function priceHeadline(v: Values) {
   const wl = m.deltaTest(low);
   return {
     breakEven: m.beV === null ? null : round(m.beV, 4),
-    breakEvenText: m.beV === null ? "out of reach" : spc(m.beV),
-    netTestExpected: round(m.deltaTest(likely)),
-    netMonthExpected: round(m.deltaMonth(likely)),
-    worstCase: round(wl < 0 ? wl : 0),
+    breakEvenText: m.beV === null ? t("price.outOfReach") : spc(m.beV),
+    netTestExpected: m.deltaTest(likely),
+    netMonthExpected: m.deltaMonth(likely),
+    worstCase: wl < 0 ? wl : 0,
   };
 }
 
-/** "you can lose up to 57 sales a week (9.2%)" / "you need 64 more sales a week (10.3%)". */
+/** "you can sell up to 60 fewer a week (9.7% of 620) …" / "you need 64 more sales a week …". */
 function beWords(m: PriceModel): string {
-  if (m.beV === null || m.beUnits === null) return "no change in sales can make up for it, because each sale leaves nothing after ingredients";
+  if (m.beV === null || m.beUnits === null) return t("price.be.words.none");
+  if (m.beV <= -1 + EPS) return t("price.be.words.any");
   return m.beV <= 0
-    ? `you can sell up to ${num(m.beUnits)} fewer a week (${pc(-m.beV)} of ${num(m.units)}) and still make as much as now`
-    : `you need to sell at least ${num(m.beUnits)} more a week (${pc(m.beV)} more than ${num(m.units)}) just to make as much as now`;
+    ? t("price.be.words.rise", { n: num(m.beUnits), p: pc(-m.beV), units: num(m.units) })
+    : t("price.be.words.cut", { n: num(m.beUnits), p: pc(m.beV), units: num(m.units) });
 }
 
 export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
-  const v = Object.fromEntries(inputs.map((i) => [i.key, i.value])) as Values;
-  const src = Object.fromEntries(inputs.map((i) => [i.key, i.source])) as Record<string, Source>;
+  const v = valuesOf(inputs);
+  const src = sourcesOf(inputs);
   const m = priceModel(v);
   const low = n(v, "volume_low"), likely = n(v, "volume_likely"), high = n(v, "volume_high");
-  const { item, items, days } = m;
+  const { item, days } = m;
   const change = m.newPrice - m.oldPrice;
+  const div = num(m.vatDiv, 4);
+  const vatPct = pc(m.vat);
+  const dayN = (x: number) => t("n.days", { n: x });
 
   // ---- Current path ------------------------------------------------------
   const current: Figure[] = [
-    fig("units_per_week", "Sales per week now", m.units, "units/week", src.units_per_week ?? "owner", `${num(m.units)} ${items} a week`),
-    fig("margin_now", "What each sale leaves you now, after ingredients", m.mOld, "EUR", fromSources(src, ["current_price", "unit_cost"]),
-      `${price(m.oldPrice)} − ${price(m.unitCost)} ingredients = ${price(m.mOld)} per ${item}`),
-    fig("margin_new", "What each sale would leave at the new price", m.mNew, "EUR", fromSources(src, ["new_price", "unit_cost"]),
-      `${price(m.newPrice)} − ${price(m.unitCost)} ingredients = ${price(m.mNew)} per ${item}`),
-    fig("left_week_now", "Left after ingredients per week, now", m.weekOld, "EUR/week", fromSources(src, ["units_per_week", "current_price", "unit_cost"]),
-      `${num(m.units)} × ${price(m.mOld)} = ${money(m.weekOld)} a week`),
-    fig("left_month_now", "Left after ingredients per month, now", m.weekOld * WEEKS_PER_MONTH, "EUR/month",
-      fromSources(src, ["units_per_week", "current_price", "unit_cost"]),
-      `${money(m.weekOld)} × ${WEEKS_PER_MONTH} weeks = ${money(m.weekOld * WEEKS_PER_MONTH)} a month`),
+    fig("units_per_week", t("price.fig.units.label"), m.units, "units/week", src.units_per_week ?? "owner", t("price.fig.units.maths", { item, units: num(m.units) })),
+    fig("margin_now", t("price.fig.marginNow.label"), m.mOld, "EUR", fromSources(src, ["current_price", "unit_cost", "vat_rate"]),
+      t("price.fig.margin.maths", { price: price(m.oldPrice), div, vat: vatPct, cost: price(m.unitCost), m: price(m.mOld), item })),
+    fig("margin_new", t("price.fig.marginNew.label"), m.mNew, "EUR", fromSources(src, ["new_price", "unit_cost", "vat_rate"]),
+      t("price.fig.margin.maths", { price: price(m.newPrice), div, vat: vatPct, cost: price(m.unitCost), m: price(m.mNew), item })),
+    fig("left_week_now", t("price.fig.leftWeek.label"), m.weekOld, "EUR/week", fromSources(src, ["units_per_week", "current_price", "unit_cost", "vat_rate"]),
+      t("price.fig.leftWeek.maths", { units: num(m.units), m: price(m.mOld), week: price(m.weekOld) })),
+    fig("left_month_now", t("price.fig.leftMonth.label"), r2(m.weekOld * WEEKS_PER_MONTH), "EUR/month", fromSources(src, ["units_per_week", "current_price", "unit_cost", "vat_rate"]),
+      t("price.fig.leftMonth.maths", { week: price(m.weekOld), w: num(WEEKS_PER_MONTH, 2), month: price(r2(m.weekOld * WEEKS_PER_MONTH)) })),
   ];
 
   // ---- Scenarios ---------------------------------------------------------
-  const scenario = (id: Scenario["id"], label: string, guessName: string, key: string, x: number): Scenario => {
+  const scenario = (id: Scenario["id"], guessName: string, key: string, x: number): Scenario => {
     const u = m.unitsAt(x), wn = m.weekNew(x), dw = m.deltaWeek(x), dt = m.deltaTest(x), dm = m.deltaMonth(x);
     const figures: Figure[] = [
-      fig("volume_change", "Change in sales", x, "share", src[key] ?? "assumption", `${guessName}: sales change by ${spc(x)}. Nobody knows this yet; the test measures it.`),
-      fig("units_week", "Sales per week at the new price", u, "units/week", "calculation",
-        `${num(m.units)} × (100% ${x < 0 ? "−" : "+"} ${pc(Math.abs(x))}) = ${num(round(u, 1))} a week`),
-      fig("left_week", "Left after ingredients per week, new price", wn, "EUR/week", "calculation", `${num(round(u, 1))} × ${price(m.mNew)} = ${money(wn)} a week`),
-      fig("delta_week", "Difference per week", dw, "EUR/week", "calculation", `${money(wn)} − ${money(m.weekOld)} now = ${signed(dw)} a week`),
-      fig("delta_test", `Difference over the test (${num(days)} days)`, dt, "EUR", "calculation", `${signed(dw)} × ${num(days)} ÷ 7 days = ${signed(dt)}`),
-      fig("delta_month", "Difference per month if you keep it", dm, "EUR/month", "calculation", `${signed(dw)} × ${WEEKS_PER_MONTH} weeks = ${signed(dm)} a month`),
+      fig("volume_change", t("price.assume.label"), x, "share", src[key] ?? "assumption", t("price.scn.volume.maths", { guess: guessName, x: spc(x) })),
+      fig("units_week", t("price.scn.units.label"), u, "units/week", "calculation",
+        t("price.scn.units.maths", { units: num(m.units), op: x < 0 ? "−" : "+", p: pc(Math.abs(x)), u: num(u) })),
+      fig("left_week", t("price.scn.leftWeek.label"), wn, "EUR/week", "calculation", t("price.scn.leftWeek.maths", { u: num(u), m: price(m.mNew), wn: price(wn) })),
+      fig("delta_week", t("price.scn.deltaWeek.label"), dw, "EUR/week", "calculation", t("price.scn.deltaWeek.maths", { wn: price(wn), old: price(m.weekOld), dw: signedPrice(dw) })),
+      fig("delta_test", t("price.scn.deltaTest.label", { days: dayN(days) }), dt, "EUR", "calculation", t("price.scn.deltaTest.maths", { dw: signedPrice(dw), days: num(days), dt: signedPrice(dt) })),
+      fig("delta_month", t("price.scn.deltaMonth.label"), dm, "EUR/month", "calculation", t("price.scn.deltaMonth.maths", { dw: signedPrice(dw), w: num(WEEKS_PER_MONTH, 2), dm: signedPrice(dm) })),
     ];
-    const about = `If sales change by ${spc(x)} (about ${num(Math.round(u))} a week)`;
+    const about = t("price.scn.about", { x: spc(x), u: num(Math.round(u)) });
     const plain =
       dw >= 0
-        ? `${about}, you make ${eur(dw)} more a week than now: ${eur(dt)} over the ${num(days)}-day test and about ${eur(dm)} a month.`
-        : `${about}, you make ${eur(-dw)} less a week than now: ${eur(-dt)} less over the ${num(days)}-day test and about ${eur(-dm)} a month.`;
-    return { id, label, assumptionLabel: "Change in sales", assumptionValue: x, assumptionUnit: "share", figures, netTest: round(dt), netMonth: round(dm), plain };
+        ? t("price.scn.plain.more", { about, dw: eur(dw), dt: eur(dt), days: num(days), dm: eur(dm) })
+        : t("price.scn.plain.less", { about, dw: eur(-dw), dt: eur(-dt), days: num(days), dm: eur(-dm) });
+    const assumptionText = Math.abs(x) < 1e-9 ? t("price.assume.same") : x < 0 ? t("price.assume.down", { p: pc(-x) }) : t("price.assume.up", { p: pc(x) });
+    return { id, label: t(`scn.${id}` as "scn.expected"), assumptionLabel: t("price.assume.label"), assumptionValue: x, assumptionUnit: "share", assumptionText, figures, netTest: dt, netMonth: dm, plain };
   };
   const scenarios: Scenario[] = [
-    scenario("cautious", "Cautious", "Your cautious guess", "volume_low", low),
-    scenario("expected", "Expected", "Your likely guess", "volume_likely", likely),
-    scenario("optimistic", "Optimistic", "Your optimistic guess", "volume_high", high),
+    scenario("cautious", t("guess.cautious"), "volume_low", low),
+    scenario("expected", t("guess.likely"), "volume_likely", likely),
+    scenario("optimistic", t("guess.optimistic"), "volume_high", high),
   ];
 
   // ---- Break-even --------------------------------------------------------
+  let beMaths: string;
+  if (m.beV === null || m.beUnits === null || m.levelUnits === null) beMaths = t("price.be.maths.none", { price: price(m.newPrice), div, cost: price(m.unitCost), m: price(m.mNew), item });
+  else if (m.mOld <= 0) beMaths = t("price.be.maths.any", { price: price(m.oldPrice), div, cost: price(m.unitCost), m: price(m.mOld), item });
+  else
+    beMaths = t(m.beV <= 0 ? "price.be.maths.rise" : "price.be.maths.cut", {
+      old: price(m.mOld), new: price(m.mNew), be: spc(m.beV), units: num(m.units), level: num(r1(m.levelUnits)), n: num(m.beUnits),
+    });
   const breakEven: Body["breakEven"] = {
     value: m.beV === null ? 0 : round(m.beV, 4),
     unit: "share",
-    label: m.rise ? "Drop in sales you can absorb before you are worse off" : "Rise in sales you need to be better off",
-    maths:
-      m.beV === null || m.beUnits === null
-        ? `${price(m.newPrice)} − ${price(m.unitCost)} = ${price(m.mNew)} per ${item}: nothing left after ingredients.`
-        : `${price(m.mOld)} now ÷ ${price(m.mNew)} at the new price − 1 = ${spc(m.beV)}. ${pc(Math.abs(m.beV))} of ${num(m.units)} a week = ${num(m.beUnits)} ${items}.`,
+    label: m.rise ? t("price.be.label.rise") : t("price.be.label.cut"),
+    maths: beMaths,
     plain:
       m.beV === null
-        ? `At ${price(m.newPrice)} each ${item} leaves nothing after ingredients, so ${beWords(m)}.`
-        : `At ${price(m.newPrice)} each ${item} leaves ${price(m.mNew)} instead of ${price(m.mOld)}, so ${beWords(m)}. ${m.beV <= 0 ? "Lose more than that and you are worse off." : "Sell fewer than that and you are worse off."}`,
+        ? t("price.be.plain.none", { price: price(m.newPrice), item, words: beWords(m) })
+        : m.beV <= -1 + EPS
+          ? t("price.be.plain.any", { old: price(m.oldPrice), item, m: price(m.mOld) })
+          : t(m.beV <= 0 ? "price.be.plain.rise" : "price.be.plain.cut", { price: price(m.newPrice), item, new: price(m.mNew), old: price(m.mOld), words: beWords(m) }),
     reachable: m.reachable,
   };
 
   // ---- Worst case --------------------------------------------------------
   const wl = m.deltaTest(low);
   const worstCase: Body["worstCase"] = {
-    value: round(wl < 0 ? wl : 0),
-    maths: `(${num(round(m.unitsAt(low), 1))} × ${price(m.mNew)} − ${num(m.units)} × ${price(m.mOld)}) × ${num(days)} ÷ 7 days = ${signed(wl)}`,
+    value: wl < 0 ? wl : 0,
+    maths: t("price.worst.maths", { u: num(m.unitsAt(low)), m: price(m.mNew), wn: price(m.weekNew(low)), old: price(m.weekOld), dw: signedPrice(m.deltaWeek(low)), days: num(days), wl: signedPrice(wl) }),
     plain:
       wl < 0
-        ? `If sales ${low < 0 ? `fell by ${pc(-low)}` : `changed by ${spc(low)}`} (your cautious guess), the ${num(days)}-day test would leave you ${eur(-wl)} worse off than keeping the old price. You can change the price back at any time, so that is the most at stake.`
-        : `Even at your cautious guess (${spc(low)} sales), the new price earns at least as much as today, so the test has no downside in money. The real risk is how regulars feel, which the test also shows.`,
+        ? t("price.worst.plain", { how: low < 0 ? t("price.worst.fell", { p: pc(-low) }) : t("price.worst.changed", { p: spc(low) }), days: num(days), amt: eur(-wl) })
+        : t("price.worst.none", { low: spc(low) }),
   };
 
   // ---- Biggest uncertainty (tornado) ------------------------------------
   const at = (patch: Values) => priceModel({ ...v, ...patch }).deltaTest(likely);
-  const c = m.unitCost;
+  const c = m.unitCost, cLo = r2(c * 0.85), cHi = r2(c * 1.15);
   const tornado = [
-    { key: "volume_likely", label: `Change in sales (${spc(low)} to ${spc(high)})`, swing: Math.abs(m.deltaTest(high) - m.deltaTest(low)) },
-    { key: "unit_cost", label: `Ingredients per ${item} (${price(c * 0.85)} to ${price(c * 1.15)})`, swing: Math.abs(at({ unit_cost: c * 1.15 }) - at({ unit_cost: c * 0.85 })) },
+    { key: "volume_likely", label: t("price.unc.volume.label", { lo: spc(low), hi: spc(high) }), swing: Math.abs(m.deltaTest(high) - m.deltaTest(low)) },
+    { key: "unit_cost", label: t("price.unc.cost.label", { item, lo: price(cLo), hi: price(cHi) }), swing: Math.abs(at({ unit_cost: cHi }) - at({ unit_cost: cLo })) },
   ]
-    .map((t) => ({ ...t, swing: round(t.swing) }))
+    .map((x) => ({ ...x, swing: r2(x.swing) }))
     .sort((a, b) => b.swing - a.swing);
   const top = tornado[0]!;
-  const biggestUncertainty: Body["biggestUncertainty"] = {
-    key: top.key,
-    label: top.label,
-    swing: top.swing,
-    plain:
-      top.key === "volume_likely"
-        ? `Whether sales change by ${spc(low)} or ${spc(high)} changes the test result by ${eur(top.swing)} — more than anything else. That is what your test should measure: count the ${items} you sell each week.`
-        : `What each ${item} really costs you to make (${price(c * 0.85)} to ${price(c * 1.15)}) changes the test result by ${eur(top.swing)} — more than how customers react. Cost one ${item} carefully from your supplier invoices before you start.`,
-    ranking: tornado,
-  };
+  const uncertaintyPlain =
+    top.swing < 0.005
+      ? Math.abs(high - low) < 1e-9
+        ? t("price.unc.volume.one", { x: spc(likely) })
+        : t("unc.nothing")
+      : top.key === "volume_likely"
+        ? Math.abs(high - low) < 1e-9
+          ? t("price.unc.volume.one", { x: spc(likely) })
+          : t("price.unc.volume.plain", { lo: spc(low), hi: spc(high), swing: eur(top.swing), item })
+        : t("price.unc.cost.plain", { item, lo: price(cLo), hi: price(cHi), swing: eur(top.swing) });
+  const biggestUncertainty: Body["biggestUncertainty"] = { key: top.key, label: top.label, swing: top.swing, plain: uncertaintyPlain, ranking: tornado };
 
   // ---- Sensitivity (the slider) -----------------------------------------
   const lo = Math.max(-1, Math.min(-0.3, Math.floor((Math.min(low, m.beV ?? 0) - 0.02) * 100) / 100));
@@ -218,70 +228,75 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
   const kLo = Math.round(lo * 100), kHi = Math.round(hi * 100);
   const stepK = kHi - kLo > 120 ? Math.ceil((kHi - kLo) / 120) : 1;
   const points: SensitivityPoint[] = [];
+  const atGuess = m.deltaTest(likely);
   for (let k = kLo; k <= kHi; k += stepK) {
     const x = k / 100;
-    points.push({ x, netTest: round(m.deltaTest(x)), netMonth: round(m.deltaMonth(x)), explanation: explainVolume(m, x) });
+    points.push({ x, netTest: m.deltaTest(x), netMonth: m.deltaMonth(x), explanation: explainVolume(m, x), vsGuess: r2(m.deltaTest(x) - atGuess) });
   }
+  const stepWeek = m.units * 0.01 * m.mNew;
   const sensitivity: Body["sensitivity"] = {
     key: "volume_likely",
-    label: "Change in sales",
+    label: t("price.assume.label"),
     unit: "share",
     current: likely,
     breakEvenX: m.beV === null ? null : round(m.beV, 4),
     points,
+    perStep: {
+      netTest: r2((stepWeek * days) / 7),
+      netMonth: r2(stepWeek * WEEKS_PER_MONTH),
+      plain: t("price.slope", { u: num(r1(m.units * 0.01)), test: eur((stepWeek * days) / 7), month: eur(stepWeek * WEEKS_PER_MONTH) }),
+    },
   };
 
   // ---- Lessons -----------------------------------------------------------
   const lessons: string[] = [];
-  const cents = `${Math.round(Math.abs(change) * 100)}-cent`;
+  const cents = Math.round(Math.abs(change) * 100);
   if (m.reachable && m.mOld > 0) {
     const rel = m.mNew / m.mOld - 1;
     lessons.push(
       m.rise
-        ? `A ${cents} rise looks small, but ingredients cost the same, so all of it is extra margin: each ${item} leaves ${price(m.mNew)} instead of ${price(m.mOld)}, ${pc(rel)} more per sale.`
-        : `A ${cents} cut takes ${pc(-rel)} off what each ${item} leaves you (${price(m.mOld)} → ${price(m.mNew)}), because ingredients cost the same. You need more sales just to stand still.`,
+        ? t("price.lesson.rise", { cents: t("n.cents", { n: cents }), vat: vatPct, gain: price(r2(m.mNew - m.mOld)), item, new: price(m.mNew), old: price(m.mOld), rel: pc(rel) })
+        : t("price.lesson.cut", { cents: t("n.cents", { n: cents }), rel: pc(-rel), item, old: price(m.mOld), new: price(m.mNew) }),
     );
   }
-  if (m.beV !== null && m.beUnits !== null) {
+  if (m.beV !== null && m.beUnits !== null && m.beV > -1 + EPS) {
     if (m.beV <= 0)
       lessons.push(
         likely >= m.beV
-          ? `Break-even is the number to beat: you can lose up to ${num(m.beUnits)} sales a week (${pc(-m.beV)}) before you are worse off. Your likely guess is ${likely === 0 ? "no change" : `${spc(likely)} (about ${num(Math.round(m.units * Math.abs(likely)))} ${likely < 0 ? "fewer" : "more"})`}, inside that. The test checks the guess.`
-          : `You can lose up to ${num(m.beUnits)} sales a week (${pc(-m.beV)}) before you are worse off, but your likely guess is a bigger drop (${spc(likely)}). On your own numbers the new price earns less than today.`,
+          ? t("price.lesson.inside", { n: num(m.beUnits), p: pc(-m.beV), likely: likely === 0 ? t("price.noChange") : t(likely < 0 ? "price.likelyFewer" : "price.likelyMore", { x: spc(likely), n: num(Math.round(m.units * Math.abs(likely))) }) })
+          : t("price.lesson.outside", { n: num(m.beUnits), p: pc(-m.beV), likely: spc(likely) }),
       );
     else
       lessons.push(
         likely >= m.beV
-          ? `To make up for the lower price you need ${num(m.beUnits)} more sales a week (${spc(m.beV)}). Your likely guess (${spc(likely)}) gets there, if it is right. The test checks the guess.`
-          : `To make up for the lower price you need ${num(m.beUnits)} more sales a week (${spc(m.beV)}), but your likely guess is ${spc(likely)}. On your own numbers the cut earns less than today.`,
+          ? t("price.lesson.cutReach", { n: num(m.beUnits), be: spc(m.beV), likely: spc(likely) })
+          : t("price.lesson.cutMiss", { n: num(m.beUnits), be: spc(m.beV), likely: spc(likely) }),
       );
   }
-  if (wl < 0)
-    lessons.push(`At your cautious guess (${spc(low)}) the ${num(days)}-day test costs about ${eur(-wl)}. A price can be changed back the next morning, which makes this one of the cheapest things to test.`);
-  lessons.push(`The number that matters most: ${biggestUncertainty.plain.charAt(0).toLowerCase()}${biggestUncertainty.plain.slice(1)}`);
-  lessons.push("This method works for any decision: write down your numbers, work out the break-even, then run a small test with a limit to check the one guess that matters most.");
+  if (wl < 0) lessons.push(t("price.lesson.cheap", { low: spc(low), days: num(days), amt: eur(-wl) }));
+  if (top.swing >= 0.005) lessons.push(t("lesson.mostMatters", { plain: continueSentence(uncertaintyPlain) }));
+  lessons.push(t("lesson.methodPrice"));
 
   // ---- Next questions ----------------------------------------------------
-  const guessed = (k: string) => src[k] === "assumption" && inputs.find((i) => i.key === k)?.note !== undefined;
+  const guessed = (k: string) => filledIn(inputs, k);
   const nextQuestions: string[] = [];
-  if (demo) nextQuestions.push(`These are demo numbers for a made-up café. Which ones are furthest from yours? Start with how many ${items} you sell a week and what they cost to make.`);
-  if (guessed("volume_low") || guessed("volume_high"))
-    nextQuestions.push(`What would "customers really disliked it" and "nobody minded" look like for you? Give your own guesses instead of What-IF's ${spc(low)} and ${spc(high)}.`);
-  if (guessed("test_days")) nextQuestions.push(`How many days could you try the new price before deciding? What-IF assumed ${num(days)}.`);
-  nextQuestions.push(`Look at the last 4 weeks in your till's item report: is ${num(m.units)} a week steady, or does it swing? A steady baseline makes the test easier to read.`);
-  nextQuestions.push(`What would regulars buy instead? If a cheaper drink's sales rise during the test, people are trading down rather than leaving.`);
+  if (demo) nextQuestions.push(t("price.q.demo", { item }));
+  if (guessed("vat_rate")) nextQuestions.push(t("price.q.vat", { item, vat: vatPct }));
+  if (guessed("volume_low") || guessed("volume_high")) nextQuestions.push(t("price.q.range", { lo: spc(low), hi: spc(high) }));
+  if (guessed("test_days")) nextQuestions.push(t("price.q.days", { days: num(days) }));
+  nextQuestions.push(t("price.q.steady", { units: num(m.units) }));
+  nextQuestions.push(t("price.q.tradeDown"));
 
   // ---- Warnings ----------------------------------------------------------
   const warnings: string[] = [];
-  if (!m.reachable) warnings.push(`At ${price(m.newPrice)} each ${item} leaves nothing after ingredients (${price(m.unitCost)}).`);
-  else if (m.beV !== null) {
-    if (likely < m.beV) warnings.push(`Your likely guess (${spc(likely)}) is below break-even (${spc(m.beV)}): on your own numbers the new price earns less than today.`);
-    else if (low < m.beV) warnings.push(`At your cautious guess (${spc(low)}) the new price earns less than today (break-even is ${spc(m.beV)}). That is the risk the test checks.`);
-    if (m.beV > 0.5) warnings.push(`You would need ${pc(m.beV)} more sales to make up for the cut. That is a lot to ask of one price change.`);
+  if (!m.reachable) warnings.push(t("price.warn.none", { price: price(m.newPrice), net: price(m.netNew), item, cost: price(m.unitCost) }));
+  else if (m.beV !== null && m.beV > -1 + EPS) {
+    if (likely < m.beV) warnings.push(t("price.warn.likely", { likely: spc(likely), be: spc(m.beV) }));
+    else if (low < m.beV) warnings.push(t("price.warn.low", { low: spc(low), be: spc(m.beV) }));
+    if (m.beV > 0.5) warnings.push(t("price.warn.bigCut", { p: pc(m.beV) }));
   }
-  if (m.oldPrice > 0 && Math.abs(change) / m.oldPrice > 0.2)
-    warnings.push(`A change of ${pc(Math.abs(change) / m.oldPrice)} at once is very noticeable. A smaller step is easier to test and to undo.`);
-  if (m.mOld <= 0) warnings.push(`At today's price each ${item} already leaves nothing after ingredients (${price(m.oldPrice)} − ${price(m.unitCost)}).`);
+  if (m.oldPrice > 0 && Math.abs(change) / m.oldPrice > 0.2) warnings.push(t("price.warn.bigStep", { p: pc(Math.abs(change) / m.oldPrice) }));
+  if (m.mOld <= 0) warnings.push(t("price.warn.oldLoses", { item, old: price(m.oldPrice), div, cost: price(m.unitCost), m: price(m.mOld) }));
 
   return { current, scenarios, breakEven, worstCase, biggestUncertainty, sensitivity, lessons, nextQuestions, warnings };
 }
@@ -289,13 +304,8 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
 /** "Why this number": the calculation for one slider position, in words. */
 export function explainVolume(m: PriceModel, x: number): string {
   const u = m.unitsAt(x), wn = m.weekNew(x), dw = m.deltaWeek(x);
-  let s = `If sales change by ${spc(x)} (about ${num(Math.round(u))} a week): ${num(round(u, 1))} × ${price(m.mNew)} = ${eur(wn)} a week left after ingredients, against ${eur(m.weekOld)} now. That is ${seur(dw)} a week, ${seur(m.deltaTest(x))} over ${num(m.days)} days and about ${seur(m.deltaMonth(x))} a month.`;
-  if (m.beV !== null)
-    s += x >= m.beV - EPS
-      ? " Better off than today, or level."
-      : m.rise
-        ? " Worse off than today: the higher margin does not make up for the lost sales."
-        : " Worse off than today: the extra sales do not make up for the lower margin.";
+  let s = t("price.x.base", { x: spc(x), uR: num(Math.round(u)), u: num(u), m: price(m.mNew), wn: price(wn), old: price(m.weekOld), dw: signedPrice(dw), dt: signedPrice(m.deltaTest(x)), days: num(m.days), dm: signedPrice(m.deltaMonth(x)) });
+  if (m.beV !== null) s += x >= m.beV - EPS ? t("price.x.better") : m.rise ? t("price.x.worseRise") : t("price.x.worseCut");
   return s;
 }
 
@@ -310,42 +320,45 @@ export function explainPriceChange(key: string, b: Values, a: Values, label = ke
     if (mb.beV !== null && ma.beV !== null && mb.beUnits !== null && ma.beUnits !== null) {
       if (Math.abs(ma.beV - mb.beV) > 1e-6) {
         if (ma.beV <= 0 && mb.beV <= 0)
-          parts.push(`you can now lose up to ${pc(-ma.beV)} of sales (${num(ma.beUnits)} a week) instead of ${pc(-mb.beV)} (${num(mb.beUnits)}) before you are worse off`);
-        else parts.push(`break-even moves from ${spc(mb.beV)} to ${spc(ma.beV)} change in sales`);
-      } else parts.push(`break-even stays at ${spc(mb.beV)}`);
-    } else if (ma.beV === null) parts.push("break-even is out of reach, because each sale leaves nothing after ingredients");
+          parts.push(t("price.chg.beLose", { pa: pc(-ma.beV), na: num(ma.beUnits), pb: pc(-mb.beV), nb: num(mb.beUnits) }));
+        else parts.push(t("price.chg.beMove", { from: spc(mb.beV), to: spc(ma.beV) }));
+      } else parts.push(t("price.chg.beSame", { be: spc(mb.beV) }));
+    } else if (ma.beV === null) parts.push(t("price.chg.beGone"));
     if (Math.abs(ha.netTestExpected - hb.netTestExpected) >= 0.005)
-      parts.push(`the expected test result goes from ${seur(hb.netTestExpected)} to ${seur(ha.netTestExpected)}`);
-    return parts.join(", and ");
+      parts.push(t("chg.expected", { from: seur(hb.netTestExpected), to: seur(ha.netTestExpected) }));
+    return parts.join(t("chg.and"));
   };
-  const so = (cause: string) => `${cause}, so ${effect()}.`;
+  const so = (cause: string) => t("chg.so", { cause, effect: effect() });
   switch (key) {
     case "new_price":
-      return { text: so(`You changed the new price from ${price(from)} to ${price(to)}. Each ${mb.item} would leave ${price(ma.mNew)} instead of ${price(mb.mNew)}`) + " This assumes customers react the same way; a bigger rise may lose more sales, which the test shows.", mentionsWorst: false };
+      return { text: so(t("price.chg.new", { from: price(from), to: price(to), item: mb.item, ma: price(ma.mNew), mb: price(mb.mNew) })) + t("price.chg.newTail"), mentionsWorst: false };
     case "current_price":
-      return { text: so(`Today's price went from ${price(from)} to ${price(to)}, so each ${mb.item} leaves ${price(ma.mOld)} now instead of ${price(mb.mOld)}: that is the bar the new price has to beat`), mentionsWorst: false };
+      return { text: so(t("price.chg.current", { from: price(from), to: price(to), item: mb.item, ma: price(ma.mOld), mb: price(mb.mOld) })), mentionsWorst: false };
     case "unit_cost":
-      return { text: so(`Ingredients per ${mb.item} went ${up ? "up" : "down"} from ${price(from)} to ${price(to)}. Both margins move by ${price(Math.abs(to - from))} (now ${price(mb.mOld)} → ${price(ma.mOld)}, new price ${price(mb.mNew)} → ${price(ma.mNew)}), which changes how many sales the extra cents are worth`), mentionsWorst: false };
-    case "units_per_week":
-      return { text: so(`Weekly sales went from ${num(from)} to ${num(to)}. The same percentage change is now ${up ? "more" : "fewer"} ${mb.items}, so the money involved ${up ? "grows" : "shrinks"}; the break-even percentage depends only on prices and costs`), mentionsWorst: true };
-    case "volume_likely":
       return {
-        text: `You changed your likely guess from ${spc(from)} to ${spc(to)}. Each sale at the new price leaves ${price(mb.mNew)}, so the expected test result goes from ${seur(hb.netTestExpected)} to ${seur(ha.netTestExpected)}. Break-even stays at ${hb.breakEvenText}: it depends on prices and costs, not on your guess.`,
+        text: so(t(up ? "price.chg.cost.up" : "price.chg.cost.down", { item: mb.item, from: price(from), to: price(to), diff: price(Math.abs(to - from)), ob: price(mb.mOld), oa: price(ma.mOld), nb: price(mb.mNew), na: price(ma.mNew) })),
         mentionsWorst: false,
       };
+    case "vat_rate":
+      return { text: so(t("price.chg.vat", { from: pc(from), to: pc(to), item: mb.item, ob: price(mb.mOld), oa: price(ma.mOld), nb: price(mb.mNew), na: price(ma.mNew) })), mentionsWorst: false };
+    case "units_per_week":
+      return { text: so(t(up ? "price.chg.units.up" : "price.chg.units.down", { from: num(from), to: num(to) })), mentionsWorst: true };
+    case "volume_likely":
+      return { text: t("price.chg.likely", { from: spc(from), to: spc(to), m: price(mb.mNew), eb: seur(hb.netTestExpected), ea: seur(ha.netTestExpected), be: hb.breakEvenText }), mentionsWorst: false };
     case "volume_low":
-    case "volume_high": {
-      const which = key === "volume_low" ? "cautious" : "optimistic";
+    case "volume_high":
       return {
-        text: `Your ${which} guess changed from ${spc(from)} to ${spc(to)} (${seur(mb.deltaTest(from))} → ${seur(ma.deltaTest(to))} over the test). That only moves the ${which} scenario${key === "volume_low" ? " and the worst case" : ""}; break-even and the expected result stay the same.`,
+        text: t(key === "volume_low" ? "price.chg.low" : "price.chg.high", { from: spc(from), to: spc(to), rb: seur(mb.deltaTest(from)), ra: seur(ma.deltaTest(to)) }),
         mentionsWorst: key === "volume_low",
       };
-    }
     case "test_days":
-      return { text: `The test now runs ${num(to)} days instead of ${num(from)}. The weekly numbers do not change; the totals over the test do (expected ${seur(hb.netTestExpected)} → ${seur(ha.netTestExpected)}, worst case ${seur(hb.worstCase)} → ${seur(ha.worstCase)}).`, mentionsWorst: true };
+      return { text: t("price.chg.days", { from: t("n.days", { n: from }), to: t("n.days", { n: to }), eb: seur(hb.netTestExpected), ea: seur(ha.netTestExpected), wb: seur(hb.worstCase), wa: seur(ha.worstCase) }), mentionsWorst: true };
     case "item":
-      return { text: `You changed the item from ${String(b.item ?? "")} to ${String(a.item ?? "")}. The numbers only change if its price, cost or sales do.`, mentionsWorst: false };
+      return { text: t("price.chg.item", { from: String(b.item ?? ""), to: String(a.item ?? "") }), mentionsWorst: false };
+    case "kiez":
+      return { text: t("chg.kiez", { from: String(b[key] ?? "—"), to: String(a[key] ?? "—") }), mentionsWorst: false };
     default:
-      return { text: so(`${label} changed from ${num(from)} to ${num(to)}`), mentionsWorst: false };
+      return { text: so(t("chg.default", { label, from: num(from), to: num(to) })), mentionsWorst: false };
   }
 }
+
