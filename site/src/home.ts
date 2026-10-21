@@ -2,13 +2,14 @@
  * Landing page. Everything that shows numbers is built from the same demo
  * state the demo report uses (src/report/demo.ts), in the visitor's language,
  * so the hero chart, the method teasers and the rehearsal teaser always match
- * what "See the demo" opens. Also: demo links, copy buttons, the method player.
+ * what "See the demo" opens. Also: demo links, copy buttons, the method player,
+ * and the link to the rehearsal Claude played (/r#demo-ai) when this build has it.
  */
 import { analyze, money, num, price, WEEKDAYS_PER_MONTH } from "../../src/engine/index.ts";
 import type { Analysis, Scenario } from "../../src/engine/types.ts";
 import type { Lang } from "../../src/i18n/index.ts";
 import { wireCopyButtons } from "../../src/report/connect.ts";
-import { demoState } from "../../src/report/demo.ts";
+import { aiDemoLang, demoState, loadAiDemo } from "../../src/report/demo.ts";
 import { rebuildRehearsal, summarize } from "../../src/sim/index.ts";
 import type { RehearsalSummary } from "../../src/sim/types.ts";
 import { encodeState } from "../../src/state.ts";
@@ -102,6 +103,8 @@ function idle(fn: () => void): void {
 
 /** Whole euros; the word joiner keeps "−€118" from breaking after the minus. */
 const whole = (n: number) => money(Math.round(n), false).replace("−", "−\u2060");
+/** Whole euros with a sign on gains too: "+257 €", "−385 €". */
+const signed = (n: number) => (Math.round(n) > 0 ? `+${whole(n)}` : whole(n));
 const scenario = (a: Analysis, id: Scenario["id"]) => a.scenarios.find((s) => s.id === id);
 const inputNum = (a: Analysis, key: string): number | undefined => {
   const v = a.inputs.find((i) => i.key === key)?.value;
@@ -159,22 +162,27 @@ function drawHero(d: Demo): void {
   if (cap) cap.textContent = caption;
 }
 
+/**
+ * The step-3 teaser: one row per scenario, its name on its own line above the bar, and the signed
+ * value just beyond the bar's end, so no text ever sits on another (the report's step-3 chart does the same).
+ * The longest bar leaves 56 units for its value on either side of the zero line.
+ */
 function barsSvg(a: Analysis, lang: Lang): string {
   const ids = ["cautious", "expected", "optimistic"] as const;
   const vals = ids.map((id) => scenario(a, id)?.netTest ?? 0);
   const max = Math.max(1, ...vals.map((v) => Math.abs(v)));
-  const zero = 150;
-  const span = 62;
+  const zero = 130;
+  const span = 70;
   const rows = ids.map((id, i) => {
     const v = vals[i] ?? 0;
     const len = Math.max(3, (Math.abs(v) / max) * span);
-    const y = 12 + i * 30;
+    const top = 2 + i * 35;
     const x = v < 0 ? zero - len : zero;
     const label = t(`h.sc_${id}`, {}, lang);
     const tx = v < 0 ? x - 4 : x + len + 4;
-    return `<text x="4" y="${y + 11}" class="s-mc-t">${esc(label)}</text><rect x="${x.toFixed(1)}" y="${y}" width="${len.toFixed(1)}" height="14" rx="3" class="${v < 0 ? "s-mc-neg" : "s-mc-pos"}"/><text x="${tx.toFixed(1)}" y="${y + 11}" class="s-mc-t s-mc-t--b" text-anchor="${v < 0 ? "end" : "start"}">${esc(whole(v))}</text>`;
+    return `<text x="4" y="${top + 11}" class="s-mc-t">${esc(label)}</text><rect x="${x.toFixed(1)}" y="${top + 15}" width="${len.toFixed(1)}" height="13" rx="3" class="${v < 0 ? "s-mc-neg" : "s-mc-pos"}"/><text x="${tx.toFixed(1)}" y="${top + 25.5}" class="s-mc-t s-mc-t--b" text-anchor="${v < 0 ? "end" : "start"}">${esc(signed(v))}</text>`;
   });
-  return `<svg viewBox="0 0 260 96" class="s-minichart" role="presentation"><line x1="${zero}" x2="${zero}" y1="4" y2="92" class="s-mc-zero"/>${rows.join("")}</svg>`;
+  return `<svg viewBox="0 0 260 108" class="s-minichart" role="presentation"><line x1="${zero}" x2="${zero}" y1="15" y2="107" class="s-mc-zero"/>${rows.join("")}</svg>`;
 }
 
 function esc(s: string): string {
@@ -215,7 +223,10 @@ function paintTeasers(d: Demo): void {
   });
   fill("s3", (n) => (n.textContent = t("m.s3", { days: num(days) }, lang)));
   fill("bars", (n) => (n.innerHTML = barsSvg(a, lang)));
-  if (a.breakEven.reachable) fill("be", (n) => (n.textContent = t("m.be", { n: num(Math.ceil(a.breakEven.value)) }, lang)));
+  if (a.breakEven.reachable) {
+    fill("be_t", (n) => (n.textContent = t("m.be_t", {}, lang)));
+    fill("be_n", (n) => (n.textContent = t("m.be_n", { n: num(Math.ceil(a.breakEven.value)) }, lang)));
+  }
   fill("card", (n) => (n.textContent = t("m.card_t", { days: num(days) }, lang)));
 
   const sum = d.summary;
@@ -278,6 +289,35 @@ function paintFacts(d: Demo): void {
   box.hidden = false;
 }
 
+/* ------------------------------------------------------------------ the AI-played rehearsal */
+
+/** Shows the link to /r#demo-ai when this build has the saved Claude run, with an honest line on how it differs. */
+async function paintAiDemo(): Promise<void> {
+  const box = document.querySelector<HTMLElement>("[data-ai-demo]");
+  if (!box) return;
+  const saved = await loadAiDemo();
+  if (!saved) {
+    box.hidden = true;
+    return;
+  }
+  const lang = pageLang();
+  const note = box.querySelector<HTMLElement>("[data-ai-demo-note]");
+  let told = -1;
+  try {
+    const opts = { demo: true, business: saved.business, question: saved.question, currency: saved.currency, lang };
+    const a = analyze(saved.template, saved.inputs, opts);
+    if (saved.rehearsal) told = summarize(rebuildRehearsal(a, saved.rehearsal)).links.length;
+  } catch (e) {
+    console.warn("What-IF: could not replay the AI-played rehearsal here.", e);
+    told = -1;
+  }
+  const parts = [t("r.ai_note", {}, lang)];
+  if (told === 0) parts.push(t("r.ai_wom", {}, lang));
+  if (aiDemoLang(saved) !== lang) parts.push(t("r.ai_lang", {}, lang));
+  if (note) note.textContent = parts.join(" ");
+  box.hidden = false;
+}
+
 let heroObserver: ResizeObserver | null = null;
 
 function paintAll(): void {
@@ -287,6 +327,7 @@ function paintAll(): void {
   drawHero(d);
   paintTeasers(d);
   paintFacts(d);
+  void paintAiDemo();
   const box = document.querySelector<HTMLElement>("[data-hero-chart]");
   if (box && typeof ResizeObserver !== "undefined" && !heroObserver) {
     let raf = 0;

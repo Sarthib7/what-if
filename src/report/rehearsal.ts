@@ -1,9 +1,11 @@
 /**
  * Step 5: the rehearsal with imagined customers (MiroFish-inspired, but small
- * and honest). The questions to check come first; then how far it spread, the
- * round-by-round grid, the neighbourhood feed, who told whom, the people
- * (collapsed), their words and any interviews. One sentence says who played
- * the customers, and it always matches the run's method.
+ * and honest). How far it spread and the round-by-round grid come first and are
+ * open on every screen; then what a simulation can and cannot tell you, the
+ * questions to check with real customers, the people (collapsed), their words
+ * and any interviews. One sentence says who played the customers, and it always
+ * matches the run's method. Without a rehearsal, the step can start the
+ * rule-based one in the browser (mountReport's onRehearse).
  *
  * Everything here carries the Imagined chip. Text written by imagined
  * customers is untrusted: it is always escaped.
@@ -13,10 +15,10 @@ import { REPRESENTS_PREFIX } from "../sim/messages.ts";
 import { ACTIONS } from "../sim/rounds.ts";
 import type { Persona, RehearsalSummary } from "../sim/types.ts";
 import { networkSvg, uptakeSvg } from "./charts.ts";
-import { chip, esc, firstName, fmtInput, hint, ICONS, initial } from "./html.ts";
+import { chip, esc, firstName, fmtInput, hint, ICONS, initial, listOf } from "./html.ts";
 import { t } from "./messages.ts";
 import type { MsgKey } from "./messages.ts";
-import { whoPlayed } from "./model.ts";
+import { madeBy, whoPlayed } from "./model.ts";
 import type { ReportInput, StepState } from "./model.ts";
 import { CHART_W, openStep, stepHead } from "./sections.ts";
 
@@ -36,6 +38,17 @@ export function cellKind(c: { action: string; positive: boolean; kind?: string }
   if (k === "engaged") return "pos";
   if (k === "neutral") return "neutral";
   return c.positive ? "pos" : "neutral";
+}
+
+/**
+ * A grid cell's words: a short label per language for the sim's actions ("Isst woanders", "Bringt was mit"), so
+ * nothing breaks mid-word in a 60 px cell on a phone. The full action stays in the cell's name and its tap-to-read note.
+ * Unknown actions keep the sim's own label.
+ */
+export function cellLabel(action: string, full: string): string {
+  const key = `cell.${action}` as MsgKey;
+  const short = t(key);
+  return short && short !== key ? short : full;
 }
 
 /** "Stands for: …" without the sim's prefix, in any language. */
@@ -129,9 +142,9 @@ function timeline(reh: RehearsalSummary, input: ReportInput): string {
             return `<td><span class="wi-cell ${isRun ? "is-running" : "is-future"}">${esc(isRun ? t("tl.thinking") : "–")}<span class="wi-sr">${esc(isRun ? t("tl.srRunning", { n }) : t("tl.srFuture", { n }))}</span></span></td>`;
           }
           const kind = cellKind(c as typeof c & { kind?: string });
-          const label = kind === "away" ? t("tl.away") : c.actionLabel;
+          const label = kind === "away" ? t("tl.away") : cellLabel(c.action, c.actionLabel);
           const icon = kind === "elsewhere" ? `<span class="wi-cell-ico" aria-hidden="true">↗</span>` : "";
-          return `<td><button type="button" class="wi-cell is-${kind === "pos" ? "pos" : kind}" data-wi-cell aria-controls="wi-thought" aria-label="${esc(t("tl.cellAria", { n, name: p.name, action: c.actionLabel }))}">${icon}<span class="wi-cell-label">${esc(label)}</span><span class="wi-cell-thought" hidden data-name="${esc(p.name)}" data-round="${n}" data-action="${esc(c.actionLabel)}">${esc(c.thought)}</span></button></td>`;
+          return `<td><button type="button" class="wi-cell is-${kind === "pos" ? "pos" : kind}" data-wi-cell aria-controls="wi-thought" title="${esc(c.actionLabel)}" aria-label="${esc(t("tl.cellAria", { n, name: p.name, action: c.actionLabel }))}">${icon}<span class="wi-cell-label">${esc(label)}</span><span class="wi-cell-thought" hidden data-name="${esc(p.name)}" data-round="${n}" data-action="${esc(c.actionLabel)}">${esc(c.thought)}</span></button></td>`;
         })
         .join("");
       return `<tr><th scope="row"><span class="wi-tl-who">${avatar(p, "sm")}<span>${esc(firstName(p.name))}</span></span></th>${cells}</tr>`;
@@ -211,26 +224,56 @@ function sub(title: string, body: string, id: string, extra = ""): string {
   return `<div class="wi-sub" id="${id}"><div class="wi-sub-head"><h3 class="wi-h3">${esc(title)}</h3>${chip("imagined")}${extra}</div>${body}</div>`;
 }
 
+/**
+ * No rehearsal yet. The button (shown by mountReport only when the page passes `onRehearse`) runs the rule-based
+ * rehearsal in the browser. A /try owner has no AI coach, so her text says what a coach would add and that the
+ * simple version runs here; everyone else keeps "ask your AI coach".
+ */
+function emptyStep(input: ReportInput, state: StepState): string {
+  const how = madeBy(input) === "try" ? t("reh.emptyTry") : t("reh.empty2");
+  return `${openStep(5, state)}${stepHead(5, state, chip("imagined"))}
+<div class="wi-card wi-empty" data-wi-reh-empty>
+  <p><strong>${esc(t("reh.emptyTitle"))}</strong> ${esc(t("reh.empty1"))}</p>
+  <p>${esc(how)}</p>
+  <div class="wi-reh-start wi-noprint" data-wi-rehearse-wrap hidden><button type="button" class="wi-btn" data-wi-rehearse>${ICONS.play}<span data-wi-rehearse-label>${esc(t("reh.start"))}</span></button><p class="wi-small wi-reh-start-msg" data-wi-rehearse-msg role="status" aria-live="polite"></p></div>
+</div>
+</section>`;
+}
+
+type Answer = RehearsalSummary["interviews"][number]["answers"][number];
+
+/** Interview answers with the same words shown once, with every name that gave them ("Noor and Greta · 2 with the same answer"). */
+function answerGroups(answers: Answer[]): { text: string; who: Answer[] }[] {
+  const out: { key: string; text: string; who: Answer[] }[] = [];
+  for (const a of answers) {
+    const key = a.answer.trim().replace(/\s+/g, " ").toLowerCase();
+    const g = out.find((x) => x.key === key);
+    if (g) g.who.push(a);
+    else out.push({ key, text: a.answer, who: [a] });
+  }
+  return out;
+}
+
 export function step5(input: ReportInput, state: StepState): string {
   const reh = input.rehearsal;
-  if (!reh) {
-    return `${openStep(5, state)}${stepHead(5, state, chip("imagined"))}
-<div class="wi-card wi-empty"><p><strong>${esc(t("reh.emptyTitle"))}</strong> ${esc(t("reh.empty1"))}</p><p>${esc(t("reh.empty2"))}</p></div>
-</section>`;
-  }
+  if (!reh) return emptyStep(input, state);
   const run = runningRound(reh, input);
   const runRound = run ? reh.rounds.find((r) => r.n === run) : undefined;
   const banner = run
     ? `<div class="wi-running" role="status"><span class="wi-pulse" aria-hidden="true"></span><div><p><strong>${esc(t("reh.running", { n: run, of: reh.rounds.length }))}</strong> ${esc(t("reh.runningCoach", { n: run }))}</p>${runRound ? `<p class="wi-muted wi-small">${esc(runRound.title)}${runRound.situation ? `: ${esc(runRound.situation)}` : ""}</p>` : ""}<p class="wi-muted wi-small">${esc(t("reh.runningHint"))}</p></div></div>`
     : "";
+  const guessIn = input.analysis.inputs.find((i) => i.key === input.analysis.sensitivity.key);
+  // One note under the counts: they are imagined, never scaled up, and the sums keep the owner's own guess.
+  const bridge = guessIn ? t("reh.bridge", { guess: fmtInput(guessIn.value, guessIn.unit) }) : t("reh.bridgeNoGuess");
+  // How far it spread: in view on every screen (the counts are the rehearsal's first picture), with the "never scaled up" note.
   const funnel = reh.funnel.length
     ? `<ul class="wi-funnel">${reh.funnel
         .map((f) => {
           const dots = Array.from({ length: Math.max(0, Math.min(24, f.of)) }, (_, i) => `<i class="${i < f.count ? "is-on" : ""}"></i>`).join("");
           return `<li><span class="wi-funnel-label">${esc(f.label)}</span><span class="wi-dots" aria-hidden="true">${dots}</span><span class="wi-funnel-n">${esc(t("reh.of", { n: f.count, of: f.of }))}</span></li>`;
         })
-        .join("")}</ul><p class="wi-muted wi-small">${esc(t("reh.funnelNote"))}</p>`
-    : "";
+        .join("")}</ul><p class="wi-muted wi-small wi-funnel-note">${esc(t("reh.funnelNote"))} ${esc(bridge)}</p>`
+    : `<p class="wi-muted">${esc(t("reh.noRounds"))}</p><p class="wi-muted wi-small wi-funnel-note">${esc(bridge)}</p>`;
   const uptake = `<div class="wi-chart-legend" aria-hidden="true"><span><i class="wi-sw is-active"></i>${esc(t("reh.legActive"))}</span><span><i class="wi-sw is-engaged"></i>${esc(reh.uptakeLabel || t("tl.legPos"))}</span></div><div class="wi-chart-box" data-wi-chart="uptake">${uptakeChart(reh, input, CHART_W)}</div>`;
   const quotes = reh.quotes.length
     ? `<h4 class="wi-h4">${esc(t("reh.quotes"))}</h4><div class="wi-quotes">${reh.quotes
@@ -250,25 +293,24 @@ export function step5(input: ReportInput, state: StepState): string {
   // Questions derived from imagined reactions: tagged Imagined, never "Your number".
   const checkItems = reh.checkWithRealCustomers.map((q) => `<li>${esc(q)}</li>`);
   const check = checkItems.length
-    ? `<div class="wi-card wi-checkreal" id="wi-reh-check"><div class="wi-sub-head"><h3 class="wi-h3">${esc(t("reh.check"))}</h3>${chip("imagined")}</div><p class="wi-muted wi-small">${esc(t("reh.checkNote"))}</p><ul class="wi-checklist wi-checklist--boxes">${checkItems.slice(0, 2).join("")}</ul>${
-        checkItems.length > 2
-          ? `<details class="wi-lessons-more" data-wi-open-wide><summary>${esc(t("reh.moreChecks", { n: checkItems.length - 2, count: checkItems.length - 2 }))}</summary><ul class="wi-checklist wi-checklist--boxes">${checkItems.slice(2).join("")}</ul></details>`
+    ? `<div class="wi-card wi-checkreal" id="wi-reh-check"><div class="wi-sub-head"><h3 class="wi-h3">${esc(t("reh.check"))}</h3>${chip("imagined")}</div><p class="wi-muted wi-small">${esc(t("reh.checkNote"))}</p><ul class="wi-checklist wi-checklist--boxes">${checkItems.slice(0, 1).join("")}</ul>${
+        checkItems.length > 1
+          ? `<details class="wi-lessons-more" data-wi-open-wide><summary>${esc(t("reh.moreChecks", { n: checkItems.length - 1, count: checkItems.length - 1 }))}</summary><ul class="wi-checklist wi-checklist--boxes">${checkItems.slice(1).join("")}</ul></details>`
           : ""
       }</div>`
     : "";
-  const answer = (ans: RehearsalSummary["interviews"][number]["answers"][number]) => {
-    const p = reh.personas.find((x) => x.id === ans.personaId);
-    return `<li>${p ? avatar(p, "sm") : ""}<div><p class="wi-answer-name">${esc(ans.name)}</p><p>${esc(ans.answer)}</p></div></li>`;
+  const group = (g: { text: string; who: Answer[] }) => {
+    const people = g.who.map((a) => reh.personas.find((x) => x.id === a.personaId)).filter((p): p is Persona => !!p);
+    const same = g.who.length > 1 ? ` · ${t("reh.sameAnswer", { n: g.who.length, count: g.who.length })}` : "";
+    return `<li><span class="wi-answer-av">${people.map((p) => avatar(p, "sm")).join("")}</span><div><p class="wi-answer-name">${esc(listOf(g.who.map((a) => a.name)))}${esc(same)}</p><p>${esc(g.text)}</p></div></li>`;
   };
-  // Interviews: each question one tap away (open on a wide screen), with every answer.
+  // Interviews: each question one tap away (open on a wide screen), with every answer (the same words once).
   const interviews = reh.interviews
     .map(
       (iv, i) =>
-        `<details class="wi-more wi-interview" data-wi-open-wide${i === 0 ? ' id="wi-reh-interviews"' : ""}><summary><span>${esc(t("reh.interviewQ", { q: iv.question, n: iv.answers.length, count: iv.answers.length }))}</span></summary><ul class="wi-answers">${iv.answers.map(answer).join("")}</ul></details>`,
+        `<details class="wi-more wi-interview" data-wi-open-wide${i === 0 ? ' id="wi-reh-interviews"' : ""}><summary><span>${esc(t("reh.interviewQ", { q: iv.question, n: iv.answers.length, count: iv.answers.length }))}</span></summary><ul class="wi-answers">${answerGroups(iv.answers).map(group).join("")}</ul></details>`,
     )
     .join("");
-  const guessIn = input.analysis.inputs.find((i) => i.key === input.analysis.sensitivity.key);
-  const bridge = `<p class="wi-bridge">${ICONS.info}<span>${esc(guessIn ? t("reh.bridge", { guess: fmtInput(guessIn.value, guessIn.unit) }) : t("reh.bridgeNoGuess"))}</span></p>`;
   const events = reh.events.length
     ? `<span>${esc(t(input.analysis.demo ? "reh.eventsDemo" : "reh.events", { n: reh.events.length, count: reh.events.length }))}</span>`
     : "";
@@ -279,12 +321,9 @@ ${banner}
   <p class="wi-reh-change"><span class="wi-muted">${esc(t("reh.change"))}</span> <strong>${esc(reh.change)}</strong></p>
   <p class="wi-reh-meta"><span>${esc(t("reh.people", { n: reh.personas.length, count: reh.personas.length }))}</span><span>${esc(t("reh.rounds", { n: reh.rounds.length, count: reh.rounds.length }))}</span>${events}</p>
   <ol class="wi-reh-flow" aria-label="${esc(t("reh.flowAria"))}"><li>${esc(t("reh.flow1"))}</li><li>${esc(t("reh.flow2"))}</li><li>${esc(t("reh.flow3"))}</li><li>${esc(t("reh.flow4"))}</li></ol>
+  <div class="wi-sub wi-spread" id="wi-reh-funnel"><h3 class="wi-h3">${esc(t("reh.spread"))}</h3>${funnel}</div>
 </div>
-${caveatBox(reh)}
-${check}
-<details class="wi-more wi-views" id="wi-reh-views" data-wi-open-wide><summary><span>${esc(t("reh.views"))}</span></summary>
-${sub(t("reh.spread"), funnel || `<p class="wi-muted">${esc(t("reh.noRounds"))}</p>`, "wi-reh-funnel")}
-${bridge}
+<details class="wi-more wi-views" id="wi-reh-views" open><summary><span>${esc(t("reh.views"))}</span></summary>
 <div class="wi-sub">
   <div class="wi-tabs wi-noprint" role="tablist" aria-label="${esc(t("tabs.aria"))}" data-wi-tabs hidden>
     <button type="button" role="tab" id="wi-tab-timeline" aria-controls="wi-panel-timeline" aria-selected="true">${esc(t("tabs.timeline"))}</button>
@@ -298,6 +337,8 @@ ${bridge}
   <div class="wi-panel" role="tabpanel" id="wi-panel-network" aria-labelledby="wi-tab-network"><div class="wi-sub-head"><h3 class="wi-h3">${esc(t("tabs.network"))}</h3>${chip("imagined")}</div><p class="wi-muted wi-small">${esc(t("net.help"))}</p>${network(reh)}</div>
 </div>
 </details>
+${caveatBox(reh)}
+${check}
 ${people}
 ${interviews}
 ${said}

@@ -31,12 +31,16 @@ export {
   DEMO_SEEDS,
   DEMO_EVENT_ID,
   DEMO_EVENT_ROUND,
+  EVENT_EFFECTS,
+  EVENT_ROUNDS,
+  KIEZ_FLAVOUR,
+  kiezFlavour,
   findBerlinEvent,
   berlinEventText,
   kiezWeights,
   normaliseKiez,
 } from "./berlin.ts";
-export type { BerlinEvent, BerlinEventId, SimKiez } from "./berlin.ts";
+export type { BerlinEvent, BerlinEventId, EventEffect, KiezFlavour, SimKiez } from "./berlin.ts";
 export { CAVEATS, REPRESENTS_PREFIX, BRIEF_LANGUAGE } from "./messages.ts";
 export { mulberry32, hashString } from "./prng.ts";
 export type * from "./types.ts";

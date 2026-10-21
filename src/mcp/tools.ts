@@ -17,7 +17,7 @@
  * report link. The framing sentences here come from ./messages.ts.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult, GetPromptResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, type CallToolResult, type GetPromptResult, type ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   analyze,
@@ -52,7 +52,7 @@ import { BERLIN_EVENTS, findBerlinEvent } from "../sim/berlin.ts";
 import type { PersonaBrief, ReactionMethod, Rehearsal, RehearsalSummary, SegmentId } from "../sim/types.ts";
 import { decodeState, encodeState, reportUrl, type ShareState } from "../state.ts";
 import { SERVER_INSTRUCTIONS, WHAT_IF_PROMPT } from "./instructions.ts";
-import { mcpT, type McpKey } from "./messages.ts";
+import { betaAssistantNote, betaInstructionsNote, betaMessage, mcpT, type McpKey } from "./messages.ts";
 
 declare const __WHATIF_VERSION__: string | undefined;
 
@@ -110,15 +110,48 @@ const ANNOTATIONS: ToolAnnotations = {
 // Input schemas (forgiving: numbers or text; unknown keys are named, not used)
 // ---------------------------------------------------------------------------
 
+/** Every object input (inputs, before, after, observed, customer_mix, a reply) has at most this many keys. */
+export const MAX_KEYS = 60;
+/** Field names longer than this are refused. */
+export const MAX_KEY_CHARS = 60;
+/**
+ * The whole call is capped too (keys and array items, nested). The SDK counts them before
+ * anything is parsed, so a call with 25,000 keys is refused at once instead of being read.
+ * A full rehearsal round (12 replies of about 10 keys) needs fewer than 200.
+ */
+export const MAX_INPUT_ELEMENTS = 1000;
+/** Ignored keys named back to the model: the first few (with a "did you mean"), plus a count. */
+export const MAX_IGNORED_SHOWN = 8;
+
+/**
+ * An object input: keys of at most `keyChars` characters, at most MAX_KEYS of them, each refusal
+ * with a note that says what to send instead (the SDK relays the record's own message, so the key
+ * note is set on the record). JSON Schema gets maxLength on the keys and maxProperties.
+ */
+function record<V extends z.ZodType>(value: V, keyChars = MAX_KEY_CHARS, keyNote = "use the keys whatif_start lists") {
+  return z
+    .record(z.string().max(keyChars), value, {
+      error: (iss) => (iss.code === "invalid_key" ? `A field name has at most ${keyChars} characters; ${keyNote}.` : undefined),
+    })
+    .refine((o) => Object.keys(o).length <= MAX_KEYS, {
+      error: `Too many keys: What-IF reads at most ${MAX_KEYS} in one object. Send only the fields it asked for (whatif_start and whatif_check_inputs list them).`,
+    })
+    .meta({ maxProperties: MAX_KEYS });
+}
+
 const templateArg = z
   .enum(TEMPLATE_IDS)
   .describe("Which decision is being rehearsed: 'lunch_offer' (a fixed-price weekday lunch deal) or 'price_change' (a new price for one item). whatif_start picks it.");
 
-const inputsArg = z
-  .record(z.string().max(60), z.union([z.number(), z.string().max(100), z.null()]))
-  .describe(
-    "The owner's numbers so far, keyed by the field keys whatif_start lists, e.g. {\"weekday_customers\": 140, \"avg_spend\": 7.4}. Numbers or text such as \"32%\" or \"9,90 €\". Leave out anything the owner does not know.",
-  );
+const valueArg = z.union([
+  z.number(),
+  z.string().max(100, { error: 'A value has at most 100 characters: send the number, e.g. 7.4, "32%" or "9,90 €".' }),
+  z.null(),
+]);
+
+const inputsArg = record(valueArg).describe(
+  "The owner's numbers so far, keyed by the field keys whatif_start lists, e.g. {\"weekday_customers\": 140, \"avg_spend\": 7.4}. Numbers or text such as \"32%\" or \"9,90 €\". Leave out anything the owner does not know. At most 60 keys.",
+);
 
 const demoArg = z.boolean().describe("true when these are the made-up demo café's numbers (they are then labelled 'Demo data'). With demo true, missing fields are filled from the demo café.");
 const businessArg = z.string().max(200).describe("The business's name or a short description, e.g. 'Café Rosa, Neukölln'.");
@@ -139,7 +172,7 @@ const stateInsteadArg = stateArg.describe(
 const methodArg = z
   .enum(["subagent", "in-context", "rule-based"])
   .describe("How the replies were produced: 'subagent' (one subagent per brief), 'in-context' (you played each persona yourself), 'rule-based'.");
-const replyArg = z.union([z.record(z.string(), z.unknown()), z.string().max(4000)]);
+const replyArg = z.union([record(z.unknown(), MAX_KEY_CHARS, "send the JSON object the brief asks for"), z.string().max(4000, { error: "A reply has at most 4,000 characters; send the JSON object the brief asks for." })]);
 
 // ---------------------------------------------------------------------------
 // Language and messages
@@ -334,20 +367,31 @@ export function splitInputs(template: TemplateId, raw: RawInputs | undefined, al
   const ignored: IgnoredKey[] = [];
   for (const [k, v] of Object.entries(clean)) {
     if (known.includes(k)) inputs[k] = v;
-    else {
-      const fresh = suggestKeys(k, open);
-      ignored.push({ key: k.slice(0, 60), did_you_mean: fresh.length ? fresh : suggestKeys(k, known) });
-    }
+    else ignored.push(ignoredKey(k, ignored.length, open, known));
   }
   return { inputs, ignored };
 }
 
+/** An unknown key; only the first MAX_IGNORED_SHOWN get a "did you mean" (the rest are only counted). */
+function ignoredKey(k: string, index: number, open: readonly string[], known: readonly string[]): IgnoredKey {
+  const key = k.slice(0, MAX_KEY_CHARS);
+  if (index >= MAX_IGNORED_SHOWN) return { key, did_you_mean: [] };
+  const fresh = suggestKeys(k, open);
+  return { key, did_you_mean: fresh.length ? fresh : suggestKeys(k, known) };
+}
+
+/** What a result says about ignored keys: the first few, and how many there were. */
+function ignoredView(ignored: readonly IgnoredKey[]): { ignored_inputs: IgnoredKey[]; ignored_count: number } {
+  return { ignored_inputs: ignored.slice(0, MAX_IGNORED_SHOWN), ignored_count: ignored.length };
+}
+
 function ignoredLine(t: T, ignored: readonly IgnoredKey[], where: string): string {
   if (!ignored.length) return "";
-  const list = ignored
-    .slice(0, 8)
-    .map((x) => (x.did_you_mean.length ? t("ignored_item_suggest", { key: x.key, options: x.did_you_mean.join(t("or_word")) }) : x.key))
-    .join("; ");
+  const shown = ignored
+    .slice(0, MAX_IGNORED_SHOWN)
+    .map((x) => (x.did_you_mean.length ? t("ignored_item_suggest", { key: x.key, options: x.did_you_mean.join(t("or_word")) }) : x.key));
+  const more = ignored.length - shown.length;
+  const list = [...shown, ...(more > 0 ? [t("ignored_more", { n: more })] : [])].join("; ");
   return t("ignored_keys", { list, template: where });
 }
 
@@ -401,6 +445,20 @@ function resolveCtx(a: CtxArgs, opts: { allowState?: boolean } = {}): { ctx: Ctx
   const currency = a.currency?.trim() || prior?.currency?.trim();
   if (currency) ctx.currency = currency.toUpperCase();
   return { ctx, ...(prior ? { prior } : {}), t };
+}
+
+/**
+ * What a re-check or re-run keeps from the state it was given: the rehearsal and the
+ * measured result, but only while the numbers are the same (new numbers make them stale).
+ */
+function carried(prior: ShareState | undefined, ctx: Ctx): Partial<Pick<ShareState, "rehearsal" | "observed">> {
+  if (!prior || prior.template !== ctx.template) return {};
+  const same = (a: RawInputs, b: RawInputs) => {
+    const ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => String(a[k]) === String(b[k]));
+  };
+  if (!same(prior.inputs, ctx.inputs)) return {};
+  return { ...(prior.rehearsal ? { rehearsal: prior.rehearsal } : {}), ...(prior.observed ? { observed: prior.observed } : {}) };
 }
 
 /** Key order matches decodeState's sanitised copy, so a token re-encodes to the same string. */
@@ -527,6 +585,26 @@ const LUNCH = words([
 ]);
 /** "offer", "Angebot", "oferta", "promo": lunch-ish, but also used for discounts, so they count half. */
 const LUNCH_WEAK = words(["offer", "offers", "*angebot*", "oferta*", "ofert*", "promo*", "promotion*", "aktion*", "promoción*", "promocj*"]);
+/**
+ * Other fixed-price offers that work like the lunch deal (one price, a time window, regulars may
+ * switch): a happy hour, a breakfast deal. They use the lunch-offer template, so they count 1.5.
+ */
+const DEAL_LIKE = words([
+  "happy hour*", "happy-hour*", "happyhour*", "hora feliz",
+  "breakfast deal*", "breakfast combo*", "breakfast special*", "breakfast menu*", "breakfast offer*",
+  "*frühstücksangebot*", "*frühstücksmenü*", "*frühstücksdeal*", "*frühstückskombi*",
+  "menú de desayuno", "oferta de desayuno", "desayuno completo", "zestaw śniadaniow*", "oferta śniadaniow*",
+]);
+const HAPPY_HOUR = words(["happy hour*", "happy-hour*", "happyhour*", "hora feliz"]);
+/** Words for lunch itself: with one of these, a "deal" is the lunch deal, not a happy hour or breakfast. */
+const LUNCH_ITSELF = words([
+  "lunch*", "mittag*", "*mittagstisch*", "*mittagsmenü*", "*mittagsangebot*", "*mittagessen*", "midday", "noon",
+  "almuerzo*", "menú del día", "plato del día", "mediodía", "obiad*", "lunchow*",
+]);
+/** "10% off", "10 % Rabatt", "un 10 % de descuento", "10% zniżki": a discount, which is a price change. */
+const PERCENT_OFF =
+  /\d+(?:[.,]\d+)?\s*(?:%|percent|per cent|prozent|por ciento|procent\p{L}*)\s*(?:off|discount|rabatt|nachlass|weniger|günstiger|billiger|de descuento|descuento|de rebaja|menos|zniżki|rabatu|taniej|mniej)(?![\p{L}])/iu;
+const DISCOUNT = words(["discount*", "rabatt*", "*rabatt", "nachlass", "descuento*", "rebaj*", "zniżk*", "rabat*"]);
 const PRICE = words([
   "price*", "pricing", "raise", "raising", "increase*", "charge", "charging", "cent", "cents", "expensive", "cheaper", "cheap", "cost more", "put up", "bump",
   "reduce*", "lower my", "lower the", "discount*", "down to", "knock off", "mark up", "markup",
@@ -613,18 +691,38 @@ const FIRST_PERSON = words([
   "ja", "mój", "moj*", "nasz*", "mnie", "podniosę", "obniżę", "wprowadzę", "zrobię", "otworzę", "zaoferuję", "zatrudnię", "odpowiem",
 ]);
 
-const RESULT_WORDS = words(["result", "results", "ergebnis*", "resultado*", "wynik*"]);
-const TEST_WORDS = words(["test", "tests", "trial", "testlauf*", "probe*", "prueba*", "testu", "teście", "testem"]);
-/** The test is behind them: "I'm back", "we ran", "it is over", "zurück", "vorbei", "volví", "wróciłem"… */
+const RESULT_WORDS = words(["result", "results", "ergebnis*", "resultado*", "wynik*", "rezultat*"]);
+const TEST_WORDS = words(["test", "tests", "trial", "testlauf*", "testwoche*", "testphase*", "probe*", "prueba*", "testu", "teście", "testem"]);
+/** The owner is back or hands over numbers: "I'm back", "here are", "zurück", "hier sind", "estos son", "oto"… */
 const BACK_WORDS = words([
-  "back", "came back", "ran", "finished", "over", "measured", "counted", "tested", "done",
-  "zurück", "wieder da", "gelaufen", "vorbei", "fertig", "gemessen", "gezählt", "getestet", "ausprobiert",
-  "he vuelto", "vuelto", "volví", "terminó", "terminado", "medí", "probé",
-  "wróciłem", "wróciłam", "wróciliśmy", "skończył*", "zmierzył*", "przetestowa*", "po teście",
+  "back", "came back", "here are", "here is", "here's",
+  "zurück", "wieder da", "hier sind", "hier ist", "anbei",
+  "he vuelto", "vuelto", "volví", "estos son", "aquí están", "aquí tienes", "aquí van",
+  "wróciłem", "wróciłam", "wróciliśmy", "oto", "po teście",
 ]);
+/** The test is behind them: "we ran", "I did", "it is over", "gemacht", "vorbei", "terminé", "zrobiłam"… */
+const DONE_WORDS = words([
+  "ran", "did", "done", "finished", "over", "measured", "counted", "tested", "completed", "wrapped up",
+  "gemacht", "durchgeführt", "gelaufen", "vorbei", "fertig", "zu ende", "abgeschlossen", "beendet", "gemessen", "gezählt", "getestet", "ausprobiert",
+  "terminé", "terminó", "terminado", "terminamos", "acabé", "acabó", "acabamos", "hice", "hicimos", "hecho", "medí", "medimos", "conté", "probé", "probamos",
+  "zrobiłam", "zrobiłem", "zrobiliśmy", "zrobiłyśmy", "skończył*", "zakończył*", "zmierzył*", "przetestowa*", "policzył*", "minął", "minęły", "minęło",
+]);
+/** A question about the future ("what if", "was wäre", "¿y si", "co jeśli", "should I"…): results need "back" words then. */
+const HYPOTHETICAL = words([
+  "what if", "what about", "should i", "should we", "is it worth", "can i expect", "could i expect",
+  "was wäre", "was ist wenn", "was ist, wenn", "was passiert, wenn", "was passiert wenn", "lohnt es sich", "lohnt sich", "sollte ich", "sollten wir", "kann ich erwarten",
+  "y si", "qué pasa si", "qué pasaría si", "me conviene", "debería", "puedo esperar",
+  "co jeśli", "co jesli", "co gdyby", "a gdyby", "czy warto", "czy powinienem", "czy powinnam", "czy opłaca się",
+]);
+/** A count from the café: "47 Gäste", "47 lunch guests a day", "15 am Tag", "620 a week". */
+const COUNTED =
+  /\d+(?:[.,]\d+)?\s*(?:\p{L}+\s+){0,2}?(?:guests?|customers?|covers|people|lunches|deals|sold|gäste\p{L}*|kunden\p{L}*|personen|leute|angebote|verkauft\p{L}*|clientes|personas|comensales|menús|vendid\p{L}*|klient\p{L}*|gości|osób|osoby|zestaw\p{L}*|sprzedan\p{L}*|a day|per day|each day|am tag|pro tag|täglich|al día|por día|cada día|dziennie|na dzień|a week|per week|pro woche|in der woche|a la semana|por semana|tygodniowo|w tygodniu)(?![\p{L}])/iu;
+
+/** Questions that use a template for something that works the same way (a happy hour, a discount). */
+export type Similar = "happy_hour" | "breakfast" | "discount";
 
 export type QuestionKind =
-  | { kind: "decision"; id: TemplateId; fit: "good"; outside?: Outside }
+  | { kind: "decision"; id: TemplateId; fit: "good" | "similar"; like?: Similar; outside?: Outside }
   | { kind: "results"; id: TemplateId | null }
   | { kind: "unsupported"; topic: Topic; nearest: TemplateId | null }
   | { kind: "not_a_decision"; reason: Outside }
@@ -643,12 +741,22 @@ export function classifyQuestion(question: string): QuestionKind {
   const q = question.slice(0, 500);
   // "Nachmittag" is not lunch; "deal with" is not a deal.
   const forLunch = q.replace(/nachmittag\p{L}*/giu, " ").replace(/\bdeal(s|t|ing)?\s+with\b/giu, " ");
-  const lunch = count(LUNCH, forLunch) + 0.5 * count(LUNCH_WEAK, forLunch);
-  const price = count(PRICE, q) + (MONEY.test(q) ? 0.5 : 0);
+  const dealLike = count(DEAL_LIKE, forLunch);
+  const lunch = count(LUNCH, forLunch) + 0.5 * count(LUNCH_WEAK, forLunch) + 1.5 * dealLike;
+  const percentOff = PERCENT_OFF.test(q);
+  const price = count(PRICE, q) + (MONEY.test(q) ? 0.5 : 0) + (percentOff ? 1.5 : 0);
   const nearest: TemplateId | null = price > lunch ? "price_change" : lunch > 0 ? "lunch_offer" : null;
 
-  // Back with real numbers from a test: point to whatif_log_result.
-  if ((count(RESULT_WORDS, q) > 0 || count(TEST_WORDS, q) > 0) && count(BACK_WORDS, q) > 0) return { kind: "results", id: nearest };
+  // Back with real numbers from a test: point to whatif_log_result. A "what if" question needs
+  // "back" words ("I'm back", "hier sind"); otherwise results alone, or a test that is done, or a count, do.
+  const result = count(RESULT_WORDS, q) > 0;
+  const test = count(TEST_WORDS, q) > 0;
+  const back = count(BACK_WORDS, q) > 0;
+  const done = count(DONE_WORDS, q) > 0;
+  const counted = COUNTED.test(q);
+  const returning =
+    count(HYPOTHETICAL, q) > 0 ? (result || test) && back : result || (test && (done || back || counted)) || ((done || back) && counted);
+  if (returning) return { kind: "results", id: nearest };
 
   const me = count(FIRST_PERSON, q) > 0;
   const outside = (Object.keys(OUTSIDE) as Outside[]).find((k) => count(OUTSIDE[k], q) > 0);
@@ -665,8 +773,17 @@ export function classifyQuestion(question: string): QuestionKind {
   if ((outside === "rent" || outside === "costs") && lunch === 0 && count(PRICE_OWN, q.replace(SUPPLIER_PRICE, " ")) === 0)
     return { kind: "not_a_decision", reason: outside };
 
-  if (price > lunch) return { kind: "decision", id: "price_change", fit: "good", ...(outside ? { outside } : {}) };
-  if (lunch > 0) return { kind: "decision", id: "lunch_offer", fit: "good", ...(outside ? { outside } : {}) };
+  const where = outside ? { outside } : {};
+  if (price > lunch) {
+    const discount = percentOff || count(DISCOUNT, q) > 0;
+    return discount ? { kind: "decision", id: "price_change", fit: "similar", like: "discount", ...where } : { kind: "decision", id: "price_change", fit: "good", ...where };
+  }
+  if (lunch > 0) {
+    // A happy hour or a breakfast deal uses the lunch-offer template; say how its fields are read.
+    if (dealLike > 0 && count(LUNCH_ITSELF, forLunch) === 0)
+      return { kind: "decision", id: "lunch_offer", fit: "similar", like: count(HAPPY_HOUR, forLunch) > 0 ? "happy_hour" : "breakfast", ...where };
+    return { kind: "decision", id: "lunch_offer", fit: "good", ...where };
+  }
   if (outside) return { kind: "not_a_decision", reason: outside };
   return { kind: "unclear" };
 }
@@ -753,13 +870,14 @@ function compactSummary(s: RehearsalSummary) {
   };
 }
 
-function personaList(r: Rehearsal) {
+function personaList(r: Rehearsal, t: T) {
   return r.personas.map((p) => ({
     id: p.id,
     name: p.name,
     segment: p.segmentLabel,
     age: p.age,
     attitude: p.attitude,
+    attitude_label: t(`att_${p.attitude}` as McpKey),
     relationship: p.relationship,
     represents: p.represents,
   }));
@@ -814,16 +932,64 @@ function clamp(n: number | undefined, lo: number, hi: number): number | undefine
 // The server
 // ---------------------------------------------------------------------------
 
-function fillPlaceholders(text: string, site: string): string {
-  const contact = (globalThis.process?.env?.WHATIF_BETA_CONTACT ?? "").trim();
-  return text.split("{{SITE_URL}}").join(site).split("{{BETA_CONTACT}}").join(contact);
+declare const __WHATIF_BETA_CONTACT__: string | undefined;
+
+/**
+ * Where an owner asks for an invite code: WHATIF_BETA_CONTACT at run time, else the value the
+ * build baked in (scripts/build.mjs), else "". Clipped so a stray value cannot flood a message.
+ */
+export function betaContact(): string {
+  const env = globalThis.process?.env?.WHATIF_BETA_CONTACT;
+  const built = typeof __WHATIF_BETA_CONTACT__ === "string" ? __WHATIF_BETA_CONTACT__ : "";
+  return (env ?? built).trim().slice(0, 300);
 }
 
-export function createServer(siteUrl: string): McpServer {
+/**
+ * Fills {{SITE_URL}} and {{BETA_CONTACT}}. Without a contact, every line that holds
+ * {{BETA_CONTACT}} is left out (as scripts/build.mjs does for the skill), so no "Ask here: ." remains.
+ */
+export function fillPlaceholders(text: string, site: string, contact = betaContact()): string {
+  const kept = contact ? text : text.split("\n").filter((line) => !line.includes("{{BETA_CONTACT}}")).join("\n");
+  return kept.split("{{SITE_URL}}").join(site).split("{{BETA_CONTACT}}").join(contact);
+}
+
+export interface WhatIfServerOptions {
+  /**
+   * Closed beta, and this request has no valid invite code. Everything still lists
+   * (initialize, tools/list, prompts/list), so the host connects without an OAuth sign-in,
+   * and every tools/call returns the closed-beta message as a tool error the owner sees.
+   */
+  locked?: { hadCode: boolean };
+}
+
+/** The tool result every call gets without a valid invite code: German and English, the contact, the link pattern. */
+export function betaToolResult(site: string, hadCode: boolean, contact = betaContact()): CallToolResult {
+  const message = betaMessage(hadCode, contact, site);
+  const connector = `${site}/api/mcp?code=YOUR-CODE`;
+  return {
+    content: [{ type: "text", text: `${message}\n\n${betaAssistantNote(site)}` }],
+    structuredContent: {
+      beta: {
+        required: true,
+        valid: false,
+        reason: hadCode ? "invalid_code" : "missing_code",
+        connector_url: connector,
+        how_to_connect: `${site}/connect`,
+        ...(contact ? { contact } : {}),
+      },
+      message,
+    },
+    isError: true,
+  };
+}
+
+export function createServer(siteUrl: string, opts: WhatIfServerOptions = {}): McpServer {
   const site = siteUrl.replace(/\/+$/, "");
+  const contact = betaContact();
+  const instructions = fillPlaceholders(SERVER_INSTRUCTIONS, site, contact) + (opts.locked ? `\n\n${betaInstructionsNote()}` : "");
   const server = new McpServer(
     { name: "what-if", title: "What-IF", version: VERSION, websiteUrl: site },
-    { instructions: fillPlaceholders(SERVER_INSTRUCTIONS, site) },
+    { instructions, maxToolInputElements: MAX_INPUT_ELEMENTS },
   );
 
   // 1. whatif_start ---------------------------------------------------------
@@ -832,7 +998,7 @@ export function createServer(siteUrl: string): McpServer {
     {
       title: "Start a What-IF decision rehearsal",
       description:
-        "Call this FIRST whenever the user asks a 'what if…' question about their business or a decision (e.g. 'what if I raise prices', 'what if I run a lunch deal', 'should I try a lunch special?', 'was wäre, wenn ich den Preis für Flat White erhöhe?'), or comes back with the results of a What-IF test. It picks the decision template, lists the few numbers to ask the owner for (each with the question to ask and why it matters), gives demo values and a link to a visual demo report, and explains the coaching steps. When the question is not a decision What-IF can model (the weather, a competitor's move, hiring, opening hours), it returns template: null with an honest explanation and suggestions instead. Pass the user's question in their own words and `lang` = the language they write in.",
+        "Call this FIRST whenever the user asks a 'what if…' question about their business or a decision (e.g. 'what if I raise prices', 'what if I run a lunch deal', 'should I try a lunch special?', 'was wäre, wenn ich den Preis für Flat White erhöhe?'), or comes back with the results of a What-IF test. It returns `kind`, and what to do next depends on it: 'decision' = a template What-IF models (lunch_offer, also for a happy hour or breakfast deal; price_change, also for a discount), with the few numbers to ask the owner for (each with the question to ask and why it matters), demo values, a link to a visual demo report and the coaching steps; 'results' = the owner is back with test counts (go to whatif_log_result, the measured fields are listed); 'unsupported' = a decision What-IF cannot model yet (hiring, opening hours, moving, a new product): say so and use the by-hand method; 'not_a_decision' = something the owner does not choose (the weather, a competitor's move, the rent): answer briefly and offer a decision; 'unclear' = ask which decision they mean. Only 'decision' and 'results' carry a template. Pass the user's question in their own words and `lang` = the language they write in.",
       inputSchema: {
         question: questionArg,
         business: businessArg.optional(),
@@ -890,7 +1056,8 @@ export function createServer(siteUrl: string): McpServer {
             const near = templateIn(read.nearest, lang);
             lines.push(t(read.topic === "hiring" && read.nearest === "lunch_offer" ? "un_map_staff" : "un_map", { title: near.title, id: near.id }));
           }
-          lines.push(t("un_by_hand"));
+          // "Otherwise…" only reads right after a line that offered the template.
+          lines.push(t(read.nearest ? "un_by_hand" : "un_by_hand_only"));
           suggestions = templates.map((x) => x.example_question);
           data = { kind: "unsupported", template: null, topic: read.topic, nearest_template: read.nearest, explanation: t("un_head", { what }) };
         } else {
@@ -933,6 +1100,7 @@ export function createServer(siteUrl: string): McpServer {
       const coaching = [t("coach_1"), t("coach_2"), t("coach_3"), t("coach_4"), t("coach_5")];
       const lines: string[] = [];
       lines.push(t("start_template", { title: tpl.title, id: tpl.id, summary: tpl.summary }));
+      if (read.like) lines.push(t(`start_like_${read.like}` as McpKey));
       if (read.outside) lines.push(t("start_event_note", { what: t(`reason_${read.outside}` as McpKey) }));
       lines.push("");
       lines.push(t("start_numbers", { n: required.length }));
@@ -952,7 +1120,8 @@ export function createServer(siteUrl: string): McpServer {
           template: tpl.id,
           title: tpl.title,
           summary: tpl.summary,
-          fit: "good",
+          fit: read.fit,
+          ...(read.like ? { like: read.like, how_fields_are_used: t(`start_like_${read.like}` as McpKey) } : {}),
           example_question: tpl.exampleQuestion,
           ask_first: required.map(fieldView),
           optional_fields: optional.map(fieldView),
@@ -975,12 +1144,21 @@ export function createServer(siteUrl: string): McpServer {
     {
       title: "Check the owner's numbers and get the next question",
       description:
-        "Checks the numbers gathered so far for a What-IF decision and returns the single most important missing item as `next_question` (with the exact question to ask and why it matters), any problems to fix, keys it ignored (with 'did you mean'), and which guesses What-IF would fill in. Call it after each answer the owner gives, until it says ready.",
-      inputSchema: { template: templateArg, inputs: inputsArg, demo: demoArg.optional(), lang: langArg.optional() },
+        "Checks the numbers gathered so far for a What-IF decision and returns the single most important missing item as `next_question` (with the exact question to ask and why it matters), any problems to fix, keys it ignored (with 'did you mean'), and which guesses What-IF would fill in. Call it after each answer the owner gives, until it says ready. Pass `template` + `inputs`, or the `state` from the last What-IF result plus only the new `inputs`. When ready it returns a `state`: pass that to whatif_run_scenarios.",
+      inputSchema: {
+        state: stateInsteadArg.optional(),
+        template: templateArg.optional().describe("Which decision: 'lunch_offer' or 'price_change' (from whatif_start). Needed only without `state`."),
+        inputs: inputsArg.optional(),
+        business: businessArg.optional(),
+        question: questionArg.optional(),
+        demo: demoArg.optional(),
+        currency: currencyArg.optional(),
+        lang: langArg.optional(),
+      },
       annotations: ANNOTATIONS,
     },
-    safe((args: { template: TemplateId; inputs: RawInputs; demo?: boolean; lang?: string }) => {
-      const { ctx, t } = resolveCtx(args);
+    safe((args: CtxArgs) => {
+      const { ctx, prior, t } = resolveCtx(args, { allowState: true });
       const check = checkInputs(ctx.template, ctx.inputs, { demo: ctx.demo });
       const m = check.missing[0];
       const next = m
@@ -1000,12 +1178,12 @@ export function createServer(siteUrl: string): McpServer {
       if (guesses.length && check.ready) lines.push(`${t("ci_guesses")}\n${bullets(guesses.map((g) => `${g.label}: ${g.note}`), 8)}`);
       else if (guesses.length) lines.push(t("ci_guesses_later", { n: guesses.length }));
       if (check.ready) lines.push(t("ci_run_next"));
-      const share = check.ready ? shareOf(ctx) : null;
+      const share = check.ready ? shareOf(ctx, carried(prior, ctx)) : null;
       return textResult(
         t,
         ctx.lang,
         lines.join("\n"),
-        { ...check, next_question: next, ignored_inputs: ctx.ignored, ...(share ? { state: encodeState(share) } : {}) },
+        { ...check, next_question: next, ...ignoredView(ctx.ignored), ...(share ? { state: encodeState(share) } : {}) },
         { url: share ? urlFor(site, share) : null, hint: t(check.ready ? "hint_check_ready" : "hint_check_more") },
       );
     }),
@@ -1017,9 +1195,10 @@ export function createServer(siteUrl: string): McpServer {
     {
       title: "Run the What-IF scenarios",
       description:
-        "Computes the decision's scenarios with deterministic maths (cautious, expected, optimistic), the break-even point, the worst case, the biggest uncertainty and lessons, and returns a visual report link and a `state` token. Pass that `state` (or the report link) to whatif_what_changed, whatif_rehearsal_start, whatif_plan_test and whatif_log_result instead of re-sending template and inputs. Use demo: true (inputs may be empty) to show the made-up demo café. Never compute these numbers yourself; relay these.",
+        "Computes the decision's scenarios with deterministic maths (cautious, expected, optimistic), the break-even point, the worst case, the biggest uncertainty and lessons, and returns a visual report link and a `state` token. Pass `template` + `inputs`, or the `state` from whatif_check_inputs (or any later result). Pass the returned `state` (or the report link) to whatif_what_changed, whatif_rehearsal_start, whatif_plan_test and whatif_log_result instead of re-sending template and inputs. Use demo: true (inputs may be empty) to show the made-up demo café. Never compute these numbers yourself; relay these.",
       inputSchema: {
-        template: templateArg,
+        state: stateInsteadArg.optional(),
+        template: templateArg.optional().describe("Which decision: 'lunch_offer' or 'price_change' (from whatif_start). Needed only without `state`."),
         inputs: inputsArg.optional(),
         business: businessArg.optional(),
         question: questionArg.optional(),
@@ -1029,16 +1208,16 @@ export function createServer(siteUrl: string): McpServer {
       },
       annotations: ANNOTATIONS,
     },
-    safe((args: CtxArgs & { template: TemplateId }) => {
-      const { ctx, t } = resolveCtx(args);
+    safe((args: CtxArgs) => {
+      const { ctx, prior, t } = resolveCtx(args, { allowState: true });
       const a = analyzeCtx(ctx);
-      const share = shareOf(ctx);
+      const share = shareOf(ctx, carried(prior, ctx));
       const ign = ignoredLine(t, ctx.ignored, ctx.template);
       return textResult(
         t,
         ctx.lang,
         [analysisText(a, ctx.lang), ign, t("state_next")].filter(Boolean).join("\n"),
-        { analysis: a, ignored_inputs: ctx.ignored, state: encodeState(share) },
+        { analysis: a, ...ignoredView(ctx.ignored), state: encodeState(share) },
         { url: urlFor(site, share), hint: t("hint_run") },
       );
     }),
@@ -1086,7 +1265,7 @@ export function createServer(siteUrl: string): McpServer {
         t,
         afterCtx.lang,
         lines.join("\n"),
-        { change, analysis: after, ignored_inputs: afterCtx.ignored, state: encodeState(share) },
+        { change, analysis: after, ...ignoredView(afterCtx.ignored), state: encodeState(share) },
         { url: urlFor(site, share), hint: t("hint_changed") },
       );
     }),
@@ -1113,8 +1292,7 @@ export function createServer(siteUrl: string): McpServer {
           .max(300)
           .describe("Optional local event that applies from round 1, e.g. 'a new bakery opens next door' (or a Berlin event id from whatif_start).")
           .optional(),
-        customer_mix: z
-          .record(z.string().max(30), z.number())
+        customer_mix: record(z.number(), 30, "use a segment id such as office_worker")
           .describe("Optional weights per customer segment: office_worker, freelancer, student, parent, regular, tourist, retiree, trades.")
           .optional(),
         business: businessArg.optional(),
@@ -1144,7 +1322,7 @@ export function createServer(siteUrl: string): McpServer {
       const away = r.personas.length - briefs.length;
       const lines = [
         t("rs_ready", { people: r.personas.length, rounds: r.rounds.length, change: r.change }),
-        t("rs_who", { list: r.personas.map((p) => `${p.name} (${p.segmentLabel}, ${p.attitude})`).join("; ") }),
+        t("rs_who", { list: r.personas.map((p) => `${p.name} (${p.segmentLabel}, ${t(`att_${p.attitude}` as McpKey)})`).join("; ") }),
         t("rs_round1", { rounds: r.rounds.length, title: r.rounds[0]?.title ?? "", n: briefs.length }) + (away > 0 ? t("rs_away", { n: away }) : "") + ".",
         t("rs_imagined"),
       ];
@@ -1155,7 +1333,7 @@ export function createServer(siteUrl: string): McpServer {
         {
           rehearsal_id: r.id,
           change: r.change,
-          personas: personaList(r),
+          personas: personaList(r, t),
           round: r.currentRound,
           rounds: r.rounds.length,
           briefs: briefs.map(briefView),
@@ -1466,9 +1644,9 @@ export function createServer(siteUrl: string): McpServer {
         state: stateInsteadArg.optional(),
         template: templateArg.optional().describe("Needed only without `state`."),
         inputs: inputsArg.optional(),
-        observed: z
-          .record(z.string().max(60), z.union([z.number(), z.string().max(40)]))
-          .describe("What the test measured, e.g. {\"baseline_lunch_customers\": 38, \"test_lunch_customers\": 47, \"redemptions_per_day\": 15}."),
+        observed: record(z.union([z.number(), z.string().max(40, { error: "A measured value has at most 40 characters: send the count, e.g. 47." })]), MAX_KEY_CHARS, "use the measured keys whatif_log_result lists").describe(
+          "What the test measured, e.g. {\"baseline_lunch_customers\": 38, \"test_lunch_customers\": 47, \"redemptions_per_day\": 15}.",
+        ),
         business: businessArg.optional(),
         question: questionArg.optional(),
         demo: demoArg.optional(),
@@ -1487,7 +1665,7 @@ export function createServer(siteUrl: string): McpServer {
       for (const [rawKey, v] of Object.entries(args.observed ?? {})) {
         const k = rawKey.trim();
         if (!known.includes(k)) {
-          ignored.push({ key: k.slice(0, 60), did_you_mean: suggestKeys(k, known) });
+          ignored.push(ignoredKey(k, ignored.length, known, known));
           continue;
         }
         const n = typeof v === "number" ? v : parseOwnerNumber(String(v), ctx.lang).value;
@@ -1529,7 +1707,7 @@ export function createServer(siteUrl: string): McpServer {
         t,
         ctx.lang,
         lines.join("\n"),
-        { result, analysis_id: a.id, ignored_observed: ignored, state: encodeState(share) },
+        { result, analysis_id: a.id, ignored_observed: ignored.slice(0, MAX_IGNORED_SHOWN), ignored_count: ignored.length, state: encodeState(share) },
         { url: urlFor(site, share), hint: t("hint_log") },
       );
     }),
@@ -1548,7 +1726,7 @@ export function createServer(siteUrl: string): McpServer {
     },
     (args: { question?: string; lang?: string }): GetPromptResult => {
       const q = args.question?.trim();
-      let text = fillPlaceholders(WHAT_IF_PROMPT, site);
+      let text = fillPlaceholders(WHAT_IF_PROMPT, site, contact);
       const slot = /\{\{?\s*question\s*\}\}?/i;
       if (slot.test(text))
         text = q
@@ -1565,6 +1743,13 @@ export function createServer(siteUrl: string): McpServer {
       };
     },
   );
+
+  // Closed beta without a valid code: every tool call answers with the beta message, whatever
+  // its arguments (this replaces the SDK's tools/call handler; listing stays as it is).
+  if (opts.locked) {
+    const hadCode = opts.locked.hadCode;
+    server.server.setRequestHandler(CallToolRequestSchema, async () => betaToolResult(site, hadCode, contact));
+  }
 
   return server;
 }

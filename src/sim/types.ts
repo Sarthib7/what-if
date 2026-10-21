@@ -46,6 +46,13 @@ export interface Persona {
   traits?: string[];
   /** Ids of the places they go instead ("bakery", "doener", "canteen"…), in the order of `alternatives`. */
   altIds?: string[];
+  /**
+   * Which building blocks the story was made from, as [job, profession family, routine, quirk, memory]
+   * ("parent.job.3", "care", "parent.lunch.1", "parent.quirk.0", "memory.known.fan.2"); a flat list so a
+   * saved cast keeps it. Language-neutral; within one rehearsal no two people share a job, routine, quirk
+   * or memory, and at most two share a family (fewer for small runs). Absent on older personas.
+   */
+  textIds?: [job: string, family: string, routine: string, quirk: string, memory: string];
 }
 
 /** How the report should draw an action: away (not around), went elsewhere, engaged with the change, or neutral. */

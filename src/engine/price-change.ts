@@ -11,21 +11,25 @@
  *   delta_week(v)  = new(v) − old ;  delta_month = delta_week × 4.33 ;  delta over test = delta_week × test_days ÷ 7
  *   break-even v   = m_old ÷ m_new − 1  (the change in sales at which you make exactly what you make now; never below −100%)
  *
+ * Optional, when the owner gives the staff hours a week paid at or near the minimum wage (minimum_wage_hours_per_week):
+ *   wage rise a week    = hours × (€14.60 − €13.90) = hours × €0.70   (from 1 Jan 2027, the wage alone)
+ *   left after the rise = delta_week(likely) − wage rise a week
+ *
  * Every building block is rounded to the cent before it is used again, so each maths line checks out by hand.
  */
-import { VAT_DRINKS } from "./berlin.ts";
+import { EMPLOYER_SHARE_GUESS, MIN_WAGE_2026, MIN_WAGE_2027, MIN_WAGE_RISE_2027, VAT_DRINKS } from "./berlin.ts";
 import { EPS, eur, has, n, num, pc, price, r1, r2, round, seur, signedPct, signedPrice } from "./format.ts";
 import type { Values } from "./format.ts";
 import { continueSentence, fig, filledIn, fromSources, sourcesOf, valuesOf } from "./figures.ts";
 import { msg as t } from "./messages.ts";
 import { pluralItem } from "./plural.ts";
-import type { Analysis, Figure, ResolvedInput, Scenario, SensitivityPoint } from "./types.ts";
+import type { Analysis, Figure, ResolvedInput, Scenario, SensitivityPoint, WageRiseCheck } from "./types.ts";
 
 export const WEEKS_PER_MONTH = 4.33;
 
 type Body = Pick<
   Analysis,
-  "current" | "scenarios" | "breakEven" | "worstCase" | "biggestUncertainty" | "sensitivity" | "lessons" | "nextQuestions" | "warnings"
+  "current" | "scenarios" | "breakEven" | "worstCase" | "biggestUncertainty" | "sensitivity" | "lessons" | "nextQuestions" | "warnings" | "wageRise"
 >;
 
 const spc = (s: number): string => signedPct(s);
@@ -108,6 +112,54 @@ export function priceHeadline(v: Values) {
   };
 }
 
+/** "− €1,444.60 now" in a maths line, or "+ €68.20 you lose now" when today's price already loses money (never "− −"). */
+function vsOld(m: PriceModel): string {
+  return m.weekOld < 0 ? t("price.vsOldLoss", { old: price(-m.weekOld) }) : t("price.vsOld", { old: price(m.weekOld) });
+}
+
+/** "€14.60 − €13.90 = €0.70 more an hour. 60 staff hours a week × €0.70 = €42.00 a week …" */
+function wageCostMaths(hours: number, costWeek: number): string {
+  const wage = r2(hours * MIN_WAGE_RISE_2027);
+  return t("price.fig.wage.maths", { new: price(MIN_WAGE_2027), old: price(MIN_WAGE_2026), rise: price(MIN_WAGE_RISE_2027), hours: t("n.wageHours", { n: hours }), wage: price(wage), share: pc(EMPLOYER_SHARE_GUESS), cost: price(costWeek) });
+}
+
+/** "+€43.40 a week from the new price − €42.00 for the wage rise = +€1.40 a week …" */
+function wageLeftMaths(w: Pick<WageRiseCheck, "gainWeek" | "costWeek" | "leftWeek">, likely: number): string {
+  return t("price.fig.wageLeft.maths", { gain: signedPrice(w.gainWeek), cost: price(w.costWeek), left: signedPrice(w.leftWeek), likely: spc(likely) });
+}
+
+/**
+ * The minimum-wage rise on 1 Jan 2027 against what the new price brings a week at the likely guess.
+ * Undefined unless minimum_wage_hours_per_week is more than 0. Words and money follow the current language and currency.
+ */
+export function priceWageRise(v: Values): WageRiseCheck | undefined {
+  const hours = has(v, "minimum_wage_hours_per_week") ? n(v, "minimum_wage_hours_per_week") : 0;
+  if (!(hours > EPS)) return undefined;
+  const m = priceModel(v);
+  const likely = n(v, "volume_likely");
+  // The wage rise plus employer contributions on it (a guess): what the owner actually pays.
+  const wageWeek = r2(hours * MIN_WAGE_RISE_2027);
+  const costWeek = r2(wageWeek * (1 + EMPLOYER_SHARE_GUESS));
+  const gainWeek = m.deltaWeek(likely);
+  const leftWeek = r2(gainWeek - costWeek);
+  const covers = gainWeek > EPS && leftWeek >= -EPS;
+  const cents = Math.round(Math.abs(m.newPrice - m.oldPrice) * 100);
+  const p = {
+    likely: spc(likely),
+    what: t(m.rise ? "price.wage.rise" : "price.wage.cut", { cents: t("n.cents", { n: cents }) }),
+    gain: eur(gainWeek),
+    cost: eur(costWeek),
+    rise: price(MIN_WAGE_RISE_2027),
+    hours: t("n.wageHoursFor", { n: hours }),
+    left: eur(Math.abs(leftWeek)),
+    wage: eur(wageWeek),
+    share: pc(EMPLOYER_SHARE_GUESS),
+  };
+  const plain = gainWeek <= EPS ? t("price.wage.plain.none", p) : covers ? t("price.wage.plain.covers", p) : t("price.wage.plain.short", p);
+  const w = { gainWeek, costWeek, leftWeek };
+  return { hoursPerWeek: hours, risePerHour: MIN_WAGE_RISE_2027, wageWeek, employerShare: EMPLOYER_SHARE_GUESS, costWeek, gainWeek, leftWeek, covers, maths: `${wageCostMaths(hours, costWeek)} ${wageLeftMaths(w, likely)}`, plain };
+}
+
 /** "you can sell up to 60 fewer a week (9.7% of 620) …" / "you need 64 more sales a week …". */
 function beWords(m: PriceModel): string {
   if (m.beV === null || m.beUnits === null) return t("price.be.words.none");
@@ -140,6 +192,14 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
     fig("left_month_now", t("price.fig.leftMonth.label"), r2(m.weekOld * WEEKS_PER_MONTH), "EUR/month", fromSources(src, ["units_per_week", "current_price", "unit_cost", "vat_rate"]),
       t("price.fig.leftMonth.maths", { week: price(m.weekOld), w: num(WEEKS_PER_MONTH, 2), month: price(r2(m.weekOld * WEEKS_PER_MONTH)) })),
   ];
+  // The 2027 minimum-wage rise, when the owner said how many staff hours a week are paid at or near it.
+  const wageRise = priceWageRise(v);
+  if (wageRise)
+    current.push(
+      fig("min_wage_rise_week", t("price.fig.wage.label"), wageRise.costWeek, "EUR/week", fromSources(src, ["minimum_wage_hours_per_week"]), wageCostMaths(wageRise.hoursPerWeek, wageRise.costWeek)),
+      fig("left_after_wage_rise_week", t("price.fig.wageLeft.label"), wageRise.leftWeek, "EUR/week",
+        fromSources(src, ["minimum_wage_hours_per_week", "volume_likely", "units_per_week", "current_price", "new_price", "unit_cost", "vat_rate"]), wageLeftMaths(wageRise, likely)),
+    );
 
   // ---- Scenarios ---------------------------------------------------------
   const scenario = (id: Scenario["id"], guessName: string, key: string, x: number): Scenario => {
@@ -149,7 +209,7 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
       fig("units_week", t("price.scn.units.label"), u, "units/week", "calculation",
         t("price.scn.units.maths", { units: num(m.units), op: x < 0 ? "−" : "+", p: pc(Math.abs(x)), u: num(u) })),
       fig("left_week", t("price.scn.leftWeek.label"), wn, "EUR/week", "calculation", t("price.scn.leftWeek.maths", { u: num(u), m: price(m.mNew), wn: price(wn) })),
-      fig("delta_week", t("price.scn.deltaWeek.label"), dw, "EUR/week", "calculation", t("price.scn.deltaWeek.maths", { wn: price(wn), old: price(m.weekOld), dw: signedPrice(dw) })),
+      fig("delta_week", t("price.scn.deltaWeek.label"), dw, "EUR/week", "calculation", t("price.scn.deltaWeek.maths", { wn: price(wn), vsOld: vsOld(m), dw: signedPrice(dw) })),
       fig("delta_test", t("price.scn.deltaTest.label", { days: dayN(days) }), dt, "EUR", "calculation", t("price.scn.deltaTest.maths", { dw: signedPrice(dw), days: num(days), dt: signedPrice(dt) })),
       fig("delta_month", t("price.scn.deltaMonth.label"), dm, "EUR/month", "calculation", t("price.scn.deltaMonth.maths", { dw: signedPrice(dw), w: num(WEEKS_PER_MONTH, 2), dm: signedPrice(dm) })),
     ];
@@ -193,7 +253,7 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
   const wl = m.deltaTest(low);
   const worstCase: Body["worstCase"] = {
     value: wl < 0 ? wl : 0,
-    maths: t("price.worst.maths", { u: num(m.unitsAt(low)), m: price(m.mNew), wn: price(m.weekNew(low)), old: price(m.weekOld), dw: signedPrice(m.deltaWeek(low)), days: num(days), wl: signedPrice(wl) }),
+    maths: t("price.worst.maths", { u: num(m.unitsAt(low)), m: price(m.mNew), wn: price(m.weekNew(low)), vsOld: vsOld(m), dw: signedPrice(m.deltaWeek(low)), days: num(days), wl: signedPrice(wl) }),
     plain:
       wl < 0
         ? t("price.worst.plain", { how: low < 0 ? t("price.worst.fell", { p: pc(-low) }) : t("price.worst.changed", { p: spc(low) }), days: num(days), amt: eur(-wl) })
@@ -250,6 +310,7 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
 
   // ---- Lessons -----------------------------------------------------------
   const lessons: string[] = [];
+  if (wageRise) lessons.push(t("price.wage.lesson", { plain: wageRise.plain }));
   const cents = Math.round(Math.abs(change) * 100);
   if (m.reachable && m.mOld > 0) {
     const rel = m.mNew / m.mOld - 1;
@@ -263,14 +324,14 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
     if (m.beV <= 0)
       lessons.push(
         likely >= m.beV
-          ? t("price.lesson.inside", { n: num(m.beUnits), p: pc(-m.beV), likely: likely === 0 ? t("price.noChange") : t(likely < 0 ? "price.likelyFewer" : "price.likelyMore", { x: spc(likely), n: num(Math.round(m.units * Math.abs(likely))) }) })
-          : t("price.lesson.outside", { n: num(m.beUnits), p: pc(-m.beV), likely: spc(likely) }),
+          ? t("price.lesson.inside", { n: m.beUnits, p: pc(-m.beV), likely: likely === 0 ? t("price.noChange") : t(likely < 0 ? "price.likelyFewer" : "price.likelyMore", { x: spc(likely), n: num(Math.round(m.units * Math.abs(likely))) }) })
+          : t("price.lesson.outside", { n: m.beUnits, p: pc(-m.beV), likely: spc(likely) }),
       );
     else
       lessons.push(
         likely >= m.beV
-          ? t("price.lesson.cutReach", { n: num(m.beUnits), be: spc(m.beV), likely: spc(likely) })
-          : t("price.lesson.cutMiss", { n: num(m.beUnits), be: spc(m.beV), likely: spc(likely) }),
+          ? t("price.lesson.cutReach", { n: m.beUnits, be: spc(m.beV), likely: spc(likely) })
+          : t("price.lesson.cutMiss", { n: m.beUnits, be: spc(m.beV), likely: spc(likely) }),
       );
   }
   if (wl < 0) lessons.push(t("price.lesson.cheap", { low: spc(low), days: num(days), amt: eur(-wl) }));
@@ -298,7 +359,7 @@ export function analyzePrice(inputs: ResolvedInput[], demo: boolean): Body {
   if (m.oldPrice > 0 && Math.abs(change) / m.oldPrice > 0.2) warnings.push(t("price.warn.bigStep", { p: pc(Math.abs(change) / m.oldPrice) }));
   if (m.mOld <= 0) warnings.push(t("price.warn.oldLoses", { item, old: price(m.oldPrice), div, cost: price(m.unitCost), m: price(m.mOld) }));
 
-  return { current, scenarios, breakEven, worstCase, biggestUncertainty, sensitivity, lessons, nextQuestions, warnings };
+  return { current, scenarios, breakEven, worstCase, biggestUncertainty, sensitivity, lessons, nextQuestions, warnings, ...(wageRise ? { wageRise } : {}) };
 }
 
 /** "Why this number": the calculation for one slider position, in words. */
@@ -318,9 +379,11 @@ export function explainPriceChange(key: string, b: Values, a: Values, label = ke
   const effect = (): string => {
     const parts: string[] = [];
     if (mb.beV !== null && ma.beV !== null && mb.beUnits !== null && ma.beUnits !== null) {
-      if (Math.abs(ma.beV - mb.beV) > 1e-6) {
-        if (ma.beV <= 0 && mb.beV <= 0)
-          parts.push(t("price.chg.beLose", { pa: pc(-ma.beV), na: num(ma.beUnits), pb: pc(-mb.beV), nb: num(mb.beUnits) }));
+      // Compare what the owner reads: a move too small to show ("9.7% (60) instead of 9.7% (60)") is "stays".
+      const lose = ma.beV <= 0 && mb.beV <= 0;
+      const same = lose ? pc(-ma.beV) === pc(-mb.beV) && ma.beUnits === mb.beUnits : spc(ma.beV) === spc(mb.beV);
+      if (!same) {
+        if (lose) parts.push(t("price.chg.beLose", { pa: pc(-ma.beV), na: num(ma.beUnits), pb: pc(-mb.beV), nb: num(mb.beUnits) }));
         else parts.push(t("price.chg.beMove", { from: spc(mb.beV), to: spc(ma.beV) }));
       } else parts.push(t("price.chg.beSame", { be: spc(mb.beV) }));
     } else if (ma.beV === null) parts.push(t("price.chg.beGone"));
@@ -355,6 +418,11 @@ export function explainPriceChange(key: string, b: Values, a: Values, label = ke
       return { text: t("price.chg.days", { from: t("n.days", { n: from }), to: t("n.days", { n: to }), eb: seur(hb.netTestExpected), ea: seur(ha.netTestExpected), wb: seur(hb.worstCase), wa: seur(ha.worstCase) }), mentionsWorst: true };
     case "item":
       return { text: t("price.chg.item", { from: String(b.item ?? ""), to: String(a.item ?? "") }), mentionsWorst: false };
+    case "minimum_wage_hours_per_week": {
+      const wa = priceWageRise(a);
+      const text = t("price.chg.wageHours", { from: t("n.wageHours", { n: from }), to: t("n.wageHours", { n: to }), cb: eur(r2(from * MIN_WAGE_RISE_2027)), ca: eur(r2(to * MIN_WAGE_RISE_2027)) });
+      return { text: wa ? `${text} ${wa.plain}` : text, mentionsWorst: false };
+    }
     case "kiez":
       return { text: t("chg.kiez", { from: String(b[key] ?? "—"), to: String(a[key] ?? "—") }), mentionsWorst: false };
     default:

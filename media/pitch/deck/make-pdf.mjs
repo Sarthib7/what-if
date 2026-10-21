@@ -1,0 +1,14 @@
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+const require = createRequire(import.meta.url);
+const { chromium } = require("../../../node_modules/playwright");
+const here = dirname(fileURLToPath(import.meta.url));
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+await page.goto(pathToFileURL(join(here, "deck.html")).href, { waitUntil: "load" });
+await page.evaluate(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))));
+await page.pdf({ path: join(here, "..", "what-if-pitch.pdf"), width: "1920px", height: "1080px", printBackground: true, preferCSSPageSize: true });
+await page.screenshot({ path: join(here, "check.png"), fullPage: true });
+await browser.close();
+console.log("ok");

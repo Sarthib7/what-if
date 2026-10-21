@@ -50,6 +50,45 @@ export const KIEZ_MIX: Record<SimKiez, Profile> = {
   Weißensee: { parent: 1.6, retiree: 1.4, freelancer: 1, trades: 1.2, tourist: 0.3 },
 };
 
+/**
+ * Everyday flavour of a Kiez for the imagined customers: which kinds of places they go instead, an extra
+ * way they hear about things, a few Kiez jobs, and one scene detail per round (src/sim/messages.ts
+ * KIEZ_FLAVOUR_TEXT). Generic types only ("the Konditorei on the corner"), never real businesses. Like the
+ * mix, a labelled rough guess.
+ *   centre  offices, lobbies, canteens and visitors (Mitte)
+ *   inner   Späti, Döner, Turkish bakery, falafel, Vietnamese (Neukölln, Kreuzberg, Friedrichshain, Wedding, Moabit)
+ *   family  Kita runs, organic bakery, prams (Prenzlauer Berg, Pankow, Friedenau, Weißensee)
+ *   west    retirees, Konditorei, the Italian place, the weekly market (Charlottenburg, Schöneberg, Steglitz)
+ *   outer   S-Bahn commuters, the butcher's hot lunch, the Asia snack bar (Lichtenberg, Treptow, Tempelhof, Köpenick, Spandau)
+ */
+export type KiezFlavour = "centre" | "inner" | "family" | "west" | "outer";
+
+export const KIEZ_FLAVOUR: Record<SimKiez, KiezFlavour> = {
+  Mitte: "centre",
+  Neukölln: "inner",
+  Kreuzberg: "inner",
+  Friedrichshain: "inner",
+  Wedding: "inner",
+  Moabit: "inner",
+  "Prenzlauer Berg": "family",
+  Pankow: "family",
+  Friedenau: "family",
+  Weißensee: "family",
+  Charlottenburg: "west",
+  Schöneberg: "west",
+  Steglitz: "west",
+  Lichtenberg: "outer",
+  Treptow: "outer",
+  Tempelhof: "outer",
+  Köpenick: "outer",
+  Spandau: "outer",
+};
+
+/** The flavour of a Kiez (undefined without a Kiez: a plain neighbourhood café). */
+export function kiezFlavour(kiez: SimKiez | string | undefined): KiezFlavour | undefined {
+  return kiez && kiez in KIEZ_FLAVOUR ? KIEZ_FLAVOUR[kiez as SimKiez] : undefined;
+}
+
 /** Base mix per template: roughly who comes into a neighbourhood café at lunch, or buys a coffee. */
 export const BASE_MIX: Record<TemplateId, Record<SegmentId, number>> = {
   lunch_offer: { office_worker: 3, regular: 2, freelancer: 2, student: 1.5, trades: 1.5, parent: 1.2, retiree: 1, tourist: 0.8 },
@@ -235,16 +274,39 @@ export function berlinEventText(id: string, lang: Lang): string | undefined {
   return EVENT_BY_ID.get(id)?.text[lang];
 }
 
-/** What a Berlin event does to the rule-based stand-in (free-text events are read by keywords instead). */
-export const EVENT_EFFECTS: Record<BerlinEventId, readonly ("rain" | "heat" | "competitor" | "buzz" | "busy" | "quiet" | "works" | "wfh" | "holiday")[]> = {
-  bvg_strike: ["quiet", "wfh"],
+export type EventEffect = "rain" | "heat" | "competitor" | "buzz" | "busy" | "quiet" | "works" | "wfh" | "holiday" | "festival" | "xmas";
+
+/**
+ * What a Berlin event does to the rule-based stand-in (free-text events are read by keywords instead).
+ * wfh: commuters stay home, people who live in the Kiez are around more. works: the board is half hidden
+ * and prams and take-away customers avoid the pavement. busy: more people on the street (noticing, visitors,
+ * queues); festival and xmas add their own food stalls.
+ */
+export const EVENT_EFFECTS: Record<BerlinEventId, readonly EventEffect[]> = {
+  bvg_strike: ["wfh"],
   rain_week: ["rain"],
   heatwave: ["heat"],
-  baustelle: ["quiet", "works"],
+  baustelle: ["works"],
   school_holidays: ["quiet", "holiday"],
   rival_lunch: ["competitor"],
-  street_festival: ["busy"],
-  christmas_market: ["busy"],
+  street_festival: ["busy", "festival"],
+  christmas_market: ["busy", "xmas"],
+};
+
+/**
+ * How many rounds a Berlin event lasts, from the round it comes before: a day or a weekend is one round,
+ * a week two (rounds 1-2 are the first week, 3-4 the second), the holidays, the new café and the
+ * Christmas market stay. Free-text events stay too.
+ */
+export const EVENT_ROUNDS: Record<BerlinEventId, number> = {
+  bvg_strike: 1,
+  rain_week: 2,
+  heatwave: 2,
+  baustelle: 2,
+  school_holidays: 99,
+  rival_lunch: 99,
+  street_festival: 1,
+  christmas_market: 99,
 };
 
 // ---------------------------------------------------------------- demo
@@ -254,8 +316,13 @@ export const EVENT_EFFECTS: Record<BerlinEventId, readonly ("rain" | "heat" | "c
  * run tells a story in every language (someone notices, tries, comes back and tells a
  * friend; someone stays sceptical). Languages share the seed: the same seed gives the
  * same people and the same story in de, en, es and pl.
+ *   lunch 8 (Neukölln, the new café before round 3): Fatima and Leyla notice the board; Noor tries
+ *   it; Thanh tries it and tells his neighbours, and Fatima, Sofia and Leyla hear it from him; Thanh,
+ *   Murat and Noor keep coming; sceptical Leyla tries the new café two doors down.
+ *   price 17: Lukas and Felix grumble out loud; Amara and Hanna hear it and buy less; Hoa and Felix
+ *   recommend the café anyway; Rafael and Lukas keep buying.
  */
-export const DEMO_SEEDS: Record<TemplateId, number> = { lunch_offer: 36, price_change: 66 };
+export const DEMO_SEEDS: Record<TemplateId, number> = { lunch_offer: 8, price_change: 17 };
 
 /** The demo's owner event and the round it is injected before (lunch offer only). */
 export const DEMO_EVENT_ID: BerlinEventId = "rival_lunch";

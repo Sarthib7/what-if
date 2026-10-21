@@ -94,6 +94,16 @@
             </ol>
           </section>
         </div>
+        <section class="s-starter" aria-labelledby="starter-h">
+          <h3 id="starter-h" data-i18n="cn.starter_h">ChatGPT and other apps without skills: start with this message</h3>
+          <p data-i18n="cn.starter_p">Your app does not know the What-IF method yet. Paste this message into a new chat with What-IF switched on, and write your question where it says “…”.</p>
+          <p class="s-starter-acts"><button type="button" class="s-btn s-btn--sm" data-copy="#starter-prompt"><span data-copy-label data-i18n="cn.starter_copy">Copy the starter message</span></button></p>
+          <details class="s-more s-starter-text">
+            <summary data-i18n="cn.starter_show">Read the message first</summary>
+            <pre class="s-starter-pre" id="starter-prompt" data-starter-prompt>I run a café in Berlin and want to rehearse a decision with What-IF before I spend money. My question: what if …?</pre>
+          </details>
+        </section>
+        <p class="s-signin" data-i18n="cn.signin">If your app asks you to sign in, your link is missing the invite code: copy your personal link above again and paste it in place of the old one.</p>
       </article>
 
       <article class="s-card" aria-labelledby="then-h">
@@ -151,12 +161,20 @@
             <h3 data-i18n="k.claude_t">Claude.ai</h3>
             <ol class="s-steps"><li data-i18n-html="k.claude1_html">Open <b>Settings → Capabilities → Skills</b>.</li><li data-i18n-html="k.claude2_html">Choose <b>Upload skill</b> and pick <code>what-if-skill.zip</code>.</li><li data-i18n="k.claude3">Ask “What if…?” in any chat.</li></ol>
           </article>
-          <article class="s-app">
-            <h3 data-i18n="k.cc_t">Claude Code</h3>
-            <p data-i18n-html="k.cc_html">Unzip it into your skills folder, so you get <code>~/.claude/skills/what-if/SKILL.md</code>:</p>
-            <div class="s-code"><pre><code id="cmd-skill">unzip what-if-skill.zip -d ~/.claude/skills/</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill"><span data-copy-label data-i18n="c.copy">Copy</span></button></div>
-          </article>
         </div>
+        <details class="s-dev">
+          <summary data-i18n="k.dev_summary">For developers: the skill in Claude Code</summary>
+          <div class="s-dev-in">
+            <section class="s-app">
+              <h3 data-i18n="k.cc_t">Claude Code</h3>
+              <p data-i18n-html="k.cc_html">Unzip it into your skills folder, so you get <code>~/.claude/skills/what-if/SKILL.md</code>:</p>
+              <p class="s-code-label" data-i18n="k.cc_unix">macOS and Linux (Terminal):</p>
+              <div class="s-code"><pre><code id="cmd-skill">unzip what-if-skill.zip -d ~/.claude/skills/</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill"><span data-copy-label data-i18n="c.copy">Copy</span></button></div>
+              <p class="s-code-label" data-i18n="k.cc_win">Windows (PowerShell):</p>
+              <div class="s-code"><pre><code id="cmd-skill-win">Expand-Archive what-if-skill.zip -DestinationPath "$HOME\.claude\skills" -Force</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill-win"><span data-copy-label data-i18n="c.copy">Copy</span></button></div>
+            </section>
+          </div>
+        </details>
       </div>
     </div>
   </section>

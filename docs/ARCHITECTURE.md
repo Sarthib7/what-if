@@ -4,7 +4,7 @@ This file is the contract the parallel build works against. Module owners implem
 
 ## What we ship (hackathon)
 
-1. **A public remote MCP server** at `https://<site>/api/mcp` (Streamable HTTP, stateless, no auth for now). Anyone can paste the URL into Claude (custom connector), ChatGPT (developer-mode connector), Cursor, VS Code, Claude Code (`claude mcp add --transport http what-if <url>`), or any MCP client.
+1. **A public remote MCP server** at `https://<site>/api/mcp` (Streamable HTTP, stateless; closed beta: an invite code via `?code=`, see "Closed beta" below). Anyone can paste the URL into Claude (custom connector), ChatGPT (developer-mode connector), Cursor, VS Code, Claude Code (`claude mcp add --transport http what-if <url>`), or any MCP client.
 2. **A skill** (`skill/what-if/`, downloadable as `what-if-skill.zip` from the site) that triggers on "what if…" questions, runs the coaching workflow, links to the MCP, and orchestrates the customer rehearsal (subagents where the host has them).
 3. **A website on Vercel** (`site/`): landing page that teaches the method visually, "add to your AI" instructions with the MCP URL, the skill download, a live demo, and the **report viewer** that draws every analysis as an interactive, visual lesson.
 
@@ -27,8 +27,11 @@ No plugin packaging for now (no time to publish one). The skill folder is plugin
 src/engine/            templates, inputs, analysis, experiment, compare (pure TS, browser-safe)
 src/sim/               personas, rounds, rehearsal state machine, validation, summary (pure TS, browser-safe)
 src/report/            renderReport(): HTML string (pure TS, browser-safe) + client behaviour for sliders
-src/state.ts           ShareState codec (fflate, browser-safe)
-src/mcp/tools.ts       tool definitions + handlers (transport-agnostic), server instructions
+src/state.ts           ShareState codec (fflate, browser-safe); treats tokens as untrusted (STATE_LIMITS)
+src/i18n/              languages (index.ts: Lang, makeT, plural) and terms.ts: one word per idea per language, used by every surface
+src/mcp/tools.ts       tool definitions + handlers (transport-agnostic)
+src/mcp/instructions.ts server instructions and the what-if prompt (all model-facing guidance)
+src/mcp/messages.ts    the server's own sentences in de/en/es/pl
 src/mcp/http.ts        Vercel Node handler: stateless Streamable HTTP at /api/mcp (+ CORS, GET info)
 src/mcp/stdio.ts       same tools over stdio for local use
 site/                  static pages (index.html, connect.html, r.html …) + site/src/*.ts client entries
@@ -82,6 +85,9 @@ export interface ShareState { v: 1; template: TemplateId; inputs: RawInputs; bus
 export function encodeState(s: ShareState): string;   // deflate-raw + base64url
 export function decodeState(token: string): ShareState; // throws a plain error on a bad token
 export function reportUrl(siteUrl: string, s: ShareState): string; // `${siteUrl}/r#${encodeState(s)}`
+// v0.2 adds: lang?, madeBy? ("coach" | "try" | "demo"), rehearsal.customerMix?, reactions[].heardFrom?.
+// decodeState treats tokens as untrusted: STATE_LIMITS caps the token (60,000 chars), the unpacked JSON
+// (200 KB) and every field (inputs, business 200, question 500, reactions, events, interviews).
 ```
 
 A rehearsal is rebuilt from a `ShareState` by `startRehearsal(analysis, { seed, personas, rounds })`, then replaying `events` and `reactions` in order (`src/sim/index.ts` exports `rebuildRehearsal(a: Analysis, s: NonNullable<ShareState["rehearsal"]>): Rehearsal` for this).
@@ -98,19 +104,21 @@ export function mountReport(root: HTMLElement, input: Parameters<typeof renderRe
 
 All tools are stateless. Every result has a short plain-language text block first (for the model to relay), then JSON in `structuredContent`, and a `report_url` the coach should share.
 
+Every tool takes an optional `lang` (`de` default; "German", "Deutsch", "pl-PL" … are understood). Tools after the first accept **either** `template` + `inputs` **or** the `state` token a previous result returned. Unknown input keys come back in `ignored_inputs` with a "did you mean". `report_url` never contains the invite code.
+
 | Tool | Input | Returns |
 |---|---|---|
-| `whatif_start` | `question` (the user's "what if…" sentence) | which template fits, the fields to ask for (with `ask` and `why`), the demo values, a demo `report_url`, and coaching instructions. **Its description tells the model to call it whenever the user writes "what if…" about a business decision.** |
-| `whatif_check_inputs` | `template`, `inputs`, `demo?` | `InputCheck` + `next_question` (the single most important missing item) |
-| `whatif_run_scenarios` | `template`, `inputs`, `business?`, `question?`, `demo?`, `currency?` | scenarios, break-even, worst case, biggest uncertainty, lessons, `report_url` |
-| `whatif_what_changed` | `template`, `before` (inputs), `after` (inputs) | `ChangeExplanation` + new `report_url` |
-| `whatif_rehearsal_start` | `template`, `inputs`, `personas?`, `rounds?`, `seed?`, `event?`, `business?`, `question?` | personas, round-1 briefs (one ready prompt per imagined customer), `state`, `report_url`, how to run them (parallel subagents if available) |
-| `whatif_rehearsal_submit` | `state`, `reactions[]`, `method?` | accepted, errors (retry those personas), next briefs or done, new `state`, `report_url` |
-| `whatif_rehearsal_event` | `state`, `event` | new `state`; the event applies before the next round |
-| `whatif_rehearsal_autoplay` | `state` | plays remaining rounds with the rule-based stand-in (no model), summary, `state`, `report_url` |
-| `whatif_rehearsal_interview` | `state`, `question`, `persona_ids?`, `answers?` | without answers: briefs; with answers: recorded interview, new `state` |
-| `whatif_plan_test` | `template`, `inputs` | `TestPlan` + `report_url` |
-| `whatif_log_result` | `template`, `inputs`, `observed` | `TestResult` + `report_url` |
+| `whatif_start` | `question`, `business?`, `template?`, `lang?` | `kind`: `decision` (template, fields with `ask`/`why`, demo values, demo `report_url`, Kieze, Berlin events), `unsupported` (hiring, opening hours … → honest "not yet"), `not_a_decision` (weather, a competitor alone, rent …), `results` (back with test results → `whatif_log_result`) or `unclear`; `template: null` for every non-decision. **Its description tells the model to call it first whenever the user writes "what if…" about a business decision.** |
+| `whatif_check_inputs` | `state` or `template` + `inputs`, `demo?`, `business?`, `question?`, `currency?`, `lang?` | `InputCheck` + `next_question` (the single most important missing item); `state` once ready |
+| `whatif_run_scenarios` | `state` or `template` + `inputs` (or `demo: true`), `business?`, `question?`, `currency?`, `lang?` | scenarios, both break-evens, worst case, biggest uncertainty, lessons, `state`, `report_url` |
+| `whatif_what_changed` | `state` or `template` + `before`, and `after` (only the changed fields are enough) | `ChangeExplanation` + new `state` and `report_url` |
+| `whatif_rehearsal_start` | `state` or `template` + `inputs`, `personas?`, `rounds?`, `seed?`, `event?` (text or a Berlin event id), `customer_mix?`, `business?`, `question?`, `demo?`, `currency?` | personas, round-1 briefs (one ready prompt per imagined customer), `state`, `report_url`, host run instructions (parallel subagents where available) |
+| `whatif_rehearsal_submit` | `state`, `reactions[]`, `method?` | accepted, errors and `retry_briefs` (only the failed personas), next briefs or done with the summary, new `state`, `report_url` |
+| `whatif_rehearsal_event` | `state`, `event` (text or id) | new `state` and refreshed briefs that include the event |
+| `whatif_rehearsal_autoplay` | `state` | plays the remaining rounds with the rule-based stand-in (no model), summary, `state`, `report_url` |
+| `whatif_rehearsal_interview` | `state`, `question`, `persona_ids?`, `answers?` | without answers: briefs; with `{personaId, answer}` answers: the recorded interview, new `state` |
+| `whatif_plan_test` | `state` or `template` + `inputs` | `TestPlan` (one keep / tweak / stop rule shared with the verdict) + `report_url` |
+| `whatif_log_result` | `state` or `template` + `inputs`, `observed` | `TestResult` + `report_url` |
 
 The server also exposes MCP `instructions` (how to coach, the "what if" trigger, share the report link at every step) and a prompt `what-if` for clients that list prompts.
 
@@ -138,7 +146,7 @@ What-IF now targets **independent cafés in Berlin**, as a **closed beta with in
 
 ### Berlin specifics (engine + sim)
 
-- **VAT (Mehrwertsteuer)**: prices the owner enters are what customers pay (gross). Since **1 Jan 2026** food in restaurants and cafés is taxed at **7%** (eat-in and take-away); **drinks stay at 19%** (milk drinks with ≥ 75% milk: 7%). Source: Steueränderungsgesetz 2025 / §12 (2) Nr. 15 UStG; BMF letter of 22 Dec 2025 accepts a flat 30% drinks share for combined offers like buffets. The engine works on net prices: `net = gross / (1 + vat)`.
+- **VAT (Mehrwertsteuer)**: prices the owner enters are what customers pay (gross). Since **1 Jan 2026** food in restaurants and cafés is taxed at **7%** (eat-in and take-away); **drinks stay at 19%**, every drink served in the café included (only take-away milk drinks with ≥ 75% milk are 7%, an older rule in Anlage 2 UStG, unchanged in 2026). Source: Steueränderungsgesetz 2025 / §12 (2) Nr. 15 UStG; BMF letter of 22 Dec 2025 accepts a flat 30% drinks share for combined offers like buffets. The engine works on net prices: `net = gross / (1 + vat)`.
   - Lunch offer: new optional field `vat_rate` ("VAT in your lunch prices, blended"), fallback **10.6%** (70% food at 7% + 30% drinks at 19%), tagged as a guess with that explanation and "ask your Steuerberater for your real split". Used for both the deal and today's lunch spend. `variable_cost_share` stays a share of the price customers pay.
   - Price change: new optional field `vat_rate`, fallback **19%** (coffee drinks), with the 7% food / milk-drink note.
 - **Staff cost**: `extra_staff_cost_per_day` is replaced by `extra_staff_hours_per_day` (choice, default 0) × `staff_hourly_cost` (fact, fallback **€13.90** = statutory minimum wage since 1 Jan 2026, €14.60 from 1 Jan 2027, tagged as a guess with the note "your real cost per hour is higher once employer contributions are added; check your payroll"). Demo: 1 hour at €18.00.
@@ -149,11 +157,16 @@ What-IF now targets **independent cafés in Berlin**, as a **closed beta with in
 ### Closed beta: invite codes
 
 - `WHATIF_BETA_CODES` (Vercel env, comma-separated, each ≥ 6 chars). **Unset = open** (local dev, tests).
-- MCP: when set, every POST to `/api/mcp` needs a valid code via `?code=XXXX` in the URL (what owners paste into their AI app), or header `x-whatif-code`, or `Authorization: Bearer XXXX`. Otherwise HTTP 401 with a JSON-RPC error whose message, in German and English, says What-IF is a closed beta for Berlin cafés and how to ask for a code (`WHATIF_BETA_CONTACT`, an email or URL; omitted if unset). Constant-time comparison; codes never logged or echoed.
+- MCP: when set, every POST to `/api/mcp` needs a valid code via `?code=XXXX` in the URL (what owners paste into their AI app), or header `x-whatif-code`, or `Authorization: Bearer XXXX`. Without a valid code, `initialize`, `tools/list` and `prompts/list` still answer (the instructions end with a CLOSED BETA note), and every `tools/call` answers HTTP 200 with `isError: true` and the message, German first then English: What-IF is a closed beta for Berlin cafés, the connector link must end in `?code=…`, and how to ask for a code (`WHATIF_BETA_CONTACT`; "ask the person who invited you" if unset); `structuredContent.beta` = `{ required, valid: false, reason, connector_url, how_to_connect, contact? }`. OAuth discovery paths (`/.well-known/oauth-*`, `/register`, `/authorize`, `/token`) answer 404 JSON with the same message. **Never 401 and never `WWW-Authenticate`**: real MCP clients treat a 401 as a sign-in prompt and the owner would never see the message. Constant-time comparison; codes never logged or echoed.
 - `GET /api/mcp?code=XXXX` (browser / site) returns the info JSON plus `beta: { required, valid }`, so the site can check a code without storing anything.
 - Site: a "Closed beta · Berlin" badge; the connect page and the new **"Try with your numbers"** page (`/try`) ask for the invite code (remembered in localStorage), check it via the GET above, and build the personal connector URL `https://<site>/api/mcp?code=XXXX`. The report viewer `/r#…` stays open (links are shared and carry their own data).
 - `WHATIF_BETA_CONTACT` is templated into the site and skill like `{{SITE_URL}}` (as `{{BETA_CONTACT}}`; hide the request button when empty).
 
 ### "Try with your numbers" (`/try`, site)
 
-Selin (persona judge) could not use her own numbers without an AI app. `/try` is a one-question-per-screen wizard in the four languages: Kiez → the 6 required facts → the plan → the likely guess (with "why it matters" on every screen, demo values as placeholders, rough numbers welcome) → builds a `ShareState` (lang, inputs, demo:false) → `/r#token`. It needs a valid invite code when the beta is on. No server storage.
+Selin (persona judge) could not use her own numbers without an AI app. `/try` is a one-question-per-screen wizard in the four languages: invite code (when the beta is on) → what to try (weekday lunch deal, price change, or "I already ran my test" to log a result) → Kiez → the required facts (including what a lunch guest spends today) → "What does the test cost you?" (setup, staff hours at an hourly cost defaulting to the dated minimum wage, promotion, spare cash) → the likely guess → a review screen listing every number asked and every value What-IF assumed, each editable → builds a `ShareState` (lang, inputs, demo:false, madeBy "try") → `/r#token`. The report offers a rule-based rehearsal (no AI) and a "log your result" step that writes `observed` into the same link. No server storage.
+
+### Demos and saved casts (v0.3)
+
+- Four demo links need no code: `/r#demo` (lunch deal, rule-based rehearsal), `/r#demo-price` (flat white +20 cents against the 2027 minimum wage, via the optional price-change input `minimum_wage_hours_per_week`), `/r#demo-result` (after the test, with made-up counts) and `/r#demo-ai` (a rehearsal played by Claude subagents, saved in `src/report/demo-ai.json`).
+- `ShareState.rehearsal.cast` and `.active` hold the exact imagined customers whenever an AI played them (method `subagent` or `in-context`); `rebuildRehearsal` uses them verbatim, so saved AI links survive changes to persona generation.

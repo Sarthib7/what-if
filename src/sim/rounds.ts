@@ -13,8 +13,8 @@
 import type { Analysis, TemplateId } from "../engine/types.ts";
 import { LOCALE, type Lang } from "../i18n/index.ts";
 import type { ActionKind, FeedItem, RoundAction, RoundSpec } from "./types.ts";
-import { normaliseKiez, type SimKiez } from "./berlin.ts";
-import { ACTION_LABELS, CHANGE_TEXT, LUNCH_PROMO, LUNCH_ROUNDS, PRICE_ROUNDS, centsWord, fillText, testLengthAdjective, testPhrase, type Tx } from "./messages.ts";
+import { kiezFlavour, normaliseKiez, type SimKiez } from "./berlin.ts";
+import { ACTION_LABELS, CHANGE_TEXT, KIEZ_FLAVOUR_TEXT, LUNCH_PROMO, LUNCH_ROUNDS, PRICE_ROUNDS, centsWord, fillText, testLengthAdjective, testPhrase, type Tx } from "./messages.ts";
 
 export type { ActionText, Cond, Line } from "./messages.ts";
 export { ACTION_TEXT, AWAY, FRIEND, QUESTIONS } from "./messages.ts";
@@ -137,7 +137,9 @@ export function changeContext(a: Analysis, langOverride?: Lang): ChangeContext {
   const kiez = kiezOf(a);
   const t = (tx: Tx, vars: Record<string, string>) => fillText(tr(tx, lang), vars);
   if (a.template === "price_change") {
-    const item = inputStr(a, "item", OWNER_TEXT_CAPS.item) ?? tr(CHANGE_TEXT.defaultItem, lang);
+    const typed = inputStr(a, "item", OWNER_TEXT_CAPS.item) ?? tr(CHANGE_TEXT.defaultItem, lang);
+    // German capitalises nouns: an owner's "flat white" is "Flat White" in German sentences.
+    const item = lang === "de" ? deNoun(typed) : typed;
     const Item = ucFirst(item);
     const oldPrice = inputNum(a, "current_price") ?? 3.9;
     const newPrice = inputNum(a, "new_price") ?? oldPrice;
@@ -202,6 +204,17 @@ const DE_NEUTER = /(croissant|brötchen|broetchen|sandwich|stück|stueck|wasser|
 const DE_FEMININE = /(e|schorle|limo|limonade|brezel|waffel|quiche|tarte|milch|suppe|bowl)$/i;
 const DE_MASC_E = /(kaffee|tee|käse|kaese|latte|white)$/i;
 
+const DE_SMALL = new Set(["mit", "ohne", "und", "oder", "aus", "vom", "von", "zum", "zur", "für", "auf", "im", "in", "am", "an", "der", "die", "das", "dem", "den", "des", "ein", "eine", "einen", "extra", "to", "go"]);
+
+/** An all-lowercase item with its nouns capitalised for German ("flat white" → "Flat White"); anything the owner capitalised stays. */
+export function deNoun(item: string): string {
+  if (item !== item.toLowerCase()) return item;
+  return item
+    .split(" ")
+    .map((w, i) => (i > 0 && DE_SMALL.has(w) ? w : ucFirst(w)))
+    .join(" ");
+}
+
 /** German articles for an item typed by the owner (a best guess: most coffee drinks are masculine). */
 export function deArticles(item: string): { einen: string; der: string } {
   const w = item.trim().split(/\s+/).pop() ?? "";
@@ -220,16 +233,21 @@ export function withArticle(item: string): string {
   return /^[aeiou]/i.test(item.trim()) ? `an ${item}` : `a ${item}`;
 }
 
-/** Item placeholders for every language: {a_item} {einen_item} {der_item} {un_item} {el_item} {item} {Item}. */
-export function itemVars(item: string): Record<string, string> {
+/**
+ * Item placeholders for every language: {a_item} {einen_item} {der_item} {un_item} {el_item} {item} {Item}.
+ * The German forms capitalise the item's nouns; with lang "de", {item} and {Item} do too.
+ */
+export function itemVars(item: string, lang?: Lang): Record<string, string> {
   const de = deArticles(item);
   const es = esArticle(item);
+  const deItem = deNoun(item);
+  const plain = lang === "de" ? deItem : item;
   return {
-    item,
-    Item: ucFirst(item),
+    item: plain,
+    Item: ucFirst(plain),
     a_item: withArticle(item),
-    einen_item: `${de.einen} ${item}`,
-    der_item: `${de.der} ${item}`,
+    einen_item: `${de.einen} ${deItem}`,
+    der_item: `${de.der} ${deItem}`,
     un_item: `${es === "la" ? "una" : "un"} ${item}`,
     el_item: `${es} ${item}`,
   };
@@ -366,15 +384,22 @@ function roundVars(c: ChangeContext): Record<string, string> {
   };
 }
 
-function draft(c: ChangeContext, text: { title: Tx; situation: Tx }, ids: string[]): Draft {
+/** One sentence of Kiez scene for round 1 or 2 (src/sim/messages.ts KIEZ_FLAVOUR_TEXT), or none without a Kiez. */
+function kiezScene(c: ChangeContext, round: "r1" | "r2"): Tx | undefined {
+  const f = kiezFlavour(c.kiez);
+  return f ? KIEZ_FLAVOUR_TEXT[f].scene[c.template][round] : undefined;
+}
+
+function draft(c: ChangeContext, text: { title: Tx; situation: Tx }, ids: string[], scene?: Tx): Draft {
   const vars = roundVars(c);
-  return { title: tr(text.title, c.lang), situation: fillText(tr(text.situation, c.lang), vars), actions: acts(c.lang, ...ids) };
+  const situation = fillText(tr(text.situation, c.lang), vars);
+  return { title: tr(text.title, c.lang), situation: scene ? `${situation} ${tr(scene, c.lang)}` : situation, actions: acts(c.lang, ...ids) };
 }
 
 function lunchRounds(c: ChangeContext, count: number): Draft[] {
   const r = LUNCH_ROUNDS;
-  const r1 = draft(c, r.r1, ["notices_offer", "ignores", "not_around"]);
-  const r2 = draft(c, r.r2, ["tries_deal", "tries_and_tells", "usual_order", "eats_elsewhere", "skips_lunch_out", "not_around"]);
+  const r1 = draft(c, r.r1, ["notices_offer", "ignores", "not_around"], kiezScene(c, "r1"));
+  const r2 = draft(c, r.r2, ["tries_deal", "tries_and_tells", "usual_order", "eats_elsewhere", "skips_lunch_out", "not_around"], kiezScene(c, "r2"));
   if (count <= 3) return [r1, r2, draft(c, r.end3, ["tries_deal", "comes_back_for_deal", "usual_order", "tells_a_friend", "complains", "eats_elsewhere", "not_around"])];
   const r3 = draft(c, r.r3, ["tries_deal", "comes_back_for_deal", "usual_order", "tells_a_friend", "eats_elsewhere", "not_around"]);
   const r4 = draft(c, r.r4, ["keeps_coming", "usual_order", "posts_review", "complains", "eats_elsewhere", "forgets_about_it", "not_around"]);
@@ -384,8 +409,8 @@ function lunchRounds(c: ChangeContext, count: number): Draft[] {
 
 function priceRounds(c: ChangeContext, count: number): Draft[] {
   const r = PRICE_ROUNDS;
-  const r1 = draft(c, r.r1, ["accepts", "grumbles", "does_not_notice", "not_around"]);
-  const r2 = draft(c, r.r2, ["buys_as_usual", "buys_less_often", "switches_to_cheaper_item", "goes_elsewhere", "not_around"]);
+  const r1 = draft(c, r.r1, ["accepts", "grumbles", "does_not_notice", "not_around"], kiezScene(c, "r1"));
+  const r2 = draft(c, r.r2, ["buys_as_usual", "buys_less_often", "switches_to_cheaper_item", "goes_elsewhere", "not_around"], kiezScene(c, "r2"));
   if (count <= 3) return [r1, r2, draft(c, r.end3, ["keeps_buying", "buys_less_often", "tells_friend_it_is_pricey", "recommends_cafe_anyway", "stays_away", "not_around"])];
   const r3 = draft(c, r.r3, ["keeps_buying", "buys_less_often", "tells_friend_it_is_pricey", "recommends_cafe_anyway", "stays_away", "not_around"]);
   const r4 = draft(c, r.r4, ["stays_a_customer", "buys_less_than_before", "recommends_cafe_anyway", "mentions_price_in_review", "found_somewhere_cheaper", "not_around"]);

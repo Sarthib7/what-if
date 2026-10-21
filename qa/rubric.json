@@ -37,7 +37,7 @@
         "scripts",
         "test/mcp.test.ts"
       ],
-      "judge": "Tool design works in any MCP host; descriptions make a model call whatif_start on \"what if…\" and pass the owner's language (default German). Each result gives plain text first, then structured JSON, then a report_url. Stateless and safe as a public endpoint: input limits, no external calls, no storage, CORS, and for the closed beta invite codes checked in constant time, never logged or echoed, with a plain German and English 401. Errors say what to ask the owner. The Vercel bundle is self-contained. The stdio server matches the HTTP one."
+      "judge": "Tool design works in any MCP host; descriptions make a model call whatif_start on \"what if…\" and pass the owner's language (default German). Each result gives plain text first, then structured JSON, then a report_url. Stateless and safe as a public endpoint: input limits, no external calls, no storage, CORS, and for the closed beta invite codes checked in constant time, never logged or echoed. Without a valid code the server still connects and lists its tools, and tools/call returns a plain German and English beta message (isError, no 401, so hosts with OAuth support show it). Errors say what to ask the owner. The Vercel bundle is self-contained. The stdio server matches the HTTP one."
     },
     {
       "id": "visual",
@@ -100,6 +100,6 @@
       "judge": "From the README, a judge understands the product, the closed beta and how to try it in 60 seconds. Local setup is one command on Windows and Unix, and a fresh Windows clone (CRLF) passes the same tests. Every documented command exists and works, and ARCHITECTURE.md matches the code (languages, Berlin facts, invite codes, /try). The docs are honest about what is demo data and what is not built. Scripts, naming and structure are clear. No secrets (invite codes only in the Vercel env), the lockfile is committed and the QA bot is reproducible."
     }
   ],
-  "version": 2,
-  "loopNotes": "Loop 2 (v0.2, Berlin closed beta): judges also check de/en/es/pl, the Berlin facts card, the closed-beta /try flow, and whether the loop-1 improvements were addressed (qa/judges.md §1, §9)."
+  "version": 3,
+  "loopNotes": "Loop 3: judges fill `loop2` (the follow-up of their loop-2 improvements, qa/judges.md §0, §2, §9) and use the new evidence: the demo variants (/r#demo-result, /r#demo-price, /r#demo-ai when present) on a phone, every /try screen on a phone, the /try report and its rehearsal. The loop-2 standing criteria stay: de/en/es/pl, the Berlin facts card, the closed-beta /try flow."
 }

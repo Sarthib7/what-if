@@ -11,12 +11,18 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import handler from "../src/mcp/http.ts";
-import { classifyQuestion, suggestKeys, TOOL_NAMES } from "../src/mcp/tools.ts";
+import { MCP_MESSAGES, mcpT, type McpKey } from "../src/mcp/messages.ts";
+import { classifyQuestion, fillPlaceholders, MAX_IGNORED_SHOWN, MAX_KEYS, suggestKeys, TOOL_NAMES } from "../src/mcp/tools.ts";
 import { demoInputs } from "../src/engine/index.ts";
+import { LANGS } from "../src/i18n/index.ts";
+import { TERMS } from "../src/i18n/terms.ts";
 import { decodeState, encodeState } from "../src/state.ts";
+
+const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
 
 delete process.env.WHATIF_SITE_URL;
 delete process.env.WHATIF_BETA_CODES;
@@ -346,12 +352,14 @@ describe("HTTP edges", () => {
 // ---------------------------------------------------------------------------
 
 describe("Languages", () => {
-  test("German is the default: summary, labels and the report link's lang", async () => {
+  test("German is the default: summary, labels (the shared TERMS words) and the report link's lang", async () => {
     const r = await call("whatif_run_scenarios", { template: "lunch_offer", inputs: demoInputs("lunch_offer"), demo: true });
     assert.ok(!r.isError, text(r));
     const t = text(r);
-    assert.match(t, /Break-even \(Gewinnschwelle/);
-    assert.match(t, /Schlechtester Fall/);
+    assert.ok(t.includes(`${cap(TERMS.de.breakEven)} (die eine Zahl zum Merken)`), t.slice(0, 400));
+    assert.ok(t.includes(`${cap(TERMS.de.worstCase)}:`));
+    assert.ok(t.includes(`${TERMS.de.demoData}:`));
+    assert.doesNotMatch(t, /Break-even|Schlechtester Fall|vorgestellte/);
     assert.match(t, /Visuellen Bericht öffnen: http/);
     assert.equal(r.structuredContent?.lang, "de");
     assert.equal(decodeState(tokenOf(r.structuredContent?.report_url as string)).lang, "de");
@@ -431,15 +439,99 @@ describe("Reading the question (whatif_start)", () => {
     ["Was wäre, wenn nebenan ein neues Café eröffnet?", "not_a_decision"],
     ["I'm back with my test results", "results"],
     ["Ich bin zurück mit den Ergebnissen vom Test.", "results"],
+    // Coming back with results, in all four languages (SERVER_INSTRUCTIONS step 7: "even in a new chat").
+    ["Wir haben den Test gemacht, hier sind die Ergebnisse", "results"],
+    ["Hier sind meine Ergebnisse vom Mittagsangebot", "results"],
+    ["Ich habe die Zahlen vom Test: 47 Gäste am Tag", "results"],
+    ["Die zwei Wochen sind vorbei: 47 Gäste am Tag", "results"],
+    ["Ya terminé la prueba, estos son los resultados", "results"],
+    ["Zrobiłem test", "results"],
+    ["Mam wyniki testu: 40 gości dziennie", "results"],
+    ["I did the test", "results"],
+    ["Two weeks of the lunch deal are over: 47 lunch guests a day", "results"],
+    // …but a "what if" about a future test or its result is still a decision.
+    ["What if I run a two-week test of a lunch deal?", "decision:lunch_offer"],
+    ["Was wäre das Ergebnis, wenn ich den Preis erhöhe?", "decision:price_change"],
+    // Fixed-price offers like a lunch deal, and discounts as a price change.
+    ["Was wäre, wenn ich eine Happy Hour mache?", "decision:lunch_offer"],
+    ["What if I start a happy hour from 4 to 6?", "decision:lunch_offer"],
+    ["What if I start a happy hour in the evening?", "decision:lunch_offer"],
+    ["What if I do a breakfast combo for €6.90?", "decision:lunch_offer"],
+    ["Was wäre, wenn ich ein Frühstücksangebot für 6,90 € mache?", "decision:lunch_offer"],
+    ["What if I give 10% off to students?", "decision:price_change"],
+    ["What if I give 10% off lunch for students?", "decision:price_change"],
+    ["What if I discount my cinnamon buns by 20% after 5 pm?", "decision:price_change"],
+    ["Was wäre, wenn ich Studierenden 10 % Rabatt gebe?", "decision:price_change"],
+    ["¿Y si hago un 10 % de descuento a los estudiantes?", "decision:price_change"],
+    ["Co jeśli dam studentom 10% zniżki na kawę?", "decision:price_change"],
   ];
 
+  /**
+   * Every owner-side example sentence in skill/what-if/SKILL.md and references/*.md (as of v0.2), with the
+   * kind the skill expects. The coach's own lines ("What if you lose 8% instead of 4%?") are not owner
+   * questions for whatif_start and are left out. "What if I charge €10.50 instead?" is a follow-up in the
+   * coaching.md dialogue (whatif_what_changed); on its own it reads as a price change.
+   */
+  const SKILL_EXAMPLES: [string, string, string][] = [
+    ["What if I run a weekday lunch offer?", "decision:lunch_offer", "SKILL.md, connect.md"],
+    ["Was wäre, wenn ich den Flat White 30 Cent teurer mache?", "decision:price_change", "SKILL.md"],
+    ["¿Y si abro los domingos por la mañana?", "unsupported", "SKILL.md (opening hours: not yet)"],
+    ["Co jeśli wprowadzę zestaw lunchowy za 9,90 €?", "decision:lunch_offer", "SKILL.md"],
+    ["I ran the test", "results", "SKILL.md"],
+    ["Ich habe den Test gemacht", "results", "SKILL.md, coaching.md"],
+    ["Ya hice la prueba", "results", "SKILL.md"],
+    ["Zrobiłam test", "results", "SKILL.md"],
+    ["what if aliens land", "not_a_decision", "SKILL.md"],
+    ["Was wäre, wenn ich meine Preise anpasse?", "decision:price_change", "SKILL.md, berlin.md"],
+    ["What if it rains all week?", "not_a_decision", "coaching.md"],
+    ["Was ist, wenn es eine Woche regnet?", "not_a_decision", "coaching.md"],
+    ["What if a new café opens next door?", "not_a_decision", "coaching.md"],
+    ["What if my rent goes up?", "not_a_decision", "coaching.md"],
+    ["¿Y si me suben el alquiler?", "not_a_decision", "coaching.md"],
+    ["What if the BVG strikes?", "not_a_decision", "coaching.md"],
+    ["Co jeśli BVG zastrajkuje?", "not_a_decision", "coaching.md"],
+    ["What if aliens land?", "not_a_decision", "coaching.md"],
+    ["What if I run a weekday lunch offer to bring in more customers?", "decision:lunch_offer", "coaching.md"],
+    ["What if I charge €10.50 instead?", "decision:price_change", "coaching.md (follow-up)"],
+    ["Was wäre, wenn ich den Flat White von 3,90 € auf 4,20 € erhöhe?", "decision:price_change", "coaching.md"],
+    ["Was wäre, wenn ich einen Mittagstisch anbiete?", "decision:lunch_offer", "connect.md"],
+    ["Was wäre, wenn ich einen Mittagstisch für 9,90 € anbiete?", "decision:lunch_offer", "connect.md"],
+  ];
+
+  const kindOf = (q: string) => {
+    const r = classifyQuestion(q);
+    return r.kind === "decision" ? `decision:${r.id}` : r.kind;
+  };
+
   test("a table of questions in four languages gets the right template, 'unsupported', 'not a decision' or 'results'", () => {
-    const wrong = TABLE.map(([q, want]) => {
-      const r = classifyQuestion(q);
-      const got = r.kind === "decision" ? `decision:${r.id}` : r.kind;
-      return got === want ? "" : `${q} -> ${got} (want ${want})`;
-    }).filter(Boolean);
+    const wrong = TABLE.map(([q, want]) => (kindOf(q) === want ? "" : `${q} -> ${kindOf(q)} (want ${want})`)).filter(Boolean);
     assert.deepEqual(wrong, []);
+  });
+
+  test("every example sentence in the skill gets the kind the skill expects", () => {
+    const wrong = SKILL_EXAMPLES.map(([q, want, where]) => (kindOf(q) === want ? "" : `${where}: ${q} -> ${kindOf(q)} (want ${want})`)).filter(Boolean);
+    assert.deepEqual(wrong, []);
+  });
+
+  test("results keep the template they name; a happy hour and a discount say how the fields are used", async () => {
+    const r1 = classifyQuestion("Hier sind meine Ergebnisse vom Mittagsangebot");
+    assert.deepEqual(r1, { kind: "results", id: "lunch_offer" });
+    const back = await call("whatif_start", { question: "Wir haben den Test gemacht, hier sind die Ergebnisse" });
+    assert.equal(back.structuredContent?.kind, "results");
+    assert.deepEqual(back.structuredContent?.tools_next, ["whatif_log_result"]);
+    assert.doesNotMatch(text(back), /Wie viele Gäste essen/, "no lunch questions for a returning owner");
+
+    const hh = await call("whatif_start", { question: "Was wäre, wenn ich eine Happy Hour mache?" });
+    assert.ok(!hh.isError, text(hh));
+    assert.equal(hh.structuredContent?.template, "lunch_offer");
+    assert.equal(hh.structuredContent?.fit, "similar");
+    assert.equal(hh.structuredContent?.like, "happy_hour");
+    assert.match(text(hh), /Happy Hour funktioniert wie ein Mittagsangebot/);
+
+    const off = await call("whatif_start", { question: "What if I give 10% off to students?", lang: "en" });
+    assert.equal(off.structuredContent?.template, "price_change");
+    assert.equal(off.structuredContent?.like, "discount");
+    assert.match(String(off.structuredContent?.how_fields_are_used), /new_price is the price after the discount/);
   });
 
   test("'what if it rains tomorrow?' gets template null and a reframing, not lunch questions", async () => {
@@ -533,6 +625,160 @@ describe("State in place of template + inputs", () => {
     assert.match(text(r), /damaged|cut off|format/);
     assert.doesNotMatch(text(r), /ask the coach/i);
   });
+
+  test("check_inputs → run_scenarios with the ready result's state alone gives the analysis", async () => {
+    const ci = await call("whatif_check_inputs", { ...LUNCH, business: "Café Test" });
+    assert.equal(ci.structuredContent?.ready, true, text(ci));
+    assert.match(text(ci), /whatif_run_scenarios with `state`/);
+    const state = ci.structuredContent?.state as string;
+    for (const args of [{ state }, { state, template: "lunch_offer" }]) {
+      const run = await call("whatif_run_scenarios", args);
+      assert.ok(!run.isError, text(run));
+      assert.doesNotMatch(text(run), /Not ready|still missing/);
+      assert.equal((run.structuredContent?.analysis?.scenarios as unknown[]).length, 3);
+      assert.equal(run.structuredContent?.lang, "en", "the language comes from the state");
+      assert.equal(decodeState(run.structuredContent?.state as string).business, "Café Test");
+    }
+    // The German default says the same in German.
+    const de = await call("whatif_check_inputs", { template: "lunch_offer", inputs: demoInputs("lunch_offer"), demo: true });
+    assert.match(text(de), /whatif_run_scenarios mit `state`/);
+    assert.ok(!(await call("whatif_run_scenarios", { state: de.structuredContent?.state })).isError);
+  });
+
+  test("check_inputs takes a state plus only the changed answer; run_scenarios keeps a rehearsal while the numbers stay", async () => {
+    const run = await call("whatif_run_scenarios", LUNCH);
+    const state = run.structuredContent?.state as string;
+    const ci = await call("whatif_check_inputs", { state, inputs: { offer_price: "10,50 €" } });
+    assert.equal(ci.structuredContent?.ready, true, text(ci));
+    assert.equal(parseFloat(String(decodeState(ci.structuredContent?.state as string).inputs.offer_price).replace(",", ".")), 10.5);
+
+    const reh = await call("whatif_rehearsal_start", { state, personas: 4, rounds: 3, seed: 8 });
+    const again = await call("whatif_run_scenarios", { state: reh.structuredContent?.state });
+    assert.ok(!again.isError, text(again));
+    assert.ok(decodeState(again.structuredContent?.state as string).rehearsal, "same numbers: the rehearsal stays in the report");
+    const moved = await call("whatif_run_scenarios", { state: reh.structuredContent?.state, inputs: { offer_price: 10.5 } });
+    assert.equal(decodeState(moved.structuredContent?.state as string).rehearsal, undefined, "new numbers: the old rehearsal is dropped");
+  });
+
+  test("every tool a text names next to `state` really accepts `state`", async () => {
+    const { tools } = await client.listTools();
+    const takesState = new Map(tools.map((t) => [t.name, Boolean((t.inputSchema as { properties?: Record<string, unknown> }).properties?.state)]));
+    const texts: [string, string][] = [];
+    const params = { n: 2, k: 1, round: 1, rounds: 4, missing: 2, problems: 1 };
+    for (const lang of LANGS) for (const key of Object.keys(MCP_MESSAGES.en) as McpKey[]) texts.push([`${lang}:${key}`, mcpT(key, params, lang)]);
+    for (const t of tools) texts.push([`${t.name} (description)`, t.description ?? ""]);
+    // Live result texts along the whole chain.
+    const ci = await call("whatif_check_inputs", LUNCH);
+    const run = await call("whatif_run_scenarios", { state: ci.structuredContent?.state });
+    const reh = await call("whatif_rehearsal_start", { state: run.structuredContent?.state, personas: 4, rounds: 3, seed: 2 });
+    const auto = await call("whatif_rehearsal_autoplay", { state: reh.structuredContent?.state });
+    const plan = await call("whatif_plan_test", { state: auto.structuredContent?.state });
+    for (const [name, r] of [["check_inputs", ci], ["run_scenarios", run], ["rehearsal_start", reh], ["autoplay", auto], ["plan_test", plan]] as const)
+      texts.push([`${name} result`, allText(r)]);
+    // Per sentence: "call whatif_run_scenarios … with this result's `state`" must name a tool that takes it.
+    const wrong: string[] = [];
+    for (const [where, s] of texts)
+      for (const sentence of s.split(/(?<=[.!?:])\s+(?=\p{Lu})|\n/u)) {
+        if (!/\bstate\b/.test(sentence)) continue;
+        for (const name of new Set(sentence.match(/whatif_[a-z_]+/g) ?? []))
+          if (takesState.has(name) && !takesState.get(name)) wrong.push(`${where}: ${name} in "${sentence.slice(0, 100)}"`);
+      }
+    assert.deepEqual(wrong, []);
+    for (const name of ["whatif_check_inputs", "whatif_run_scenarios"]) assert.equal(takesState.get(name), true, name);
+  });
+});
+
+describe("Input limits", () => {
+  test("a call with 25,000 keys is refused at once, with a note", async () => {
+    const huge = Object.fromEntries(Array.from({ length: 25_000 }, (_, i) => [`k${i}`, i]));
+    const t0 = performance.now();
+    const r = await call("whatif_check_inputs", { template: "lunch_offer", inputs: huge, lang: "en" });
+    const ms = performance.now() - t0;
+    assert.equal(r.isError, true);
+    assert.match(text(r), /maximum of \d+ elements/);
+    assert.ok(text(r).length < 400, "the refusal does not echo the keys");
+    // 50 ms is the target on a laptop; the bound is loose so a busy CI runner does not flake.
+    assert.ok(ms < 500, `took ${ms.toFixed(0)} ms`);
+  });
+
+  test(`an object with more than ${MAX_KEYS} keys, a long key or a long value is refused with a clear note`, async () => {
+    const many = Object.fromEntries(Array.from({ length: MAX_KEYS + 1 }, (_, i) => [`k${i}`, i]));
+    const r = await call("whatif_check_inputs", { template: "lunch_offer", inputs: many, lang: "en" });
+    assert.equal(r.isError, true);
+    assert.match(text(r), new RegExp(`at most ${MAX_KEYS}.*whatif_start`, "s"));
+    const obs = await call("whatif_log_result", { ...LUNCH, observed: many });
+    assert.equal(obs.isError, true);
+    assert.match(text(obs), /Too many keys/);
+    const longKey = await call("whatif_check_inputs", { template: "lunch_offer", inputs: { ["x".repeat(61)]: 1 }, lang: "en" });
+    assert.match(text(longKey), /field name has at most 60 characters/);
+    const longValue = await call("whatif_check_inputs", { template: "lunch_offer", inputs: { avg_spend: "9".repeat(101) }, lang: "en" });
+    assert.match(text(longValue), /at most 100 characters/);
+    const mix = await call("whatif_rehearsal_start", { ...LUNCH, customer_mix: many });
+    assert.match(text(mix), /Too many keys/);
+    const reply = await call("whatif_rehearsal_submit", { state: "x".repeat(20), reactions: [many] });
+    assert.match(text(reply), /Too many keys/);
+  });
+
+  test(`at most ${MAX_IGNORED_SHOWN} ignored keys are named back, plus a count`, async () => {
+    const unknown = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`zebra_${i}`, i]));
+    const r = await call("whatif_check_inputs", { template: "lunch_offer", inputs: { ...unknown, weekday_customers: 140 }, lang: "en" });
+    assert.ok(!r.isError, text(r));
+    assert.equal((r.structuredContent?.ignored_inputs as unknown[]).length, MAX_IGNORED_SHOWN);
+    assert.equal(r.structuredContent?.ignored_count, 30);
+    assert.match(text(r), new RegExp(`; ${30 - MAX_IGNORED_SHOWN} more\\.`));
+  });
+});
+
+describe("Tool texts in German, Spanish and Polish", () => {
+  test("no English words left, plurals agree, the shared TERMS words are used", () => {
+    const params = { n: 1, k: 1, round: 1, rounds: 4, missing: 1, problems: 1, errors: "- p1: x" };
+    const english = /\b(sceptical|break-even|worst case|otherwise|imagined|rehearsal|need another)\b/i;
+    const wrong: string[] = [];
+    for (const lang of ["de", "es", "pl"] as const)
+      for (const key of Object.keys(MCP_MESSAGES.en) as McpKey[]) {
+        const s = mcpT(key, params, lang);
+        if (english.test(s)) wrong.push(`${lang}:${key}: ${s.slice(0, 90)}`);
+      }
+    for (const key of Object.keys(MCP_MESSAGES.en) as McpKey[]) {
+      const s = mcpT(key, params, "de");
+      if (/vorgestellt|Break-even|chlechteste|Stoppen|STOPPEN|\bProbe\b/.test(s)) wrong.push(`de:${key} (not the TERMS word): ${s.slice(0, 90)}`);
+    }
+    assert.deepEqual(wrong, []);
+    assert.match(mcpT("sub_partial", { n: 3, k: 1, round: 2, errors: "" }, "de"), /^3 angenommen; 1 Antwort braucht einen neuen Versuch/);
+    assert.match(mcpT("sub_partial", { n: 3, k: 2, round: 2, errors: "" }, "de"), /2 Antworten brauchen/);
+    assert.match(mcpT("sub_partial", { n: 3, k: 1, round: 2, errors: "" }, "es"), /1 necesita otro intento/);
+    assert.match(mcpT("sub_partial", { n: 3, k: 1, round: 2, errors: "" }, "en"), /1 needs another try/);
+    assert.match(mcpT("ci_not_ready", { missing: 1, problems: 0 }, "de"), /1 Zahl fehlt/);
+    for (const lang of LANGS) {
+      assert.equal(mcpT("pt_stop", {}, lang), cap(TERMS[lang].stop), lang);
+      assert.equal(mcpT("verdict_keep", {}, lang), TERMS[lang].keep.toUpperCase(), lang);
+    }
+  });
+
+  test("a German rehearsal names attitudes in German; 'not yet' without a template does not start with 'Sonst'", async () => {
+    const start = await call("whatif_rehearsal_start", { template: "lunch_offer", inputs: demoInputs("lunch_offer"), demo: true, personas: 8, seed: 5 });
+    assert.ok(!start.isError, text(start));
+    const who = text(start).split("\n").find((l) => l.startsWith("Wer sie sind"))!;
+    assert.doesNotMatch(who, /\b(fan|neutral|sceptical)\)/);
+    assert.match(who, /\((?:[^()]+), (angetan|offen|skeptisch)\)/);
+    assert.match(text(start), /Probelauf bereit: \d+ ausgedachte Gäste/);
+    const persona = (start.structuredContent?.personas as { attitude: string; attitude_label: string }[])[0]!;
+    assert.ok(["angetan", "offen", "skeptisch"].includes(persona.attitude_label));
+
+    const hire = await call("whatif_start", { question: "Was wäre, wenn ich eine Aushilfe einstelle?" });
+    assert.doesNotMatch(text(hire), /\nSonst /);
+    assert.match(text(hire), /\nGemeinsam von Hand/);
+    const hireLunch = await call("whatif_start", { question: "What if I hire a part-timer for the lunch rush?", lang: "en" });
+    assert.match(text(hireLunch), /staff hours[^\n]*\nOtherwise reason it through/);
+  });
+});
+
+describe("Placeholders", () => {
+  test("without a contact, lines with {{BETA_CONTACT}} are left out; with one, it is filled in", () => {
+    const tpl = "Setup: {{SITE_URL}}/connect\nNo code yet? Ask here: {{BETA_CONTACT}}.\nDone.";
+    assert.equal(fillPlaceholders(tpl, "https://x.example", ""), "Setup: https://x.example/connect\nDone.");
+    assert.equal(fillPlaceholders(tpl, "https://x.example", "beta@x.example"), "Setup: https://x.example/connect\nNo code yet? Ask here: beta@x.example.\nDone.");
+  });
 });
 
 describe("Unknown input keys", () => {
@@ -572,14 +818,67 @@ describe("Interview instructions", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Closed beta: invite codes
+// Closed beta: invite codes. Never a 401 (MCP clients turn a 401 into an OAuth
+// sign-in and the owner never sees why): without a valid code the session works,
+// tools list, and every tool call returns the German + English beta message.
 // ---------------------------------------------------------------------------
 
 const CODES = "BERLIN-TEST-01, LINDEN-2026";
-const RPC = { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} };
+const CONTACT = "beta@what-if.example";
 
-async function post(path: string, headers: Record<string, string> = {}): Promise<Response> {
-  return fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(RPC) });
+function rpcBody(method: string, params: Record<string, unknown> = {}, id = 1) {
+  return JSON.stringify({ jsonrpc: "2.0", id, method, params });
+}
+
+async function post(path: string, headers: Record<string, string> = {}, body = rpcBody("tools/list")): Promise<Response> {
+  return fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
+}
+
+type Rpc = { result?: { tools?: unknown[]; prompts?: unknown[]; isError?: boolean; content?: { type: string; text: string }[]; structuredContent?: Record<string, any> } };
+
+/** tools/call over a plain POST (stateless server: no initialize needed). */
+async function postCall(path: string, name = "whatif_run_scenarios", args: Record<string, unknown> = LUNCH, headers: Record<string, string> = {}) {
+  const r = await post(path, headers, rpcBody("tools/call", { name, arguments: args }, 7));
+  const raw = await r.text();
+  return { status: r.status, raw, www: r.headers.get("www-authenticate"), body: JSON.parse(raw) as Rpc };
+}
+
+const OAUTH_PATHS = [
+  "/.well-known/oauth-protected-resource",
+  "/.well-known/oauth-protected-resource/api/mcp",
+  "/.well-known/oauth-authorization-server",
+  "/.well-known/oauth-authorization-server/api/mcp",
+  "/.well-known/openid-configuration",
+  "/register",
+  "/authorize",
+  "/token",
+  "/api/mcp/.well-known/oauth-protected-resource",
+  "/api/mcp/.well-known/oauth-authorization-server",
+  "/api/mcp/register",
+  "/api/mcp/authorize",
+  "/api/mcp/token",
+  "/mcp/register",
+];
+
+/** An OAuth-capable client (as Claude Code and claude.ai connectors are): it would start a sign-in on a 401. */
+function recordingAuthProvider() {
+  const calls: string[] = [];
+  const provider: OAuthClientProvider = {
+    get redirectUrl() {
+      return "http://127.0.0.1:1/callback";
+    },
+    get clientMetadata() {
+      return { redirect_uris: ["http://127.0.0.1:1/callback"], client_name: "what-if-test" };
+    },
+    clientInformation: () => undefined,
+    saveClientInformation: () => void calls.push("saveClientInformation"),
+    tokens: () => undefined,
+    saveTokens: () => void calls.push("saveTokens"),
+    redirectToAuthorization: () => void calls.push("redirectToAuthorization"),
+    saveCodeVerifier: () => void calls.push("saveCodeVerifier"),
+    codeVerifier: () => "verifier",
+  };
+  return { provider, calls };
 }
 
 describe("Closed beta (WHATIF_BETA_CODES)", () => {
@@ -594,30 +893,76 @@ describe("Closed beta (WHATIF_BETA_CODES)", () => {
     assert.equal(r.status, 200);
     const info = (await (await fetch(`${base}/api/mcp`)).json()) as { beta: { required: boolean; valid: boolean } };
     assert.deepEqual(info.beta, { required: false, valid: true });
+    const call = await postCall("/api/mcp");
+    assert.notEqual(call.body.result?.isError, true, call.raw.slice(0, 200));
   });
 
-  test("set: 401 without a code, with a German and English message and the contact, never the codes", async () => {
+  test("set, no code: initialize, tools/list and prompts/list work (200, no 401, no WWW-Authenticate)", async () => {
     process.env.WHATIF_BETA_CODES = CODES;
-    process.env.WHATIF_BETA_CONTACT = "beta@what-if.example";
-    const r = await post("/api/mcp");
-    assert.equal(r.status, 401);
-    assert.equal(r.headers.get("access-control-allow-origin"), "*");
-    const body = (await r.json()) as { jsonrpc: string; error: { code: number; message: string; data?: { contact?: string } } };
-    assert.equal(body.jsonrpc, "2.0");
-    assert.match(body.error.message, /geschlossene Beta für Berliner Cafés/);
-    assert.match(body.error.message, /closed beta for Berlin cafés/);
-    assert.match(body.error.message, /beta@what-if\.example/);
-    assert.equal(body.error.data?.contact, "beta@what-if.example");
-    assert.doesNotMatch(JSON.stringify(body), /BERLIN-TEST-01|LINDEN-2026/);
+    process.env.WHATIF_BETA_CONTACT = CONTACT;
+    const init = await post("/api/mcp", {}, rpcBody("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
+    assert.equal(init.status, 200);
+    assert.equal(init.headers.get("www-authenticate"), null);
+    const initBody = (await init.json()) as { result?: { instructions?: string; serverInfo?: { name: string } } };
+    assert.equal(initBody.result?.serverInfo?.name, "what-if");
+    assert.match(initBody.result?.instructions ?? "", /CLOSED BETA: this connection has no valid invite code/);
+    const list = await post("/api/mcp");
+    assert.equal(list.status, 200);
+    assert.equal(((await list.json()) as Rpc).result?.tools?.length, TOOL_NAMES.length);
+    const prompts = await post("/api/mcp", {}, rpcBody("prompts/list"));
+    assert.equal(prompts.status, 200);
+    assert.equal(((await prompts.json()) as Rpc).result?.prompts?.length, 1);
   });
 
-  test("set: a wrong code is 401 and is not echoed", async () => {
+  test("set, no code: every tools/call is isError with the German + English message, the contact and the ?code= hint, never the codes", async () => {
     process.env.WHATIF_BETA_CODES = CODES;
-    const r = await post("/api/mcp?code=GUESS-123456");
-    assert.equal(r.status, 401);
-    const body = await r.text();
-    assert.doesNotMatch(body, /GUESS-123456/);
-    assert.match(body, /nicht gültig/);
+    process.env.WHATIF_BETA_CONTACT = CONTACT;
+    for (const [name, args] of [
+      ["whatif_start", { question: "What if I run a weekday lunch offer?" }],
+      ["whatif_run_scenarios", LUNCH],
+      ["whatif_check_inputs", { inputs: { nonsense: "x".repeat(500) } }], // invalid arguments: still the beta message
+      ["no_such_tool", {}],
+    ] as const) {
+      const r = await postCall("/api/mcp", name, args as Record<string, unknown>);
+      assert.equal(r.status, 200, name);
+      assert.equal(r.www, null);
+      const res = r.body.result!;
+      assert.equal(res.isError, true, name);
+      const msg = res.content?.[0]?.text ?? "";
+      assert.match(msg, /geschlossene Beta für Berliner Cafés/);
+      assert.match(msg, /Für diese Verbindung fehlt der Einladungscode/);
+      assert.match(msg, /closed beta for Berlin cafés/);
+      assert.match(msg, /your connector link must end in \?code=YOUR-CODE/i);
+      assert.match(msg, /Ihr Connector-Link muss auf \?code=IHR-CODE enden/);
+      assert.ok(msg.includes(CONTACT), "the contact is in the message");
+      assert.match(msg, /Never ask for the code in the chat/);
+      assert.equal(res.structuredContent?.beta?.reason, "missing_code");
+      assert.equal(res.structuredContent?.beta?.contact, CONTACT);
+      assert.match(String(res.structuredContent?.beta?.connector_url), /\/api\/mcp\?code=YOUR-CODE$/);
+      assert.doesNotMatch(r.raw, /BERLIN-TEST-01|LINDEN-2026/);
+    }
+  });
+
+  test("set: a wrong code gets the 'not valid' message and is not echoed", async () => {
+    process.env.WHATIF_BETA_CODES = CODES;
+    const r = await postCall("/api/mcp?code=GUESS-123456");
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result?.isError, true);
+    assert.match(r.raw, /nicht gültig/);
+    assert.match(r.raw, /invite code is not valid/);
+    assert.equal(r.body.result?.structuredContent?.beta?.reason, "invalid_code");
+    assert.doesNotMatch(r.raw, /GUESS-123456/);
+  });
+
+  test("set, no contact: the message says to ask the person who invited you (no empty 'Ask here: .')", async () => {
+    process.env.WHATIF_BETA_CODES = CODES;
+    delete process.env.WHATIF_BETA_CONTACT;
+    const r = await postCall("/api/mcp");
+    const msg = r.body.result?.content?.[0]?.text ?? "";
+    assert.match(msg, /Ask the person who invited you for a code/);
+    assert.match(msg, /von der Person, die Sie eingeladen hat/);
+    assert.doesNotMatch(msg, /:\s*\.|:\s*$/m);
+    assert.equal(r.body.result?.structuredContent?.beta?.contact, undefined);
   });
 
   test("set: a valid code works via ?code=, x-whatif-code and Authorization: Bearer (case does not matter)", async () => {
@@ -631,12 +976,15 @@ describe("Closed beta (WHATIF_BETA_CODES)", () => {
     for (const [path, headers] of cases) {
       const r = await post(path, headers);
       assert.equal(r.status, 200, `${path} ${JSON.stringify(headers)}`);
-      const body = (await r.json()) as { result?: { tools?: unknown[] } };
+      const body = (await r.json()) as Rpc;
       assert.equal(body.result?.tools?.length, TOOL_NAMES.length);
+      const c = await postCall(path, "whatif_run_scenarios", LUNCH, headers);
+      assert.notEqual(c.body.result?.isError, true, `${path}: ${c.raw.slice(0, 160)}`);
+      assert.ok(c.body.result?.structuredContent?.analysis, "a real result");
     }
   });
 
-  test("set: GET ?code= checks a code for the site (CORS ok) without echoing it", async () => {
+  test("set: GET ?code= checks a code for the site (CORS ok) without echoing it; a bad one also carries the message", async () => {
     process.env.WHATIF_BETA_CODES = CODES;
     const check = async (q: string) => {
       const r = await fetch(`${base}/api/mcp${q}`);
@@ -644,13 +992,18 @@ describe("Closed beta (WHATIF_BETA_CODES)", () => {
       assert.equal(r.headers.get("access-control-allow-origin"), "*");
       const raw = await r.text();
       assert.doesNotMatch(raw, /BERLIN-TEST-01|LINDEN-2026/);
-      return (JSON.parse(raw) as { beta: { required: boolean; valid: boolean } }).beta;
+      return (JSON.parse(raw) as { beta: { required: boolean; valid: boolean; message?: string } }).beta;
     };
     const ok = await check("?code=LINDEN-2026");
     assert.equal(ok.required, true);
     assert.equal(ok.valid, true);
-    assert.equal((await check("")).valid, false);
-    assert.equal((await check("?code=nope-nope")).valid, false);
+    assert.equal(ok.message, undefined);
+    const none = await check("");
+    assert.equal(none.valid, false);
+    assert.match(none.message ?? "", /fehlt der Einladungscode/);
+    const bad = await check("?code=nope-nope");
+    assert.equal(bad.valid, false);
+    assert.match(bad.message ?? "", /nicht gültig/);
   });
 
   test("set: the SDK client connects with ?code= in the URL, and report links never carry the code", async () => {
@@ -667,9 +1020,58 @@ describe("Closed beta (WHATIF_BETA_CODES)", () => {
     }
   });
 
+  test("set: an OAuth-capable SDK client without a code connects, lists tools, and its tool call shows 'Einladungscode' (no sign-in starts)", async () => {
+    process.env.WHATIF_BETA_CODES = CODES;
+    process.env.WHATIF_BETA_CONTACT = CONTACT;
+    const { provider, calls } = recordingAuthProvider();
+    const c = new Client({ name: "what-if-oauth-client", version: "1.0.0" });
+    await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/api/mcp`), { authProvider: provider }));
+    try {
+      const { tools } = await c.listTools();
+      assert.equal(tools.length, TOOL_NAMES.length);
+      const r = (await c.callTool({ name: "whatif_start", arguments: { question: "Was wäre, wenn ich einen Mittagstisch anbiete?" } })) as Result;
+      assert.equal(r.isError, true);
+      assert.match(text(r), /Einladungscode/);
+      assert.match(text(r), /\?code=YOUR-CODE/);
+      assert.ok(text(r).includes(CONTACT));
+      assert.deepEqual(calls, [], "the client never tried to sign in");
+    } finally {
+      await c.close();
+    }
+  });
+
+  test("OAuth discovery paths answer 404 JSON with the beta message, never 401 or WWW-Authenticate", async () => {
+    process.env.WHATIF_BETA_CODES = CODES;
+    process.env.WHATIF_BETA_CONTACT = CONTACT;
+    for (const path of OAUTH_PATHS)
+      for (const method of ["GET", "POST"]) {
+        const r = await fetch(`${base}${path}`, { method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: "{}" } : {}) });
+        assert.equal(r.status, 404, `${method} ${path}`);
+        assert.equal(r.headers.get("www-authenticate"), null, `${method} ${path}`);
+        assert.equal(r.headers.get("access-control-allow-origin"), "*");
+        const body = (await r.json()) as { error: string; error_description: string; beta: { required: boolean; valid: boolean } };
+        assert.equal(body.error, "invalid_request");
+        assert.match(body.error_description, /Einladungscode/, `${method} ${path}`);
+        assert.match(body.error_description, /\?code=YOUR-CODE/);
+        assert.ok(body.error_description.includes(CONTACT));
+        assert.deepEqual([body.beta.required, body.beta.valid], [true, false]);
+      }
+    // The Vercel routes mark the rewritten request with ?__whatif_oauth=1 in case the function sees /api/mcp.
+    const marked = await fetch(`${base}/api/mcp?__whatif_oauth=1`);
+    assert.equal(marked.status, 404);
+    // Open server: still 404 (there is no sign-in), with a "no sign-in needed" note.
+    delete process.env.WHATIF_BETA_CODES;
+    const open = await fetch(`${base}/.well-known/oauth-protected-resource`);
+    assert.equal(open.status, 404);
+    assert.match(((await open.json()) as { error_description: string }).error_description, /needs no sign-in/);
+  });
+
   test("set but every entry too short: closed for everyone", async () => {
     process.env.WHATIF_BETA_CODES = "abc,12345";
-    assert.equal((await post("/api/mcp?code=abc")).status, 401);
-    assert.equal((await post("/api/mcp?code=12345")).status, 401);
+    for (const q of ["?code=abc", "?code=12345"]) {
+      const r = await postCall(`/api/mcp${q}`);
+      assert.equal(r.body.result?.isError, true, q);
+      assert.match(r.raw, /nicht gültig/);
+    }
   });
 });

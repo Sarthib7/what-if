@@ -52,6 +52,8 @@ const PRICE_FIELDS: FieldBase[] = [
   { key: "volume_likely", unit: "share", kind: "assumption", required: true, min: -1, max: 1, example: -0.04 },
   { key: "volume_high", unit: "share", kind: "assumption", required: false, min: -1, max: 1, example: 0 },
   { key: "test_days", unit: "days", kind: "choice", required: false, min: 3, max: 60, fallback: 14, example: 14 },
+  // Optional, no fallback: only when given does the analysis set the 1 Jan 2027 minimum-wage rise against the new price.
+  { key: "minimum_wage_hours_per_week", unit: "hours/week", kind: "fact", required: false, min: 0, max: 2000, example: 60 },
 ];
 
 const BASES: Record<TemplateId, { prefix: "lunch" | "price"; fields: FieldBase[] }> = {

@@ -28,7 +28,9 @@ import {
   summarize,
   toShareRehearsal,
 } from "../src/sim/index.ts";
-import type { Rehearsal } from "../src/sim/types.ts";
+import type { Persona, Rehearsal, SegmentId } from "../src/sim/types.ts";
+import { ARCHETYPE_TEXT, GENERIC_TEXT } from "../src/sim/messages.ts";
+import { TERMS } from "../src/i18n/terms.ts";
 import { decodeState, encodeState } from "../src/state.ts";
 
 const T = "2026-10-17T12:00:00.000Z";
@@ -906,6 +908,382 @@ describe("interviews", () => {
     assert.deepEqual(summarize(again).interviews, again.interviews);
     assert.equal(r.interviews.length, 0, "the input rehearsal is unchanged");
   });
+});
+
+// ---------------------------------------------------------------- loop 3: people, continuity, events, Kiez, words, AI casts
+
+const KIEZE4 = ["Neukölln", "Charlottenburg", "Mitte", "Prenzlauer Berg"] as const;
+
+/** A routine's tags from its id ("parent.lunch.2", "generic.coffee.1"). */
+function routineMeta(id: string): { freq: string; here: boolean } {
+  const [seg, tmpl, i] = id.split(".") as [string, string, string];
+  const list = seg === "generic" ? (tmpl === "lunch" ? GENERIC_TEXT.lunchRoutine : GENERIC_TEXT.coffeeRoutine) : (tmpl === "lunch" ? ARCHETYPE_TEXT[seg as SegmentId].lunchRoutine : ARCHETYPE_TEXT[seg as SegmentId].coffeeRoutine);
+  const r = list[Number(i)]!;
+  return { freq: r.freq, here: !!r.here };
+}
+
+describe("loop 3: personas are people, not copies", () => {
+  test("300 seeds × both templates: no shared job, routine, quirk or memory; ≤ 2 per profession family; traits agree", () => {
+    const viol: string[] = [];
+    for (const t of ["lunch_offer", "price_change"] as const) {
+      for (let seed = 1; seed <= 300; seed++) {
+        const kiez = [undefined, ...KIEZE4][seed % 5];
+        const a = fixture(t, `a-${t}`, "en", kiez ? { kiez } : {});
+        const r = startRehearsal(a, { seed });
+        const ps = r.personas;
+        const base = t === "lunch_offer" ? 11.2 : 3.9;
+        for (const [k, get] of [
+          ["job", (p: Persona) => p.textIds![0]],
+          ["routine", (p: Persona) => p.textIds![2]],
+          ["quirk", (p: Persona) => p.textIds![3]],
+          ["memory", (p: Persona) => p.textIds![4]],
+          ["job text", (p: Persona) => p.story.split(". ")[0]!.replace(/^[^,]+, \d+, /, "")],
+          ["routine text", (p: Persona) => p.routine],
+          ["quirk text", (p: Persona) => p.quirk],
+          ["memory text", (p: Persona) => p.story.split(": ").pop()!],
+        ] as const) {
+          const v = ps.map(get);
+          if (new Set(v).size !== v.length) viol.push(`${t} seed ${seed}: shared ${k}`);
+        }
+        const fam = new Map<string, number>();
+        for (const p of ps) fam.set(p.textIds![1], (fam.get(p.textIds![1]) ?? 0) + 1);
+        for (const [f, n] of fam) if (n > 2) viol.push(`${t} seed ${seed}: ${n} people in the "${f}" family`);
+        const top = Math.max(...ps.map((p) => p.usualSpend));
+        for (const p of ps) {
+          const m = routineMeta(p.textIds![2]);
+          if (p.relationship === "regular" && m.freq !== "most") viol.push(`${t} seed ${seed}: regular ${p.name} on a weekly routine "${p.routine}"`);
+          if (p.relationship === "new" && m.here) viol.push(`${t} seed ${seed}: new ${p.name} with a routine at this café`);
+          if (p.relationship === "occasional" && m.here && m.freq === "most") viol.push(`${t} seed ${seed}: occasional ${p.name} comes most days`);
+          if (p.priceSensitivity === "high") {
+            if (p.usualSpend >= top) viol.push(`${t} seed ${seed}: tight-money ${p.name} is the top spender (${p.usualSpend})`);
+            if (p.relationship === "regular") viol.push(`${t} seed ${seed}: tight-money ${p.name} is a regular`);
+            if (p.usualSpend > base * (t === "lunch_offer" ? 1 : 1.25) + 0.05) viol.push(`${t} seed ${seed}: tight-money ${p.name} spends ${p.usualSpend}`);
+          }
+          if (/Money is tight/.test(p.story) !== (p.priceSensitivity === "high")) viol.push(`${t} seed ${seed}: story and sensitivity disagree for ${p.name}`);
+        }
+      }
+    }
+    assert.deepEqual(viol.slice(0, 10), []);
+  });
+
+  test("larger runs (8 and 12 people) still draw without replacement where the pools allow", () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const r = startRehearsal(fixture("lunch_offer", "a-l", "en", { kiez: KIEZE4[seed % 4]! }), { seed, personas: 8 });
+      for (const i of [0, 2, 3, 4]) assert.equal(new Set(r.personas.map((p) => p.textIds![i])).size, 8, `seed ${seed}: textIds[${i}] repeats`);
+    }
+  });
+});
+
+describe("loop 3: the rule-based stand-in keeps its story straight", () => {
+  const OWN_CIRCLE: Record<SegmentId, SegmentId[]> = {
+    office_worker: ["office_worker"], freelancer: ["freelancer", "office_worker", "student"], student: ["student"], parent: ["parent"],
+    regular: ["regular", "retiree", "parent", "freelancer", "student"], tourist: [], retiree: ["retiree", "regular"], trades: ["trades"],
+  };
+  const FRIEND_EN: Record<SegmentId, string> = {
+    office_worker: "a colleague", freelancer: "a friend from the co-working space", student: "my flatmate", parent: "another parent from nursery",
+    regular: "my neighbour", tourist: "the friend I'm travelling with", retiree: "my friend from the choir", trades: "my workmates",
+  };
+  const NOTICED = new Set(["notices_offer", "tries_deal", "tries_and_tells", "comes_back_for_deal", "tells_a_friend", "posts_review", "complains", "keeps_coming", "still_comes_for_lunch", "comes_now_and_then", "recommends_it",
+    "accepts", "grumbles", "buys_less_often", "switches_to_cheaper_item", "goes_elsewhere", "tells_friend_it_is_pricey", "stays_away", "buys_less_than_before", "recommends_cafe_anyway", "mentions_price_in_review", "found_somewhere_cheaper", "buys_now_and_then", "forgot_about_it"]);
+  const USED = new Set(["tries_deal", "tries_and_tells", "comes_back_for_deal", "keeps_coming", "still_comes_for_lunch", "comes_now_and_then"]);
+  const AWAY_NOW = new Set(["eats_elsewhere", "complains", "back_to_old_habits", "forgets_about_it", "forgot_about_it", "grumbles", "buys_less_often", "switches_to_cheaper_item", "goes_elsewhere", "tells_friend_it_is_pricey", "stays_away", "buys_less_than_before", "mentions_price_in_review", "buys_now_and_then", "found_somewhere_cheaper"]);
+  const PRAISE_NOW = new Set(["tries_and_tells", "tells_a_friend", "posts_review", "recommends_it", "recommends_cafe_anyway", "recommends_cafe"]);
+  const TOPIC: [string, RegExp][] = [["crowd", /queue|busy|crowd|tables|took ages|waited|packed|slow/i], ["portion", /small/i], ["soup", /soup/i], ["noise", /drill|roadworks|loud|noise/i]];
+
+  const sweep = (lang: Lang) => {
+    const runs: Rehearsal[] = [];
+    for (const t of ["lunch_offer", "price_change"] as const)
+      for (const kiez of KIEZE4) for (let seed = 1; seed <= 60; seed++) runs.push(playAll(startRehearsal(fixture(t, `a-${t}`, lang, { kiez }), { seed }), t === "lunch_offer" ? "rival_lunch" : undefined));
+    return runs;
+  };
+  const en = sweep("en");
+
+  test("240 runs per template: zero continuity violations", () => {
+    const viol: Record<string, string[]> = { firstTimeAfterTry: [], retry: [], questionUnnoticed: [], usualForNew: [], forgetAfterTelling: [], quotesTurnedAway: [], audience: [], topic: [] };
+    for (const r of en) {
+      for (const x of r.reactions) {
+        if (!r.active[x.round]!.includes(x.personaId)) continue;
+        const p = r.personas.find((q) => q.id === x.personaId)!;
+        const mine = r.reactions.filter((y) => y.personaId === p.id);
+        const before = mine.filter((y) => y.round < x.round);
+        const words = `${x.thought} ${x.diary ?? ""}`;
+        const id = `seed ${r.seed} ${r.template} R${x.round} ${p.name}`;
+        if (/first time|finally (gave|tried)/i.test(words) && before.some((y) => USED.has(y.action))) viol.firstTimeAfterTry!.push(`${id}: ${words}`);
+        if ((x.action === "tries_deal" || x.action === "tries_and_tells") && before.some((y) => USED.has(y.action))) viol.retry!.push(id);
+        if (x.questionForOwner && !mine.some((y) => y.round <= x.round && NOTICED.has(y.action))) viol.questionUnnoticed!.push(`${id}: ${x.questionForOwner}`);
+        if (p.relationship === "new" && (x.action === "usual_order" || /\b(my usual|the usual|usual order|as usual|as always)\b/i.test(words))) viol.usualForNew!.push(`${id}: ${x.action} ${words}`);
+        if ((x.action === "forgets_about_it" || x.action === "forgot_about_it") && before.some((y) => r.rounds[y.round - 1]!.actions.find((a) => a.id === y.action)?.public)) viol.forgetAfterTelling!.push(id);
+        if (x.heardFrom) {
+          const now = r.reactions.find((y) => y.personaId === x.heardFrom && y.round === x.round)?.action;
+          const pos = !AWAY_NOW.has(x.action);
+          if (now && (pos ? AWAY_NOW.has(now) : PRAISE_NOW.has(now))) viol.quotesTurnedAway!.push(`${id} quotes ${x.heardFrom}, who ${now} this round`);
+          // The teller's own circle ("another parent from nursery") must include the listener.
+          const teller = r.personas.find((q) => q.id === x.heardFrom)!;
+          const told = r.reactions.filter((y) => y.personaId === teller.id && y.round < x.round && y.thought.includes(FRIEND_EN[teller.segment]));
+          if (told.length && told.length === r.reactions.filter((y) => y.personaId === teller.id && y.round < x.round && y.saysPublicly).length && !OWN_CIRCLE[teller.segment].includes(p.segment))
+            viol.audience!.push(`${id} heard ${teller.name} (${teller.segment}), who told ${FRIEND_EN[teller.segment]}`);
+        }
+        if (x.action === "complains") {
+          const kinds = (s: string) => TOPIC.filter(([, re]) => re.test(s)).map(([k]) => k);
+          const th = kinds(x.thought), sa = x.saysPublicly ? kinds(x.saysPublicly) : [];
+          if (th.length === 1 && sa.length === 1 && th[0] !== sa[0]) viol.topic!.push(`${id}: "${x.thought}" / "${x.saysPublicly}"`);
+        }
+      }
+    }
+    for (const [k, v] of Object.entries(viol)) assert.deepEqual(v.slice(0, 5), [], k);
+  });
+
+  test("German: no 'zum ersten Mal' after a try, no question from someone who did not notice, no 'mein Übliches' for someone new", () => {
+    for (const r of sweep("de").filter((_, i) => i % 2 === 0)) {
+      for (const x of r.reactions) {
+        if (!r.active[x.round]!.includes(x.personaId)) continue;
+        const p = r.personas.find((q) => q.id === x.personaId)!;
+        const before = r.reactions.filter((y) => y.personaId === p.id && y.round < x.round);
+        const words = `${x.thought} ${x.diary ?? ""}`;
+        assert.ok(!(/zum ersten Mal|Endlich das/.test(words) && before.some((y) => USED.has(y.action))), `seed ${r.seed}: ${words}`);
+        assert.ok(!x.questionForOwner || r.reactions.some((y) => y.personaId === p.id && y.round <= x.round && NOTICED.has(y.action)), `seed ${r.seed}: ${x.questionForOwner}`);
+        if (p.relationship === "new") assert.ok(!/Übliche|wie immer/.test(words), `seed ${r.seed}: new ${p.name}: ${words}`);
+      }
+    }
+  });
+
+  test("word of mouth still travels with audiences: links per run and every link named in the listener's words", () => {
+    const lunch = en.filter((r) => r.template === "lunch_offer");
+    const links = lunch.reduce((s, r) => s + summarize(r).links.length, 0) / lunch.length;
+    assert.ok(links >= 0.6, `links per run with the new café ${links}`);
+  });
+});
+
+describe("loop 3: every Berlin event changes what people do, and people say so", () => {
+  const WORDS: Record<string, RegExp> = {
+    bvg_strike: /strike/i, rain_week: /rain|pouring|wet/i, heatwave: /heat|32 degrees|hot|cold/i, baustelle: /roadworks|drilling|building-site|barriers/i,
+    school_holidays: /holidays/i, rival_lunch: /new café|new place/i, street_festival: /festival/i, christmas_market: /Christmas market|Glühwein/i,
+  };
+  const runs = (t: TemplateId, ev?: string) => Array.from({ length: 40 }, (_, i) => playAll(startRehearsal(fixture(t, `a-${t}`, "en", { kiez: "Neukölln" }), { seed: i + 1 }), ev));
+  const counts = (rs: Rehearsal[]) => {
+    const c: Record<string, number> = {};
+    for (const r of rs) for (const x of r.reactions) if (x.round >= 3 && r.active[x.round]!.includes(x.personaId)) c[`${x.round}:${x.action}`] = (c[`${x.round}:${x.action}`] ?? 0) + 1;
+    return c;
+  };
+  const sum = (c: Record<string, number>, ...ids: string[]) => Object.entries(c).filter(([k]) => ids.includes(k.split(":")[1]!)).reduce((s, [, v]) => s + v, 0);
+  for (const t of ["lunch_offer", "price_change"] as const) {
+    test(`${t}: each of the 8 events changes the round 3-4 counts and is named in at least 10% of round-3 thoughts`, () => {
+      const base = counts(runs(t));
+      for (const e of BERLIN_EVENTS) {
+        const rs = runs(t, e.id);
+        const c = counts(rs);
+        const keys = new Set([...Object.keys(base), ...Object.keys(c)]);
+        const diff = [...keys].reduce((s, k) => s + Math.abs((base[k] ?? 0) - (c[k] ?? 0)), 0);
+        assert.ok(diff >= 20, `${e.id}: R3-R4 counts barely change (${diff})`);
+        const r3 = rs.flatMap((r) => r.reactions.filter((x) => x.round === 3 && r.active[3]!.includes(x.personaId) && x.action !== "not_around"));
+        const named = r3.filter((x) => WORDS[e.id]!.test(`${x.thought} ${x.saysPublicly ?? ""}`)).length;
+        assert.ok(named >= 0.1 * r3.length, `${e.id}: named in ${named} of ${r3.length} round-3 thoughts`);
+        const away = (cc: Record<string, number>) => sum(cc, "not_around");
+        if (["bvg_strike", "rain_week", "school_holidays"].includes(e.id)) assert.ok(away(c) > away(base) + 8, `${e.id}: fewer people around (${away(base)} → ${away(c)})`);
+        if (e.id === "street_festival" || e.id === "christmas_market") assert.ok(away(c) <= away(base), `${e.id}: as many or more people around`);
+        if (e.id === "baustelle")
+          assert.ok(
+            t === "lunch_offer" ? sum(c, "tries_deal", "comes_back_for_deal", "keeps_coming") < sum(base, "tries_deal", "comes_back_for_deal", "keeps_coming") * 0.8 : sum(c, "keeps_buying", "stays_a_customer") < sum(base, "keeps_buying", "stays_a_customer") * 0.9,
+            "roadworks: fewer visits",
+          );
+      }
+    });
+  }
+
+  test("festival and Christmas market bring visitors and new faces; roadworks hide the board in round 1", () => {
+    const touristsAround = (rs: Rehearsal[]) => rs.reduce((s, r) => s + r.reactions.filter((x) => x.round >= 3 && r.active[x.round]!.includes(x.personaId) && x.action !== "not_around" && r.personas.find((p) => p.id === x.personaId)!.segment === "tourist").length, 0);
+    const mitte = (ev?: string) => Array.from({ length: 40 }, (_, i) => playAll(startRehearsal(fixture("lunch_offer", "a-m", "en", { kiez: "Mitte" }), { seed: i + 1 }), ev));
+    const plain = mitte();
+    for (const ev of ["street_festival", "christmas_market"]) assert.ok(touristsAround(mitte(ev)) > touristsAround(plain), `${ev}: more visitors around`);
+    const r1 = (ev?: string) => Array.from({ length: 40 }, (_, i) => startRehearsal(fixture("lunch_offer", "a-w", "en", { kiez: "Neukölln" }), { seed: i + 1, ...(ev ? { event: ev } : {}) })).reduce((s, r) => s + ruleBasedReactions(r).filter((x) => x.action === "notices_offer").length, 0);
+    assert.ok(r1("baustelle") < r1(), "roadworks: fewer notice the board");
+    assert.ok(r1("street_festival") > r1(), "festival: more notice the board");
+  });
+
+  test("a one-day strike is over by the next round; the brief's situation names the events that are on", () => {
+    let r = startRehearsal(lunch, { seed: 3 });
+    r = submitRound(r, ruleBasedReactions(r), "rule-based").rehearsal;
+    r = injectEvent(r, "bvg_strike");
+    const strike = BERLIN_EVENTS.find((e) => e.id === "bvg_strike")!.text.en;
+    for (const b of roundBriefs(r)) assert.ok(b.prompt.includes(`Also this time: ${strike}`));
+    r = submitRound(r, ruleBasedReactions(r), "rule-based").rehearsal;
+    for (const b of roundBriefs(r)) assert.ok(!b.prompt.includes("Also this time:"), "round 3: the strike is over");
+  });
+});
+
+describe("loop 3: the Kiez shows in the people and the places", () => {
+  const places = (r: Rehearsal) => r.personas.map((p) => p.alternatives).join(" | ");
+  test("the same seed in two Kieze gives other people and other places", () => {
+    let fewShared = 0;
+    for (let seed = 1; seed <= 100; seed++) {
+      for (const [k1, k2] of [["Neukölln", "Charlottenburg"], ["Mitte", "Prenzlauer Berg"]] as const) {
+        const a = startRehearsal(fixture("lunch_offer", "a-k", "en", { kiez: k1 }), { seed });
+        const b = startRehearsal(fixture("lunch_offer", "a-k", "en", { kiez: k2 }), { seed });
+        const shared = a.personas.filter((p) => b.personas.some((q) => q.name === p.name)).length;
+        if (shared <= 2) fewShared++;
+        assert.notEqual(places(a), places(b), `seed ${seed}: ${k1} and ${k2} have the same places`);
+        assert.notEqual(a.rounds[0]!.situation, b.rounds[0]!.situation);
+      }
+    }
+    assert.ok(fewShared >= 190, `the same seed shares at most 2 of 6 names in ${fewShared} of 200 Kiez pairs`);
+  });
+
+  test("each Kiez has its own kinds of place, channel and scene", () => {
+    const want: [string, RegExp, RegExp][] = [
+      ["Mitte", /canteen in the office block|salad bar in the office lobby|Currywurst/, /lanyards|tour group/],
+      ["Neukölln", /Turkish bakery|falafel|döner|Vietnamese/, /Späti|Turkish bakery/],
+      ["Prenzlauer Berg", /organic bakery|organic supermarket|Vietnamese/, /Kita run|prams/],
+      ["Charlottenburg", /Konditorei|Italian place|weekly market/, /Konditorei|weekly market/],
+      ["Spandau", /butcher's hot lunch|Asia snack bar|food court/, /S-Bahn/],
+    ];
+    for (const [kiez, place, scene] of want) {
+      let hits = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const r = startRehearsal(fixture("lunch_offer", "a-k", "en", { kiez }), { seed });
+        if (place.test(places(r))) hits++;
+        assert.match(r.rounds[0]!.situation, scene, kiez);
+      }
+      assert.equal(hits, 20, `${kiez}: its places in every run`);
+    }
+    const noKiez = startRehearsal(lunch, { seed: 2 });
+    assert.ok(!/Konditorei|Turkish bakery|lanyards/.test(noKiez.rounds[0]!.situation + places(noKiez)), "no Kiez, no Kiez flavour");
+    const kita = Array.from({ length: 40 }, (_, i) => startRehearsal(fixture("lunch_offer", "a-k", "en", { kiez: "Prenzlauer Berg" }), { seed: i + 1 })).flatMap((r) => r.personas).filter((p) => p.channels.includes("the Kita parents' group"));
+    assert.ok(kita.length >= 5 && kita.every((p) => p.segment === "parent"), "the Kita parents' group is a parents' channel");
+  });
+
+  test("the people's Kiez places come back in their words", () => {
+    const rs = Array.from({ length: 30 }, (_, i) => playAll(startRehearsal(fixture("lunch_offer", "a-k", "en", { kiez: "Charlottenburg" }), { seed: i + 1 })));
+    const n = rs.reduce((s, r) => s + r.reactions.filter((x) => /Konditorei|Italian place|weekly market/.test(`${x.thought} ${x.diary ?? ""}`)).length, 0);
+    assert.ok(n >= 10, `Charlottenburg places named ${n} times`);
+  });
+});
+
+describe("loop 3: words", () => {
+  test("one word for 'imagined' per language (TERMS) in every caveat and checklist line", () => {
+    const stem: Record<Lang, [RegExp, RegExp]> = {
+      en: [/imagined/i, /imaginary|made-up/i],
+      de: [/ausgedacht/i, /erdacht|fiktiv/i],
+      es: [/imaginad/i, /imaginari/i],
+      pl: [/wyobraż/i, /wymyśl/i],
+    };
+    for (const lang of LANGS) {
+      assert.ok(stem[lang][0].test(TERMS[lang].imagined), `${lang}: TERMS.imagined uses the stem`);
+      for (const m of ["rule-based", "subagent", "in-context", "mixed"] as const) {
+        const c = caveatFor(m, lang);
+        assert.match(c, stem[lang][0], `${lang} ${m}`);
+        assert.doesNotMatch(c, stem[lang][1], `${lang} ${m}`);
+      }
+      for (const t of ["lunch_offer", "price_change"] as const)
+        for (let seed = 1; seed <= 12; seed++) {
+          const s = summarize(playAll(startRehearsal(fixture(t, `a-${t}`, lang, { kiez: KIEZE4[seed % 4]! }), { seed })));
+          for (const line of s.checkWithRealCustomers) assert.doesNotMatch(line, stem[lang][1], `${lang}: ${line}`);
+        }
+    }
+    // Polish: the rules played the customers, never the other way round.
+    assert.doesNotMatch(caveatFor("rule-based", "pl"), /osoby grały|klienci grali/);
+    assert.match(caveatFor("rule-based", "pl"), /nie odgrywała ich żadna AI/);
+  });
+
+  test("the channel line names a count and both channels when two tie; it never claims 'mostly'", () => {
+    let seen = 0, ties = 0;
+    for (const kiez of KIEZE4)
+      for (let seed = 1; seed <= 40; seed++) {
+        for (const lang of ["en", "de"] as const) {
+          const s = summarize(playAll(startRehearsal(fixture("lunch_offer", "a-l", lang, { kiez }), { seed })));
+          const line = s.checkWithRealCustomers.find((l) => /how they heard|wie sie vom Angebot/.test(l));
+          if (!line) continue;
+          if (lang === "en" && /Of the imagined customers/.test(line)) {
+            seen++;
+            assert.match(line, /\d+ of \d+ usually hear/);
+            if (/and as many/.test(line)) ties++;
+          }
+          if (lang === "de") assert.doesNotMatch(line, /ausgedachten Gäste, die es bemerkt haben, erfahren Neues meist/);
+        }
+      }
+    assert.ok(seen > 50 && ties > 0, `${seen} channel lines, ${ties} ties`);
+  });
+
+  test("German keeps its capitals: 'Flat White' in the checklist, segment labels in the feed", () => {
+    const s = summarize(playAll(startRehearsal(fixture("price_change", "a-de", "de", { item: "flat white" }), { seed: 4 })));
+    const text = s.checkWithRealCustomers.join(" ");
+    assert.match(text, /Flat White/);
+    assert.doesNotMatch(text, /flat white/);
+    const prompts = allBriefPrompts(fixture("lunch_offer", "a-de", "de", { kiez: "Neukölln" }), { seed: 8 });
+    const feed = prompts.flatMap((p) => p.split("\n").filter((l) => l.startsWith("- Word of mouth from ")));
+    assert.ok(feed.length > 0);
+    for (const l of feed) assert.match(l, /\((Stammgast|[A-ZÄÖÜ])/, l);
+  });
+});
+
+describe("loop 3: AI-played runs and the saved cast", () => {
+  const playedBy = (method: "subagent" | "in-context") => {
+    let r = startRehearsal(fixture("lunch_offer", "a-ai", "en", { kiez: "Neukölln" }), { seed: 11 });
+    while (r.status === "running") r = submitRound(r, activeIds(r).map((id) => goodReaction(r, id, r.rounds[r.currentRound - 1]!.actions[0]!.id)), method).rehearsal;
+    return r;
+  };
+
+  test("a subagent run summarises as played by an AI (Claude) from short briefs, not data, in every language", () => {
+    const r = playedBy("subagent");
+    const s = summarize(r);
+    assert.equal(s.method, "subagent");
+    assert.match(s.caveat, /played by an AI \(Claude\) from a short brief; they are not data/);
+    assert.ok(s.quotes.every((q) => r.reactions.some((x) => x.thought === q.text || x.saysPublicly === q.text)));
+    for (const [lang, re] of [["de", /KI \(Claude\).*keine Daten/], ["es", /IA \(Claude\).*no son datos/], ["pl", /AI \(Claude\).*nie są dane/]] as const) assert.match(caveatFor("subagent", lang), re);
+    assert.match(caveatFor("in-context"), /an AI in your chat/);
+    assert.doesNotMatch(caveatFor("in-context"), /Claude/);
+    assert.match(summarize(playedBy("in-context")).caveat, /an AI in your chat/);
+  });
+
+  test("an AI-played run saves its cast and activation; a rule-based one does not", () => {
+    const ai = toShareRehearsal(playedBy("subagent"));
+    assert.equal(ai.cast?.length, 6);
+    assert.ok(ai.active && Object.keys(ai.active).length === 4);
+    const rb = toShareRehearsal(autoplayRehearsal(startRehearsal(lunch, { seed: 2 })));
+    assert.equal(rb.cast, undefined);
+    assert.equal(rb.active, undefined);
+  });
+
+  test("the saved cast survives a change in the persona code (simulated with another seed), through the codec", () => {
+    const a = fixture("lunch_offer", "a-ai", "en", { kiez: "Neukölln" });
+    const r = playedBy("subagent");
+    const share = toShareRehearsal(r);
+    const token = encodeState({ v: 1, template: "lunch_offer", inputs: demoInputs("lunch_offer"), rehearsal: { ...share, seed: share.seed + 1000 } });
+    const back = rebuildRehearsal(a, decodeState(token).rehearsal!);
+    assert.deepEqual(back.personas, r.personas);
+    assert.deepEqual(back.active, r.active);
+    assert.deepEqual(back.reactions, r.reactions);
+    assert.equal(back.status, "done");
+    const { id: _a, ...want } = summarize(r);
+    const { id: _b, ...got } = summarize(back);
+    assert.deepEqual(got, want);
+    // Without the cast the other seed would give other people.
+    const { cast: _c, active: _d, ...bare } = share;
+    assert.notDeepEqual(rebuildRehearsal(a, { ...bare, seed: share.seed + 1000 }).personas.map((p) => p.name), r.personas.map((p) => p.name));
+  });
+
+  test("an unusable cast falls back to the people from the seed", () => {
+    const a = fixture("lunch_offer", "a-ai", "en", { kiez: "Neukölln" });
+    const r = playedBy("subagent");
+    const share = toShareRehearsal(r);
+    const broken = { ...share, cast: share.cast!.map((p, i) => (i === 2 ? { ...p, id: "p9" } : p)) };
+    assert.deepEqual(rebuildRehearsal(a, broken).personas, startRehearsal(a, { seed: share.seed }).personas);
+    const noStory = { ...share, cast: share.cast!.map((p) => ({ ...p, story: "" })) };
+    assert.deepEqual(rebuildRehearsal(a, noStory).personas, startRehearsal(a, { seed: share.seed }).personas);
+  });
+});
+
+const demoAiPath = new URL("../src/report/demo-ai.json", import.meta.url);
+test("the saved AI-played demo (src/report/demo-ai.json) rebuilds its own cast, done", { skip: !(existsSync(demoAiPath) && existsSync(new URL("../src/engine/index.ts", import.meta.url))) && "demo-ai.json or the engine is missing" }, async () => {
+  const { readFileSync } = await import("node:fs");
+  const eng = await import("../src/engine/index.ts");
+  const st = decodeState(encodeState(JSON.parse(readFileSync(demoAiPath, "utf8"))));
+  const a = eng.analyze(st.template, st.inputs, { business: st.business, question: st.question, demo: st.demo, currency: st.currency, lang: st.lang } as Parameters<typeof eng.analyze>[2]);
+  const r = rebuildRehearsal(a, st.rehearsal!);
+  assert.deepEqual(r.personas.map((p) => [p.id, p.name, p.segment]), [["p1", "Noor", "parent"], ["p2", "Chiara", "office_worker"], ["p3", "Paweł", "freelancer"], ["p4", "Murat", "regular"], ["p5", "Greta", "student"], ["p6", "Jan", "parent"]]);
+  assert.equal(r.status, "done");
+  const s = summarize(r);
+  assert.equal(s.method, "subagent");
+  assert.match(s.caveat, /Claude/);
 });
 
 const engineReady = existsSync(new URL("../src/engine/index.ts", import.meta.url));

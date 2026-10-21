@@ -128,13 +128,13 @@ Loop 1 found the decision lesson strong but unproven: no real café had used Wha
 |---|---|
 | **Who** | Independent cafés in Berlin (owner-run, one site). First wave: **10 invited cafés**. |
 | **Languages** | **German (default), English, Spanish, Polish**: the report, the site, `/try`, tool texts, the skill's replies and the starter prompts. German uses "Sie", short sentences and no unexplained finance terms. The AI replies in the language the owner writes in and passes `lang` to every tool. |
-| **Access** | **Invite codes** (`WHATIF_BETA_CODES`; unset = open, for local dev and tests). Owners paste a personal connector address `https://<site>/api/mcp?code=XXXX`. A wrong or missing code gets HTTP 401 in German and English with how to ask for one (`WHATIF_BETA_CONTACT`). Report links `/r#…` stay open. |
+| **Access** | **Invite codes** (`WHATIF_BETA_CODES`; unset = open, for local dev and tests). Owners paste a personal connector address `https://<site>/api/mcp?code=XXXX`. A wrong or missing code gets a tool error in German and English with how to ask for one (`WHATIF_BETA_CONTACT`); never a 401, which AI apps would treat as a sign-in. Report links `/r#…` stay open. |
 | **No AI app** | **`/try`** ("Try with your numbers"): one question per screen (Kiez, the 6 required facts, the plan, the likely guess), "why it matters" on each, demo values as placeholders; it ends in the owner's own report. Needs the invite code. Nothing stored. |
 | **Berlin maths** | Prices are what customers pay **including VAT**; the engine works on net prices. Staff cost = **extra hours a day × cost per hour**. The report shows a **"Berlin facts used"** card with the source and date of each public fact. |
 | **Kiez** | Optional `kiez` (18 Kieze plus "other"). Used only by the rehearsal (persona mix, names, alternatives, channels, scene), as a labelled rough guess, never as statistics. |
 | **Rehearsal events** | Berlin events the owner can inject: a BVG strike day, a week of rain, a heatwave (32 °C), a Baustelle outside, the school holidays, a new café two doors down with an €8.50 lunch, a street festival weekend, the Christmas market opening. Shocks to rehearse, never facts or forecasts. |
 | **Templates** | Weekday lunch offer and price change on one item. The price change is the natural template for the dated wage step (12.6). |
-| **Near misses** | A "what if" that is not the owner's decision (the weather, a competitor alone, a rent rise) is answered briefly and turned into a decision; `whatif_start` may return `template: null`. |
+| **Near misses** | A "what if" that is not the owner's decision (the weather, a competitor alone, a rent rise) is answered briefly and turned into a decision; `whatif_start` says which `kind` of question it is (`decision`, `not_a_decision`, `unsupported`, `results`, `unclear`), and the skill branches on that. |
 | **Not yet** | **Hiring and opening hours**: What-IF says "not yet" and walks through the method on paper (cost per day against extra customers a day, every figure labelled, a cheap test with a stop rule) instead of squeezing them into the lunch template. |
 | **Skill and instructions** | Triggers on "what if…", "was wäre, wenn…", "¿y si…?", "co jeśli…" and on coming back with test results; the near-miss rule; numbers turned into plain numbers and read back in the owner's format ("1.500 €, richtig?"); a by-hand path with keep / tweak / stop and a cost cap; starter prompts in four languages for apps without skills. |
 
@@ -146,7 +146,7 @@ Checked 17 Oct 2026. Never add a fact without a source and a date; never add loc
 |---|---|---|---|
 | VAT on food in restaurants and cafés (eat-in and take-away) | 7% | 1 Jan 2026 | § 12 (2) Nr. 15 UStG, Steueränderungsgesetz 2025 (Bundestag 4 Dec 2025, Bundesrat 19 Dec 2025, promulgated 23 Dec 2025): https://www.gesetze-im-internet.de/ustg_1980/__12.html |
 | VAT on drinks | 19% | unchanged | excluded from § 12 (2) Nr. 15 UStG |
-| Milk drinks with at least 75% milk | 7% | unchanged | § 12 (2) Nr. 1 UStG with Anlage 2 |
+| Milk drinks with at least 75% milk, take-away only (in the café: 19%) | 7% | unchanged | § 12 (2) Nr. 1 UStG with Anlage 2 |
 | Combined offers (a menu or buffet with a drink) | a flat 30% of the price may count as the drinks share | 1 Jan 2026 | BMF letter of 22 Dec 2025 (III C 2 – S 7220/00023/014/027), UStAE 10.1 (12) |
 | Statutory minimum wage | €13.90 gross an hour | 1 Jan 2026 | Fünfte Mindestlohnanpassungsverordnung of 5 Nov 2025, after the Mindestlohnkommission's decision of 27 Jun 2025: https://www.bundesregierung.de/breg-de/aktuelles/mindestlohn-steigt-2391010 |
 | Statutory minimum wage, next step | €14.60 gross an hour | 1 Jan 2027 | the same ordinance |
@@ -174,6 +174,23 @@ These answers are v0.2 requirements; QA loop 2 checks whether each one landed.
 | The AI's work is invisible, there is no lesson about AI and no proof of use (hackathon, refine) | A "who did what" line in the report; one AI lesson in "What you learned"; the beta's dated session notes (12.6) are the proof of use | report, beta |
 | The loop from guess to count is never shown (educator, hackathon, refine) | The skill offers `whatif_log_result` when the owner comes back and suggests calendar reminders for the check-ins; the beta counts who comes back (12.5) | skill, beta |
 
+### 12.4a QA loop 2 → 3: what the judges found, and what changes
+
+Loop 2 judge scores (`qa/judge/*.json`, 17 Oct 2026): engine 5 (capped by a wrong public fact), MCP 8, rehearsal 7.8, visual 8.0–8.4 (four judges), skill 8.3, product 7.8–8.2 (educator, hackathon, Selin), docs-devex 8.2. Loop 3 answers, in progress:
+
+| Finding (judge) | Loop 3 answer | Where |
+|---|---|---|
+| A wrong public fact: milk drinks taxed at 7% in the café (engine) | Every drink drunk in the café is 19%; only take-away milk drinks with at least 75% milk are 7% | engine, site, skill |
+| The price demo names the 2027 minimum wage, but no number uses it (engine, educator) | Optional `minimum_wage_hours_per_week` in the price change: the 2027 step (hours × €0.70 a week) beside the new price's weekly result; the skill asks for the hours, then compares | engine, report, skill |
+| The skill's by-hand test rule contradicted the test card (keep at 11 and a €360 stop line, against keep from 7 and €295) (skill) | `maths.md` and `coaching.md` give the card's own rule (`decision.ts`): keep from the going-forward break-even, tweak from half of it, a cash stop line from the receipts by the halfway check-in, switching counted separately; the by-hand result check is `compare.ts`; every demo figure comes from the engine (€9.90 and €10.50) | skill |
+| "`template: null` → near miss" lumped four kinds; happy hour came back unclear (skill, MCP) | The skill and the server instructions branch on `whatif_start`'s `kind`: `not_a_decision`, `unsupported`, `results`, `unclear` (a fixed-price offer or a one-item discount is re-run with `template`) | skill, instructions, MCP |
+| The chat's words differ from the report's: "Break-even" against "Gewinnschwelle", usted against tú, Pan / Pani against ty (skill, visual, Selin) | One word list for every surface (`src/i18n/terms.ts` and the source chips); German "Gewinnschwelle"; de "Sie", es "tú", pl "ty", gender-neutral; the starter prompts use the same words | i18n, report, site, skill |
+| A wrong or missing code looks like a sign-in prompt; an empty contact shipped "Ask here: ." (skill, MCP) | One line everywhere: "If your app asks you to sign in or says unauthorised, the link is missing your invite code"; the build drops a line whose contact is empty, and "No code yet? Ask the person who invited you." stands on its own | skill, build, MCP |
+| A judge has no code; the README's info-page wording was off (docs-devex) | README "For judges": four demos without a code, the judges' code with the submission; "a JSON info page" | README |
+| The AI's part is invisible in the shipped demos (hackathon) | `/r#demo-ai`: a rehearsal played by Claude subagents, saved and labelled | report, site |
+
+Fixed in loop 3 (commit 0c9f3d9): unique interview answers per imagined customer, a rule-based rehearsal button on `/try` reports, phone step 5, ARCHITECTURE refreshed, CI on Ubuntu and Windows, `--skip` runs never counted, MCP input caps. Loop 3 judges then score the result.
+
 ### 12.5 What the beta must prove (success measures)
 
 Written down before the first invite. Every measure is a **count of cafés** ("4 of 10"), never a percentage, and results are **never turned into a benchmark across cafés**.
@@ -192,7 +209,7 @@ The QA gate still applies to every release: each part scored 1–10, overall ≥
 
 ### 12.6 Recruitment and serving plan
 
-- **The dated Berlin hook.** The minimum wage rises from **€13.90 to €14.60 on 1 Jan 2027**. Every owner with staff faces it, so the beta opens with "Was wäre, wenn ich meine Preise anpasse?" (the price-change template) next to the lunch deal. The wage step is shown as a **dated fact, never as pricing advice**; payroll and VAT questions go to "fragen Sie Ihre Steuerberaterin oder Ihren Steuerberater". A small figure for what the wage step could cost a week (hours paid at the minimum wage × €0.70, tagged as a guess until checked against payroll) is a candidate for the engine, not a v0.2 promise.
+- **The dated Berlin hook.** The minimum wage rises from **€13.90 to €14.60 on 1 Jan 2027**. Every owner with staff faces it, so the beta opens with "Was wäre, wenn ich meine Preise anpasse?" (the price-change template) next to the lunch deal. The wage step is shown as a **dated fact, never as pricing advice**; payroll and VAT questions go to "fragen Sie Ihre Steuerberaterin oder Ihren Steuerberater". A small figure for what the wage step could cost a week (hours paid at the minimum wage × €0.70, tagged as a guess until checked against payroll) comes in loop 3 as the optional `minimum_wage_hours_per_week` of the price change (12.4a).
 - **A German invite card** per café: the question ("Was wäre, wenn …?"), the `/try` link, the Connect page and a **personal invite code**. Spanish, English and Polish versions on request.
 - **One 30-minute session in German** per café, on the owner's own phone, with her own Z-report from the till: connect (or `/try`), one decision, the report, the test card.
 - **At least 3 cafés use `/try` alone**, with no session, to compare with the founder-led sessions (which inflate understanding).

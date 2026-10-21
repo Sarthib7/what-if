@@ -1,7 +1,10 @@
 /**
  * /try — "Try with your numbers": a one-question-per-screen wizard for café
- * owners without an AI app. Template → Kiez → the required facts, the plan and
- * the likely guess → a check of all numbers (plus optional details) → a
+ * owners without an AI app. Template → Kiez → the required facts and the plan
+ * (for the lunch deal also what a lunch guest spends today) → "What will the
+ * test cost you?" (setup, extra staff hours, the hourly cost, promotion, spare
+ * cash) → the likely guess → a check of all numbers, where every value What-IF
+ * assumed is listed with an inline field ("Assumed — please check") → a
  * ShareState in the report link (/r#token). Also logs a test result:
  * /try#log=<report token> asks for the counted numbers and writes `observed`.
  *
@@ -24,6 +27,17 @@ import type { SiteKey } from "./messages.ts";
 
 const DRAFT_KEY = "whatif.try.draft";
 const TEMPLATE_IDS: TemplateId[] = ["lunch_offer", "price_change"];
+
+/** Fields the engine could fill in, but /try asks on a screen of their own (the report leans on them). */
+const TRY_REQUIRED: Partial<Record<TemplateId, string[]>> = { lunch_offer: ["lunch_spend"] };
+/** The "What will the test cost you?" screen, in this order (only the fields the template has). */
+const COST_KEYS: Partial<Record<TemplateId, string[]>> = {
+  lunch_offer: ["setup_cost", "extra_staff_hours_per_day", "staff_hourly_cost", "marketing_per_week", "cash_buffer"],
+};
+/** Optional one-field screens (with "skip"), asked after the facts (only when the template has the field). */
+const ASK_ALSO: Partial<Record<TemplateId, string[]>> = { price_change: ["minimum_wage_hours_per_week"] };
+/** Assumed values whose engine note carries a dated fact worth reading on the check screen (derived values always show theirs). */
+const NOTE_KEYS = new Set(["vat_rate", "staff_hourly_cost"]);
 
 interface Draft {
   v: 1;
@@ -88,7 +102,7 @@ function answers(id: TemplateId): Record<string, string> {
 /* ------------------------------------------------------------------ rough numbers */
 
 const APPROX = /^(?:ca\.?|circa|zirka|etwa|ungefähr|ungefaehr|rund|knapp|about|around|approx\.?|roughly|maybe|aprox\.?|aproximadamente|unos|unas|alrededor de|około|okolo|ok\.?|mniej więcej|jakieś|~|≈)\s*/i;
-const COUNT_UNITS = new Set<Unit>(["customers/day", "units/week", "EUR/month", "EUR/week", "days", "hours/day"]);
+const COUNT_UNITS = new Set<Unit>(["customers/day", "units/week", "EUR/month", "EUR/week", "days", "hours/day", "hours/week"]);
 
 /** "1.500" → 1500, "9,90" → 9.9, "ca. 40" → 40, "40–50" → 45, "−4 %" → −0.04 for a share. */
 export function parseRough(text: string, unit: Unit, lang: Lang): { ok: true; value: number } | { ok: false } | { ok: true; value: string } {
@@ -151,6 +165,7 @@ function unitText(unit: Unit): string {
     "EUR/day": "t.unit_eur_day",
     days: "t.unit_days",
     "hours/day": "t.unit_hours_day",
+    "hours/week": "t.unit_hours_week",
   };
   const key = map[unit];
   return key ? t(key) : "";
@@ -162,13 +177,37 @@ function template(): DecisionTemplate | null {
   return draft.template ? getTemplate(draft.template, pageLang()) : null;
 }
 
+/** Required on /try: the engine's required fields plus the ones /try insists on. */
+function isRequired(tpl: DecisionTemplate, f: FieldSpec): boolean {
+  return f.required || (TRY_REQUIRED[tpl.id]?.includes(f.key) ?? false);
+}
+
 function requiredFields(tpl: DecisionTemplate): FieldSpec[] {
-  const req = tpl.fields.filter((f) => f.required && f.key !== "kiez");
+  const req = tpl.fields.filter((f) => isRequired(tpl, f) && f.key !== "kiez");
   return [...req.filter((f) => f.kind !== "assumption"), ...req.filter((f) => f.kind === "assumption")];
 }
 
-function optionalFields(tpl: DecisionTemplate): FieldSpec[] {
-  return tpl.fields.filter((f) => !f.required && f.key !== "kiez");
+function costFields(tpl: DecisionTemplate): FieldSpec[] {
+  return (COST_KEYS[tpl.id] ?? []).map((k) => tpl.fields.find((f) => f.key === k)).filter((f): f is FieldSpec => !!f && !isRequired(tpl, f));
+}
+
+function askAlsoFields(tpl: DecisionTemplate): FieldSpec[] {
+  return (ASK_ALSO[tpl.id] ?? []).map((k) => tpl.fields.find((f) => f.key === k)).filter((f): f is FieldSpec => !!f && !isRequired(tpl, f));
+}
+
+/** The screens of the plan path after the Kiez: facts and plan, optional extras, the costs, the guesses, the check. */
+function planScreens(tpl: DecisionTemplate): string[] {
+  const req = requiredFields(tpl);
+  const facts = req.filter((f) => f.kind !== "assumption").map((f) => `f:${f.key}`);
+  const guesses = req.filter((f) => f.kind === "assumption").map((f) => `f:${f.key}`);
+  const extra = askAlsoFields(tpl).map((f) => `f:${f.key}`);
+  return [...facts, ...extra, ...(costFields(tpl).length ? ["costs"] : []), ...guesses, "review"];
+}
+
+/** The screen where the owner gives this field, if it has one. */
+function screenOf(tpl: DecisionTemplate, key: string): string | null {
+  if (costFields(tpl).some((f) => f.key === key)) return "costs";
+  return planScreens(tpl).includes(`f:${key}`) ? `f:${key}` : null;
 }
 
 /** Raw inputs for the engine from the typed answers (parsed in the page language). */
@@ -214,7 +253,7 @@ function sequence(): string[] {
   seq.push("template");
   const tpl = template();
   if (!tpl) return seq;
-  return [...seq, "kiez", ...requiredFields(tpl).map((f) => `f:${f.key}`), "review"];
+  return [...seq, "kiez", ...planScreens(tpl)];
 }
 
 function progress(): { n: number; total: number } | null {
@@ -223,7 +262,7 @@ function progress(): { n: number; total: number } | null {
   if (i < 0) return null;
   const tpl = template();
   // Before a template is picked, count the questions of the lunch deal (the longer path).
-  const total = mode === "plan" && !tpl ? 3 + requiredFields(getTemplate("lunch_offer", pageLang())).length : seq.length;
+  const total = mode === "plan" && !tpl ? 2 + planScreens(getTemplate("lunch_offer", pageLang())).length : seq.length;
   return { n: i + 1, total };
 }
 
@@ -262,7 +301,7 @@ function backward(): void {
 
 /* ------------------------------------------------------------------ building blocks */
 
-function shell(opts: { title: string; titleFor?: string; kind?: { label: string; chip: string }; back?: boolean }, ...body: (Node | null | false | undefined)[]): HTMLElement {
+function shell(opts: { title: string; titleFor?: string; kind?: { label: string; chip: string; note?: string }; back?: boolean }, ...body: (Node | null | false | undefined)[]): HTMLElement {
   const p = progress();
   const top = p
     ? el(
@@ -275,7 +314,9 @@ function shell(opts: { title: string; titleFor?: string; kind?: { label: string;
   const h = el("h2", { class: "s-q-h", id: "q-h", tabindex: "-1" });
   if (opts.titleFor) h.append(el("label", { for: opts.titleFor, text: opts.title }));
   else h.textContent = opts.title;
-  const kind = opts.kind ? el("p", { class: "s-q-kind" }, el("span", { class: `s-chip s-chip--${opts.kind.chip}`, text: opts.kind.label })) : null;
+  const kind = opts.kind
+    ? el("p", { class: "s-q-kind" }, el("span", { class: `s-chip s-chip--${opts.kind.chip}`, text: opts.kind.label }), opts.kind.note ? el("span", { class: "s-q-kind-note", text: opts.kind.note }) : null)
+    : null;
   return el("section", { class: "s-q", "aria-labelledby": "q-h", "data-screen": screen }, top, kind, h, ...body);
 }
 
@@ -303,34 +344,33 @@ function whyBox(text: string, id = "q-why"): HTMLElement {
   return el("div", { class: "s-q-why", id }, el("p", { class: "s-q-why-t", text: t("t.why") }), el("p", { text }));
 }
 
-function kindOf(f: FieldSpec): { label: string; chip: string } {
-  if (f.kind === "assumption") return { label: t("t.kind_assumption"), chip: "assumption" };
-  if (f.kind === "choice") return { label: t("t.kind_choice"), chip: "owner" };
-  return { label: t("t.kind_fact"), chip: "owner" };
+/** The chip says what the report will call the number (the engine's source words); the note says what kind of question it is. */
+function kindOf(f: FieldSpec): { label: string; chip: string; note: string } {
+  if (f.kind === "assumption") return { label: t("c.src_assumption"), chip: "assumption", note: t("t.kind_assumption") };
+  if (f.kind === "choice") return { label: t("c.src_owner"), chip: "owner", note: t("t.kind_choice") };
+  return { label: t("c.src_owner"), chip: "owner", note: t("t.kind_fact") };
 }
 
 /* ------------------------------------------------------------------ screens */
 
+/** One field and one primary button ("Check code and continue"); a message shows only after the owner tried a code. */
 function gateScreen(): HTMLElement {
   const box = el("div", { class: "s-q-code" });
-  const cont = el("button", { type: "button", class: "s-btn s-q-next" }, t("t.gate_next"), el("span", { "aria-hidden": "true", text: " →" }));
-  const passed = () => {
-    const s = codeInfo?.state;
-    return s === "ok" || s === "open" || s === "offline";
-  };
-  cont.addEventListener("click", () => {
-    if (!passed()) {
-      codeForm?.focus();
-      return;
-    }
-    gateNeeded = false;
-    go(resumeOffered ? "resume" : sequence()[0] ?? "template", { replace: true });
-  });
-  const section = shell({ title: t("t.gate_h") }, el("p", { class: "s-q-lede", text: t("t.gate_p") }), box, el("div", { class: "s-q-nav" }, cont));
-  codeForm = mountCodeForm(box, (info) => {
-    codeInfo = info;
-    if (info.state === "ok" || info.state === "open") cont.focus();
-  });
+  const section = shell({ title: t("t.gate_h") }, el("p", { class: "s-q-lede", text: t("t.gate_p") }), box);
+  codeForm = mountCodeForm(
+    box,
+    (info) => {
+      codeInfo = info;
+    },
+    {
+      submitLabel: "t.gate_submit",
+      big: true,
+      onPass: () => {
+        gateNeeded = false;
+        go(resumeOffered ? "resume" : sequence()[0] ?? "template", { replace: true });
+      },
+    },
+  );
   return section;
 }
 
@@ -407,6 +447,7 @@ function kiezScreen(): HTMLElement {
 function fieldScreen(tpl: DecisionTemplate, f: FieldSpec): HTMLElement {
   const lang = pageLang();
   const a = answers(tpl.id);
+  const required = isRequired(tpl, f);
   const signed = f.unit === "share" && (f.min ?? 0) < 0;
   const input = el("input", {
     id: "q-in",
@@ -427,7 +468,7 @@ function fieldScreen(tpl: DecisionTemplate, f: FieldSpec): HTMLElement {
   const err = el("p", { class: "s-q-err", id: "q-err", role: "alert" });
   const hints = el("p", { class: "s-q-hint" }, f.unit === "text" ? "" : signed ? t("t.sign_hint") : t("t.rough"));
   const example = el("p", { class: "s-q-example" }, el("span", { class: "s-chip s-chip--demo", text: t("c.src_demo") }), " ", t("t.example", { value: show(f, f.example) }));
-  const fallback = !f.required && f.fallback !== undefined ? el("p", { class: "s-q-hint", text: t("t.fallback", { value: show(f, f.fallback) }) }) : null;
+  const fallback = !required && f.fallback !== undefined ? el("p", { class: "s-q-hint", text: t("t.fallback", { value: show(f, f.fallback) }) }) : null;
   const note = f.kind === "assumption" ? el("p", { class: "s-q-note", text: t("t.kind_assumption_note") }) : null;
   const chips = signed ? quickChips(input, ["−10", "−5", "−2", "0", "+2"]) : null;
 
@@ -440,7 +481,7 @@ function fieldScreen(tpl: DecisionTemplate, f: FieldSpec): HTMLElement {
     read.textContent = "";
     input.removeAttribute("aria-invalid");
     if (!txt) {
-      if (final && f.required) {
+      if (final && required) {
         err.textContent = t("t.needed");
         input.setAttribute("aria-invalid", "true");
         return false;
@@ -474,7 +515,7 @@ function fieldScreen(tpl: DecisionTemplate, f: FieldSpec): HTMLElement {
     read,
     err,
     hints,
-    navRow({ next: t("t.next"), skip: f.required ? undefined : () => { a[f.key] = ""; saveDraft(); forward(); } }),
+    navRow({ next: t("t.next"), skip: required ? undefined : () => { a[f.key] = ""; saveDraft(); forward(); } }),
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -500,13 +541,104 @@ function quickChips(input: HTMLInputElement, values: string[]): HTMLElement {
   return box;
 }
 
+/** One number on a multi-field screen: label, field with unit, the read-back and any problem. Returns the row and its check. */
+function numberField(tpl: DecisionTemplate, f: FieldSpec, opts: { id: string; hint?: string; example?: boolean; placeholder?: string; labelText?: string }): { row: HTMLElement; check: (final: boolean) => boolean; input: HTMLInputElement } {
+  const lang = pageLang();
+  const a = answers(tpl.id);
+  const id = opts.id;
+  const signed = f.unit === "share" && (f.min ?? 0) < 0;
+  const input = el("input", {
+    id,
+    class: "s-input",
+    type: "text",
+    name: f.key,
+    inputmode: f.unit === "text" || signed ? "text" : "decimal",
+    autocomplete: "off",
+    spellcheck: "false",
+    "aria-describedby": `${id}-read ${id}-err${opts.hint ? ` ${id}-hint` : ""}`,
+  });
+  input.value = a[f.key] ?? "";
+  input.placeholder = opts.placeholder ?? t("t.placeholder", { value: bare(f, f.example, lang) });
+  const read = el("p", { class: "s-q-read", id: `${id}-read`, "aria-live": "polite" });
+  const err = el("p", { class: "s-q-err", id: `${id}-err`, role: "alert" });
+  const unit = unitText(f.unit);
+  const check = (final: boolean): boolean => {
+    a[f.key] = input.value;
+    saveDraft();
+    read.textContent = "";
+    err.textContent = "";
+    input.removeAttribute("aria-invalid");
+    const txt = input.value.trim();
+    if (!txt) return true;
+    const p = parseRough(txt, f.unit, lang);
+    if (!p.ok) {
+      err.textContent = t("t.not_number");
+      input.setAttribute("aria-invalid", "true");
+      return false;
+    }
+    if (f.unit !== "text") read.textContent = t("t.read_as", { value: show(f, p.value) });
+    const probs = problemsFor(tpl, f.key);
+    if (probs.length) {
+      err.textContent = probs.join(" ");
+      input.setAttribute("aria-invalid", "true");
+      return false;
+    }
+    return true;
+  };
+  let timer = 0;
+  input.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => check(false), 300);
+  });
+  if (input.value) window.setTimeout(() => check(false), 0);
+  const row = el(
+    "div",
+    { class: "s-cost-f" },
+    el("label", { for: id, class: "s-field-label", text: opts.labelText ?? f.label }),
+    el("div", { class: "s-ans s-ans--sm" }, input, unit ? el("span", { class: "s-ans-unit", "aria-hidden": "true", text: unit }) : null),
+    read,
+    err,
+    opts.hint ? el("p", { class: "s-q-hint", id: `${id}-hint`, text: opts.hint }) : null,
+    opts.example ? el("p", { class: "s-q-example" }, el("span", { class: "s-chip s-chip--demo", text: t("c.src_demo") }), " ", t("t.example", { value: show(f, f.example) })) : null,
+  );
+  return { row, check, input };
+}
+
+/** "What will the test cost you?": setup, extra staff hours and their cost, promotion, and the money the owner can spare. */
+function costsScreen(tpl: DecisionTemplate): HTMLElement {
+  const fields = costFields(tpl);
+  const hintFor = (f: FieldSpec): string | undefined => {
+    if (f.key === "staff_hourly_cost" && f.fallback !== undefined) return t("t.cost_wage_hint", { value: show(f, f.fallback) });
+    if (f.key === "cash_buffer") return t("t.cost_cash_hint");
+    return undefined;
+  };
+  const lang = pageLang();
+  // A field that falls back to a real value (the hourly cost: the minimum wage) shows that value, not the demo café's.
+  const placeholderFor = (f: FieldSpec): string | undefined => (typeof f.fallback === "number" && f.fallback > 0 ? bare(f, f.fallback, lang) : undefined);
+  const parts = fields.map((f, i) => numberField(tpl, f, { id: i === 0 ? "q-in" : `q-in-${f.key}`, hint: hintFor(f), example: true, placeholder: placeholderFor(f) }));
+  const form = el("form", { class: "s-q-form s-costs", novalidate: true }, ...parts.map((p) => p.row), navRow({ next: t("t.next") }));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const bad = parts.find((p) => !p.check(true));
+    if (bad) bad.input.focus();
+    else forward();
+  });
+  return shell({ title: t("t.costs_h"), kind: { label: t("c.src_owner"), chip: "owner", note: t("t.kind_choice") } }, el("p", { class: "s-q-lede", text: t("t.costs_p") }), form);
+}
+
 function questionText(tpl: DecisionTemplate, raw: RawInputs): string {
   return generatedQuestion(tpl.id, raw, pageLang()) ?? tpl.exampleQuestion;
 }
 
+/**
+ * "Check your numbers": what the owner gave (each with "Change"), then every value the report
+ * rests on that What-IF assumed, with the value it uses and a field to change it in place
+ * ("Assumed — please check"), then the café's name.
+ */
 function reviewScreen(tpl: DecisionTemplate): HTMLElement {
   const lang = pageLang();
   const a = answers(tpl.id);
+  const given = (f: FieldSpec) => !!a[f.key]?.trim();
   const valueText = (f: FieldSpec): string => {
     const txt = a[f.key]?.trim();
     if (!txt) return t("t.empty");
@@ -521,19 +653,33 @@ function reviewScreen(tpl: DecisionTemplate): HTMLElement {
     });
     return b;
   };
+
+  // 1. Your numbers: everything asked on a screen, in the order it was asked.
   const rows = el("ul", { class: "s-review" });
   rows.append(
     el("li", {}, el("span", { class: "s-review-l", text: t("t.kiez_h") }), el("b", { class: "s-review-v", text: draft.kiez === KIEZ_OTHER ? t("t.kiez_other") : draft.kiez ?? t("t.empty") }), change("kiez", t("t.kiez_h"))),
   );
-  for (const f of requiredFields(tpl)) {
-    rows.append(el("li", {}, el("span", { class: "s-review-l", text: f.label }), el("b", { class: "s-review-v", text: valueText(f) }), change(`f:${f.key}`, f.label)));
+  const asked = tpl.fields.filter((f) => f.key !== "kiez" && screenOf(tpl, f.key));
+  const order = planScreens(tpl);
+  asked.sort((x, y) => order.indexOf(screenOf(tpl, x.key) ?? "") - order.indexOf(screenOf(tpl, y.key) ?? ""));
+  for (const f of asked) {
+    if (!isRequired(tpl, f) && !given(f)) continue; // left empty: listed under "Assumed" below
+    rows.append(el("li", {}, el("span", { class: "s-review-l", text: f.label }), el("b", { class: "s-review-v", text: valueText(f) }), change(screenOf(tpl, f.key) ?? `f:${f.key}`, f.label)));
   }
 
-  // Optional details, typed in place.
-  const more = el("details", { class: "s-more" }, el("summary", { text: t("t.more_h") }), el("p", { class: "s-small", text: t("t.more_p") }));
-  const opt = el("div", { class: "s-more-in" });
-  for (const f of optionalFields(tpl)) {
-    const id = `opt-${f.key}`;
+  // 2. Assumed — please check: every other value the report uses, as What-IF filled it in.
+  const check = checkInputs(tpl.id, rawInputs(tpl), { lang });
+  const resolved = new Map(check.resolved.map((r) => [r.key, r]));
+  const hours = resolved.get("extra_staff_hours_per_day")?.value;
+  const assumed = el("ul", { class: "s-assumed" });
+  for (const f of tpl.fields) {
+    if (f.key === "kiez" || isRequired(tpl, f)) continue;
+    const own = screenOf(tpl, f.key);
+    if (own && given(f)) continue; // shown above with "Change"
+    const r = resolved.get(f.key);
+    if (f.key === "staff_hourly_cost" && !given(f) && hours === 0) continue; // no extra hours: the hourly cost plays no part
+    const filled = !given(f) && r?.filledBy;
+    const id = `as-${f.key}`;
     const input = el("input", {
       id,
       class: "s-input",
@@ -541,35 +687,65 @@ function reviewScreen(tpl: DecisionTemplate): HTMLElement {
       name: f.key,
       inputmode: f.unit === "text" || (f.unit === "share" && (f.min ?? 0) < 0) ? "text" : "decimal",
       autocomplete: "off",
-      "aria-describedby": `${id}-why ${id}-read`,
+      spellcheck: "false",
+      "aria-describedby": `${id}-v ${id}-read`,
     });
     input.value = a[f.key] ?? "";
-    input.placeholder = f.fallback !== undefined ? bare(f, f.fallback, lang) : t("t.placeholder", { value: bare(f, f.example, lang) });
-    const read = el("span", { class: "s-more-read", id: `${id}-read`, "aria-live": "polite" });
+    input.placeholder = t("t.assumed_ph");
+    const read = el("p", { class: "s-q-read", id: `${id}-read`, "aria-live": "polite" });
     const paint = () => {
       const txt = input.value.trim();
-      const p = txt ? parseRough(txt, f.unit, lang) : null;
-      read.textContent = p && p.ok && f.unit !== "text" ? t("t.read_as", { value: show(f, p.value) }) : p && !p.ok ? t("t.not_number") : "";
+      read.textContent = "";
+      read.classList.remove("is-err");
+      input.removeAttribute("aria-invalid");
+      if (!txt) return;
+      const p = parseRough(txt, f.unit, lang);
+      if (!p.ok) {
+        read.textContent = t("t.not_number");
+        read.classList.add("is-err");
+        input.setAttribute("aria-invalid", "true");
+        return;
+      }
+      const probs = problemsFor(tpl, f.key);
+      read.textContent = probs.length ? probs.join(" ") : t("t.read_as", { value: show(f, p.value) });
+      read.classList.toggle("is-err", probs.length > 0);
+      if (probs.length) input.setAttribute("aria-invalid", "true");
     };
+    let timer = 0;
     input.addEventListener("input", () => {
       a[f.key] = input.value;
       saveDraft();
-      paint();
+      window.clearTimeout(timer);
+      timer = window.setTimeout(paint, 300);
     });
-    paint();
+    if (input.value) window.setTimeout(paint, 0);
+    const value = given(f) ? valueText(f) : filled && r ? show(f, r.value) : null;
+    const note = filled && r?.note && (r.filledBy === "derived" || NOTE_KEYS.has(f.key)) ? r.note : null;
     const unit = unitText(f.unit);
-    const why = f.fallback !== undefined ? `${f.why} ${t("t.fallback", { value: show(f, f.fallback) })}` : f.why;
-    opt.append(
+    assumed.append(
       el(
-        "div",
-        { class: "s-more-f" },
-        el("label", { for: id, class: "s-field-label", text: f.label }),
+        "li",
+        { class: "s-assumed-i" },
+        el("label", { for: id, class: "s-review-l", text: f.label }),
+        el("p", { class: "s-assumed-v", id: `${id}-v` }, value !== null ? t(given(f) ? "t.assumed_yours" : "t.assumed_uses", { value }) : t("t.assumed_none")),
+        note ? el("p", { class: "s-small s-assumed-note", text: note }) : null,
         el("div", { class: "s-ans s-ans--sm" }, input, unit ? el("span", { class: "s-ans-unit", "aria-hidden": "true", text: unit }) : null),
         read,
-        el("p", { class: "s-small", id: `${id}-why`, text: why }),
       ),
     );
   }
+  const assumedBox = assumed.childElementCount
+    ? el(
+        "section",
+        { class: "s-assumed-box", "aria-labelledby": "as-h" },
+        // The heading says what to do; the chip is the word these values wear in the report (the engine's sourceLabel).
+        el("h3", { class: "s-assumed-h", id: "as-h" }, el("span", { text: t("t.assumed_h") }), " ", el("span", { class: "s-chip s-chip--assumption", text: t("c.src_assumption") })),
+        el("p", { class: "s-small", text: t("t.assumed_p") }),
+        assumed,
+      )
+    : null;
+
+  // 3. The café's name (optional).
   const nameId = "opt-business";
   const name = el("input", { id: nameId, class: "s-input", type: "text", name: "business", autocomplete: "organization", maxlength: "80", "aria-describedby": `${nameId}-why` });
   name.value = draft.business ?? "";
@@ -578,18 +754,17 @@ function reviewScreen(tpl: DecisionTemplate): HTMLElement {
     draft.business = name.value;
     saveDraft();
   });
-  opt.prepend(el("div", { class: "s-more-f" }, el("label", { for: nameId, class: "s-field-label", text: t("t.cafe_name") }), name, el("p", { class: "s-small", id: `${nameId}-why`, text: t("t.cafe_name_why") })));
-  more.append(opt);
+  const nameBox = el("div", { class: "s-more-f" }, el("label", { for: nameId, class: "s-field-label", text: t("t.cafe_name") }), name, el("p", { class: "s-small", id: `${nameId}-why`, text: t("t.cafe_name_why") }));
 
   const problems = el("div", { class: "s-q-problems", role: "alert", tabindex: "-1" });
   const see = el("button", { type: "button", class: "s-btn s-btn--big s-q-next" }, t("t.see_report"), el("span", { "aria-hidden": "true", text: " →" }));
   see.addEventListener("click", () => {
     const raw = rawInputs(tpl);
-    const check = checkInputs(tpl.id, raw, { lang });
-    if (!check.ready) {
+    const result = checkInputs(tpl.id, raw, { lang });
+    if (!result.ready) {
       problems.replaceChildren(
         el("p", { class: "s-q-problems-h", text: t("t.problems_h") }),
-        el("ul", {}, ...check.missing.map((m) => el("li", { text: t("t.missing", { label: m.label }) })), ...check.problems.map((p) => el("li", { text: p }))),
+        el("ul", {}, ...result.missing.map((m) => el("li", { text: t("t.missing", { label: m.label }) })), ...result.problems.map((p) => el("li", { text: p }))),
       );
       problems.focus();
       return;
@@ -612,8 +787,10 @@ function reviewScreen(tpl: DecisionTemplate): HTMLElement {
   return shell(
     { title: t("t.review_h") },
     el("p", { class: "s-q-lede", text: t("t.review_p") }),
+    el("h3", { class: "s-review-h", text: t("t.yours_h") }),
     rows,
-    more,
+    assumedBox,
+    nameBox,
     problems,
     el("div", { class: "s-q-nav" }, backButton(), see),
     el("p", { class: "s-q-privacy", text: t("t.privacy") }),
@@ -796,7 +973,8 @@ function render(focus: boolean): void {
   else if (screen.startsWith("f:") && tpl) {
     const f = tpl.fields.find((x) => x.key === screen.slice(2));
     node = f ? fieldScreen(tpl, f) : templateScreen();
-  } else if (screen === "review" && tpl) node = reviewScreen(tpl);
+  } else if (screen === "costs" && tpl && costFields(tpl).length) node = costsScreen(tpl);
+  else if (screen === "review" && tpl) node = reviewScreen(tpl);
   else if (screen === "log-link") node = logLinkScreen();
   else if (screen.startsWith("o:") && logState) {
     const o = obsFields().find((x) => x.key === screen.slice(2));

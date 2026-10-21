@@ -166,7 +166,7 @@ One line per round, before you play it. Use the round's title, its number and th
 
 After each round: the new report link, plus one highlight with a quote and the *imagined* label. "Herr Becker (imagined regular) switched to the deal and told nobody."
 
-Write the progress lines in the owner's language: "Runde 2/4: 5 ausgedachte Gäste entscheiden am Dienstagmittag…", "Ronda 2/4: 5 clientes imaginados deciden el martes a mediodía…", "Runda 2/4: 5 wymyślonych klientów decyduje we wtorek w porze lunchu…".
+Write the progress lines in the owner's language: "Runde 2/4: 5 ausgedachte Gäste entscheiden am Dienstagmittag…", "Ronda 2/4: 5 clientes imaginados deciden el martes a mediodía…", "Runda 2/4: 5 wyobrażonych klientów decyduje we wtorek w porze lunchu…". Use the report's words for the rehearsal and its people (de "Probelauf", "ausgedachte Gäste"; es "ensayo", "clientes imaginados"; pl "próba", "wyobrażeni klienci"; table in `berlin.md`).
 
 ## The debrief
 

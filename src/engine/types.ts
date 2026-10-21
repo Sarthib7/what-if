@@ -27,6 +27,7 @@ export type Unit =
   | "share"
   | "days"
   | "hours/day"
+  | "hours/week"
   | "text";
 
 export type TemplateId = "lunch_offer" | "price_change";
@@ -138,6 +139,33 @@ export interface PublicFact {
   asOf: string;
 }
 
+/**
+ * Price change: does the new price pay for the minimum-wage rise on 1 Jan 2027?
+ * Set when the owner gave minimum_wage_hours_per_week (staff hours a week paid at or near the minimum wage).
+ * All amounts are euros a week; the cost is the wage alone (employer contributions come on top).
+ */
+export interface WageRiseCheck {
+  hoursPerWeek: number;
+  /** €14.60 − €13.90 = €0.70 more per hour from 1 Jan 2027. */
+  risePerHour: number;
+  /** hours × €0.70 (the wage alone). */
+  wageWeek?: number;
+  /** Employer contributions on top, as a share of the wage: a labelled guess (about 21%). */
+  employerShare?: number;
+  /** What the rise costs the owner a week: wage × (1 + employerShare). */
+  costWeek: number;
+  /** What the new price brings a week at the owner's likely guess (delta_week at volume_likely). */
+  gainWeek: number;
+  /** gainWeek − costWeek: what is left (≥ 0) or still missing (< 0) after the rise. */
+  leftWeek: number;
+  /** true when the new price's expected weekly gain covers the rise. */
+  covers: boolean;
+  /** The two sums written out ("show the maths"), with the owner's numbers. */
+  maths: string;
+  /** One plain sentence: what the cents bring a week, what the rise costs a week, and whether one covers the other. */
+  plain: string;
+}
+
 export interface Analysis {
   id: string;
   template: TemplateId;
@@ -189,6 +217,8 @@ export interface Analysis {
   lessons: string[];
   nextQuestions: string[];
   warnings: string[];
+  /** Price change only, when the owner gave the staff hours paid at or near the minimum wage: the 2027 wage rise against the new price. */
+  wageRise?: WageRiseCheck;
 }
 
 export interface TestPlan {

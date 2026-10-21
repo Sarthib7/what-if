@@ -1,0 +1,37 @@
+Slider frames (identical crop). Initial value = 22 (the report's likely guess).
+00: Change in sales: −30%−€407 over the 14-day test · loses money−€881 a month if you kept it 
+01: Change in sales: −29%−€386 over the 14-day test · loses money−€835 a month if you kept it 
+02: Change in sales: −28%−€365 over the 14-day test · loses money−€790 a month if you kept it 
+03: Change in sales: −27%−€344 over the 14-day test · loses money−€744 a month if you kept it 
+04: Change in sales: −26%−€323 over the 14-day test · loses money−€698 a month if you kept it 
+05: Change in sales: −25%−€301 over the 14-day test · loses money−€653 a month if you kept it 
+06: Change in sales: −24%−€280 over the 14-day test · loses money−€607 a month if you kept it 
+07: Change in sales: −23%−€259 over the 14-day test · loses money−€562 a month if you kept it 
+08: Change in sales: −22%−€238 over the 14-day test · loses money−€516 a month if you kept it 
+09: Change in sales: −21%−€217 over the 14-day test · loses money−€470 a month if you kept it 
+10: Change in sales: −20%−€196 over the 14-day test · loses money−€425 a month if you kept it 
+11: Change in sales: −19%−€175 over the 14-day test · loses money−€379 a month if you kept it 
+12: Change in sales: −18%−€154 over the 14-day test · loses money−€334 a month if you kept it 
+13: Change in sales: −17%−€133 over the 14-day test · loses money−€288 a month if you kept it 
+14: Change in sales: −16%−€112 over the 14-day test · loses money−€242 a month if you kept it 
+15: Change in sales: −15%−€91 over the 14-day test · loses money−€197 a month if you kept it g
+16: Change in sales: −14%−€70 over the 14-day test · loses money−€151 a month if you kept it g
+17: Change in sales: −13%−€49 over the 14-day test · loses money−€106 a month if you kept it g
+18: Change in sales: −12%−€28 over the 14-day test · loses money−€60 a month if you kept it go
+19: Change in sales: −11%−€7 over the 14-day test · loses money−€14 a month if you kept it goi
+20: Change in sales: −10%+€14 over the 14-day test · makes money+€31 a month if you kept it go
+21: Change in sales: −9%+€35 over the 14-day test · makes money+€77 a month if you kept it goi
+22: Change in sales: −8%+€57 over the 14-day test · makes money+€122 a month if you kept it go
+23: Change in sales: −7%+€78 over the 14-day test · makes money+€168 a month if you kept it go
+24: Change in sales: −6%+€99 over the 14-day test · makes money+€214 a month if you kept it go
+25: Change in sales: −5%+€120 over the 14-day test · makes money+€259 a month if you kept it g
+26: Change in sales: −4%+€141 over the 14-day test · makes money+€305 a month if you kept it g
+27: Change in sales: −3%+€162 over the 14-day test · makes money+€350 a month if you kept it g
+28: Change in sales: −2%+€183 over the 14-day test · makes money+€396 a month if you kept it g
+29: Change in sales: −1%+€204 over the 14-day test · makes money+€442 a month if you kept it g
+30: Change in sales: 0%+€225 over the 14-day test · makes money+€487 a month if you kept it go
+31: Change in sales: +1%+€246 over the 14-day test · makes money+€533 a month if you kept it g
+32: Change in sales: +2%+€267 over the 14-day test · makes money+€578 a month if you kept it g
+33: Change in sales: +3%+€288 over the 14-day test · makes money+€624 a month if you kept it g
+34: Change in sales: +4%+€309 over the 14-day test · makes money+€670 a month if you kept it g
+35: Change in sales: +5%+€330 over the 14-day test · makes money+€715 a month if you kept it g

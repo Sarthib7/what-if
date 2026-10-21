@@ -8,7 +8,7 @@
  */
 import { setLang } from "../i18n/index.ts";
 import { lunchThresholds, priceThresholds } from "./decision.ts";
-import { eur, list, n, num, pc, price, r2, setCurrency, signedPct } from "./format.ts";
+import { EPS, eur, list, n, num, pc, price, r2, setCurrency, signedPct } from "./format.ts";
 import type { Values } from "./format.ts";
 import { valuesOf } from "./figures.ts";
 import { langOf } from "./lang.ts";
@@ -65,6 +65,8 @@ function planLunch(a: Analysis, v: Values): TestPlan {
 
   const keep = th.keepFrom, tweak = th.tweakFrom, payBack = th.payBackFrom ?? keep;
   const zero = keep === 0;
+  /** Regulars who switch leave more than their usual lunch (rather than simply costing nothing). */
+  const switchGain = m.switchLoss < -0.005;
 
   // Cash only: what the receipts envelope will show.
   const cashMid = r2(m.setup + m.dailyCost * mid);
@@ -88,7 +90,7 @@ function planLunch(a: Analysis, v: Values): TestPlan {
 
   const before: string[] = [t("plan.lunch.before.baseline"), t("plan.lunch.before.button"), t("plan.lunch.before.tally")];
   if (m.setup > 0) before.push(t("plan.lunch.before.setup", { setup: eur(m.setup) }));
-  before.push(zero ? t("plan.lunch.before.stopLine0", { mid: num(mid) }) : t("plan.lunch.before.stopLine", { mid: num(mid), tweak: num(tweak) }));
+  before.push(zero ? t("plan.lunch.before.stopLine0", { mid: num(mid) }) : t("plan.lunch.before.stopLine", { mid: num(mid), n: tweak }));
 
   const during: string[] = [t("plan.lunch.during.run", { price: price(m.offerPrice), days: daysText }), t("plan.lunch.during.same")];
   if (m.staff > 0) during.push(t("plan.lunch.during.staff", { hours: t("unit.hoursPerDay", { n: m.staffHours }), cost: price(m.staff) }));
@@ -96,7 +98,7 @@ function planLunch(a: Analysis, v: Values): TestPlan {
   during.push(t("plan.lunch.during.ask"));
 
   const decisionRule = zero
-    ? { keep: t("plan.lunch.rule0.keep"), tweak: t("plan.lunch.rule0.tweak"), stop: t("plan.lunch.rule0.stop") }
+    ? { keep: t(switchGain ? "plan.lunch.rule0.keep" : "plan.lunch.rule0.keepFree"), tweak: t("plan.lunch.rule0.tweak"), stop: t("plan.lunch.rule0.stop") }
     : {
         keep: t("plan.lunch.rule.keep", { keep: num(keep), month: eur(Math.max(0, m.netMonth(keep))) }) + (payBack > keep ? t("plan.lunch.rule.keepPayback", { be: num(payBack) }) : ""),
         tweak: tweak < keep ? t("plan.lunch.rule.tweak", { tweak: num(tweak), keep: num(keep), ideas: ideaText }) : t("plan.lunch.rule.tweakNone", { keep: num(keep), ideas: ideaText }),
@@ -104,11 +106,15 @@ function planLunch(a: Analysis, v: Values): TestPlan {
       };
 
   let costCap: string;
-  if (zero) costCap = t("plan.lunch.cap0", { cashAll: eur(cashAll), parts: cashParts || t("plan.part.nothing"), gain: price(-m.switchLoss), mid: num(mid) });
+  const noCash = cashAll <= 0.005;
+  if (zero) {
+    const key = noCash ? (switchGain ? "plan.lunch.cap0Free" : "plan.lunch.cap0NoneFree") : switchGain ? "plan.lunch.cap0" : "plan.lunch.cap0None";
+    costCap = t(key, { cashAll: eur(cashAll), parts: cashParts || t("plan.part.nothing"), gain: price(-m.switchLoss), mid: num(mid) });
+  }
   else {
     costCap = cashAll > 0
-      ? t("plan.lunch.cap", { mid: num(mid), cashMid: eur(cashMid), parts: cashParts, tweak: num(tweak), cashAll: eur(cashAll), days: num(days) })
-      : t("plan.lunch.capFree", { mid: num(mid), tweak: num(tweak) });
+      ? t("plan.lunch.cap", { mid: num(mid), cashMid: eur(cashMid), parts: cashParts, n: tweak, cashAll: eur(cashAll), days: num(days) })
+      : t("plan.lunch.capFree", { mid: num(mid), n: tweak });
     if (m.switchLoss > 0.005) costCap += t("plan.lunch.capSwitch", { loss: price(m.switchLoss), lossMid: eur(r2(m.switchLoss * mid)), mid: num(mid), gap: price(m.gap) });
   }
 
@@ -121,7 +127,16 @@ function planLunch(a: Analysis, v: Values): TestPlan {
     measure: [
       { what: t("plan.lunch.measure.lunch.what"), how: t("plan.lunch.measure.lunch.how") },
       { what: t("plan.lunch.measure.deals.what"), how: t("plan.lunch.measure.deals.how") },
-      { what: t("plan.lunch.measure.regulars.what"), how: t("plan.lunch.measure.regulars.how", { share: pc(m.switchShare), gap: price(Math.max(0, m.gap)) }) },
+      {
+        what: t("plan.lunch.measure.regulars.what"),
+        // What one switcher does to what you keep: less (a cost), more (a gain) or about the same. Never "lowers … by €0.00".
+        how:
+          m.gap > EPS
+            ? t("plan.lunch.measure.regulars.how", { share: pc(m.switchShare), gap: price(m.gap) })
+            : m.gap < -EPS
+              ? t("plan.lunch.measure.regulars.howGain", { share: pc(m.switchShare), gain: price(-m.gap) })
+              : t("plan.lunch.measure.regulars.howSame", { share: pc(m.switchShare) }),
+      },
       { what: t("plan.lunch.measure.cash.what"), how: t("plan.lunch.measure.cash.how") },
     ],
     checkIns: checkInDays(days, mid).map((d) => ({
@@ -131,8 +146,8 @@ function planLunch(a: Analysis, v: Values): TestPlan {
           ? t("plan.lunch.check.last")
           : d === mid
             ? zero
-              ? t("plan.lunch.check.mid0", { cashMid: eur(cashMid) })
-              : t("plan.lunch.check.mid", { tweak: num(tweak), keep: num(keep), cashMid: eur(cashMid) })
+              ? t(cashMid > 0.005 ? "plan.lunch.check.mid0" : "plan.lunch.check.mid0Free", { cashMid: eur(cashMid) })
+              : t(cashMid > 0.005 ? "plan.lunch.check.mid" : "plan.lunch.check.midFree", { tweak: num(tweak), keep: num(keep), cashMid: eur(cashMid) })
             : t("plan.lunch.check.first"),
     })),
     decisionRule,
@@ -140,7 +155,14 @@ function planLunch(a: Analysis, v: Values): TestPlan {
     costCap,
     plain: zero
       ? t("plan.lunch.plain0", { days: daysText })
-      : t("plan.lunch.plain", { days: daysText, keep: t("n.extraLunch", { n: keep }), likely: num(likely), mid: num(mid), tweak: num(tweak) }),
+      : t("plan.lunch.plain", {
+          days: daysText,
+          keep: t("n.extraLunch", { n: keep }),
+          payBack: payBack > keep ? t("plan.lunch.plainPayBack", { be: num(payBack) }) : "",
+          likely: num(likely),
+          mid: num(mid),
+          tweak: num(tweak),
+        }),
   };
 }
 

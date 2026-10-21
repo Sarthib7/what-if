@@ -18,9 +18,12 @@ The connect page, {{SITE_URL}}/connect, builds your personal address from your c
 
 ## Your invite code
 
-- Each café in the beta gets its own code. To ask for one: {{BETA_CONTACT}}. If no contact is shown there, ask the person who invited you.
+- Each café in the beta gets its own code.
+- Request an invite: {{BETA_CONTACT}}
+- No code yet? Ask the person who invited you.
 - Treat it like a door key: put it in your AI app's settings, but don't post it publicly. Never paste it into a chat message; the AI doesn't need it.
-- **Check it:** open `{{SITE_URL}}/api/mcp?code=YOUR-CODE` in a browser. A short info page with `"valid": true` means the address is right. Without a valid code, apps get an error that says What-IF is a closed beta for Berlin cafés.
+- **Check it:** open `{{SITE_URL}}/api/mcp?code=YOUR-CODE` in a browser. A JSON info page with `"valid": true` means the address is right. Without a valid code, apps get an error that says What-IF is a closed beta for Berlin cafés.
+- If your app asks you to sign in or says unauthorised, the link is missing your invite code: use {{SITE_URL}}/api/mcp?code=YOUR-CODE
 - Report links (`{{SITE_URL}}/r#…`) need no code; they carry their own numbers, so you can share them.
 
 ## Claude.ai and Claude Desktop
@@ -112,8 +115,8 @@ With the MCP connected but no skill (ChatGPT, Cursor, VS Code, most chat apps), 
 ```text
 Ich habe ein Café in Berlin und möchte mit What-IF eine Entscheidung durchspielen, bevor ich Geld ausgebe. Meine Frage: Was wäre, wenn …?
 Bitte nutzen Sie die What-IF-Tools: zuerst whatif_start mit meiner Frage wörtlich und lang "de", danach bei jedem Aufruf lang "de". Fragen Sie mich immer nur eine Zahl auf einmal und sagen Sie, warum sie wichtig ist; grobe Zahlen reichen. Lesen Sie jede Zahl zur Kontrolle vor.
-Nennen Sie dann zuerst die Gewinnschwelle, danach die drei möglichen Ergebnisse, den schlimmsten Fall und die größte Unsicherheit. Kennzeichnen Sie jede Zahl als meine Zahl, Schätzung, berechnet oder ausgedacht, und teilen Sie bei jedem Schritt den Link zum Bericht.
-Lassen Sie mich eine Schätzung verändern, bieten Sie die Probe mit ausgedachten Gästen an und schließen Sie mit einem kleinen Test mit der Regel behalten / anpassen / stoppen. Rechnen Sie Geldbeträge nie selbst und erfinden Sie keine Statistiken. Wenn Sie die What-IF-Tools nicht haben, sagen Sie es mir und verweisen Sie auf {{SITE_URL}}/connect.
+Nennen Sie dann zuerst die Gewinnschwelle, danach die drei möglichen Ergebnisse, den schlimmsten Fall und die größte Unsicherheit. Kennzeichnen Sie jede Zahl wie der Bericht (Ihre Zahl, Eine Schätzung, Berechnet, Ausgedacht), und teilen Sie bei jedem Schritt den Link zum Bericht.
+Lassen Sie mich eine Schätzung verändern, bieten Sie den Probelauf mit ausgedachten Gästen an und schließen Sie mit einem kleinen Test mit der Regel behalten / anpassen / aufhören. Rechnen Sie Geldbeträge nie selbst und erfinden Sie keine Statistiken. Wenn Sie die What-IF-Tools nicht haben, sagen Sie es mir und verweisen Sie auf {{SITE_URL}}/connect.
 ```
 
 **English**
@@ -121,26 +124,26 @@ Lassen Sie mich eine Schätzung verändern, bieten Sie die Probe mit ausgedachte
 ```text
 I run a café in Berlin and want to rehearse a decision with What-IF before I spend money. My question: what if …?
 Please use the What-IF tools: whatif_start first, with my question word for word and lang "en", then lang "en" on every call. Ask me one number at a time and tell me why it matters; rough numbers are fine. Read each number back to me.
-Then give me the break-even first, then the three possible outcomes, the worst case and the biggest uncertainty. Label every number as mine, a guess, calculated or imagined, and share the visual report link at every step.
-Let me move one guess, offer the imagined-customer rehearsal, and finish with a small, reversible test with a keep / tweak / stop rule. Never calculate money yourself and never invent statistics. If you don't have the What-IF tools, tell me and point me to {{SITE_URL}}/connect.
+Then give me the break-even first, then the three possible outcomes, the worst case and the biggest uncertainty. Label every number as the report does (Your number, A guess, Calculated, Imagined), and share the visual report link at every step.
+Let me move one guess, offer the rehearsal with imagined customers, and finish with a small, reversible test with a keep / tweak / stop rule. Never calculate money yourself and never invent statistics. If you don't have the What-IF tools, tell me and point me to {{SITE_URL}}/connect.
 ```
 
 **Español**
 
 ```text
 Tengo una cafetería en Berlín y quiero ensayar una decisión con What-IF antes de gastar dinero. Mi pregunta: ¿y si …?
-Use las herramientas de What-IF: primero whatif_start, con mi pregunta tal cual y lang "es", y después lang "es" en cada llamada. Pregúnteme un solo dato cada vez y dígame por qué importa; con cifras aproximadas basta. Repítame cada número para confirmarlo.
-Después dígame primero el punto de equilibrio, luego los tres resultados posibles, el peor caso y la mayor incertidumbre. Marque cada número como mío, estimación, calculado o imaginado, y comparta el enlace al informe visual en cada paso.
-Déjeme cambiar una suposición, ofrézcame el ensayo con clientes imaginados y termine con una prueba pequeña y reversible con la regla mantener / ajustar / parar. No calcule nunca el dinero usted mismo ni invente estadísticas. Si no tiene las herramientas de What-IF, dígamelo y remítame a {{SITE_URL}}/connect.
+Usa las herramientas de What-IF: primero whatif_start, con mi pregunta tal cual y lang "es", y después lang "es" en cada llamada. Pregúntame un solo dato cada vez y dime por qué importa; con cifras aproximadas basta. Repíteme cada número para confirmarlo.
+Después dime primero el punto de equilibrio, luego los tres resultados posibles, el peor caso y la mayor incertidumbre. Marca cada número como el informe (Tu número, Una estimación, Calculado, Imaginado) y comparte el enlace al informe visual en cada paso.
+Déjame cambiar una estimación, ofréceme el ensayo con clientes imaginados y termina con una prueba pequeña y reversible con la regla mantener / ajustar / parar. No calcules nunca el dinero por tu cuenta ni inventes estadísticas. Si no tienes las herramientas de What-IF, dímelo y remíteme a {{SITE_URL}}/connect.
 ```
 
 **Polski**
 
 ```text
 Prowadzę kawiarnię w Berlinie i chcę przećwiczyć decyzję z What-IF, zanim wydam pieniądze. Moje pytanie: co jeśli …?
-Użyj narzędzi What-IF: najpierw whatif_start z moim pytaniem słowo w słowo i lang "pl", potem lang "pl" przy każdym wywołaniu. Pytaj mnie o jedną liczbę naraz i mów, dlaczego jest ważna; przybliżone liczby wystarczą. Powtórz każdą liczbę, żebym mógł ją potwierdzić.
-Potem podaj najpierw próg opłacalności, następnie trzy możliwe wyniki, najgorszy scenariusz i największą niepewność. Oznacz każdą liczbę jako moją, szacunek, obliczoną lub wymyśloną i na każdym kroku udostępniaj link do raportu.
-Pozwól mi zmienić jedno założenie, zaproponuj próbę z wymyślonymi klientami i zakończ małym, odwracalnym testem z regułą zostawić / poprawić / zakończyć. Nigdy nie licz pieniędzy samodzielnie i nie wymyślaj statystyk. Jeśli nie masz narzędzi What-IF, powiedz mi o tym i odeślij mnie do {{SITE_URL}}/connect.
+Użyj narzędzi What-IF: najpierw whatif_start z moim pytaniem słowo w słowo i lang "pl", potem lang "pl" przy każdym wywołaniu. Pytaj mnie o jedną liczbę naraz i mów, dlaczego jest ważna; przybliżone liczby wystarczą. Powtarzaj każdą liczbę do potwierdzenia.
+Potem podaj najpierw próg rentowności, następnie trzy możliwe wyniki, najgorszy przypadek i największą niepewność. Oznacz każdą liczbę tak jak raport (Twoja liczba, Szacunek, Wyliczone, Wyobrażone) i na każdym kroku udostępniaj link do raportu.
+Pozwól mi zmienić jeden szacunek, zaproponuj próbę z wyobrażonymi klientami i zakończ małym, odwracalnym testem z regułą zostaw / dopasuj / zakończ. Nigdy nie licz pieniędzy samodzielnie i nie wymyślaj statystyk. Jeśli nie masz narzędzi What-IF, powiedz mi o tym i odeślij mnie do {{SITE_URL}}/connect.
 ```
 
 ## Installing the skill
@@ -180,7 +183,13 @@ Some coding agents load skills from a folder that holds a `SKILL.md`. Unzip the 
 
 Say: **"Was wäre, wenn ich einen Mittagstisch für 9,90 € anbiete?"** (or "What if I run a weekday lunch offer?").
 
-You should get a short reply in the same language that offers the demo report and asks one question with a reason. If the AI answers from general knowledge instead, the MCP server is not switched on for that chat: open the tools menu and enable What-IF. If it says the code is not valid, check the address in your browser (above).
+You should get a short reply in the same language that offers the demo report and asks one question with a reason. If the AI answers from general knowledge instead, the MCP server is not switched on for that chat: open the tools menu and enable What-IF.
+
+If it does not work:
+
+- **A sign-in prompt, a failed connector, or no What-IF tools.** If your app asks you to sign in or says unauthorised, the link is missing your invite code: use {{SITE_URL}}/api/mcp?code=YOUR-CODE. Remove the connector, add it again with that address, and leave authentication empty.
+- **Still failing?** Open {{SITE_URL}}/api/mcp?code=YOUR-CODE in a browser. If the page does not say `"valid": true`, the code or the link is wrong: check it against your invitation, or ask the person who invited you. Don't keep retrying in the chat.
+- **The AI relays a "closed beta" message in the middle of a chat:** the same fix. The AI should say it in your language and point you to {{SITE_URL}}/connect; it never needs, and never repeats, your code.
 
 ## Privacy, in one paragraph
 

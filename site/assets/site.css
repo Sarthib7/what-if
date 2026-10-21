@@ -471,6 +471,28 @@ code { font-family: var(--wi-mono); font-size: 0.92em; background: var(--wi-surf
 .s-q-problems ul { margin: 0; padding-left: 1.2em; }
 .s-q-privacy { margin: 0; font-size: 13.5px; color: var(--wi-ink-2); }
 .s-q-code { display: grid; gap: 8px; }
+.s-code-row .s-code-go { flex: 1 1 100%; min-height: 56px; }
+.s-q-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.s-q-kind-note { font-size: 14px; color: var(--wi-ink-2); }
+.s-q-read.is-err { color: var(--wi-neg-ink); font-weight: 650; }
+/* /try: "What will the test cost you?" */
+.s-costs { gap: 18px; }
+.s-cost-f { display: grid; gap: 4px; }
+.s-cost-f .s-q-read:empty { display: none; }
+.s-cost-f .s-ans-unit, .s-assumed-i .s-ans-unit { flex: 0 0 6.5em; max-width: none; font-size: 15px; }
+/* /try: check screen, your numbers and the assumed values */
+.s-review-h { margin: 4px 0 -4px; font-size: 16px; }
+.s-assumed-box { display: grid; gap: 8px; border: 2px solid color-mix(in srgb, var(--wi-src-assumption) 45%, transparent); border-radius: 16px; padding: 14px; background: color-mix(in srgb, var(--wi-src-assumption-wash) 55%, var(--wi-surface)); }
+.s-assumed-h { margin: 0; font-size: 17px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.s-assumed-h .s-chip { font-size: 14px; font-weight: 650; }
+.s-assumed-box > .s-small { margin: 0; color: var(--wi-ink); }
+.s-assumed { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; }
+.s-assumed-i { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--wi-line); }
+.s-assumed-i:first-child { border-top: 0; padding-top: 4px; }
+.s-assumed-i .s-review-l { font-weight: 650; color: var(--wi-ink); }
+.s-assumed-v { margin: 0; font-size: 16px; font-variant-numeric: tabular-nums; }
+.s-assumed-note { margin: 0; }
+.s-assumed-i .s-q-read:empty { display: none; }
 
 /* report page: demo bar and next steps */
 .s-demo-bar { background: color-mix(in srgb, var(--wi-src-demo) 12%, var(--wi-bg)); border-bottom: 1px solid color-mix(in srgb, var(--wi-src-demo) 35%, transparent); }
@@ -478,6 +500,18 @@ code { font-family: var(--wi-mono); font-size: 0.92em; background: var(--wi-surf
 .s-demo-bar-t { font-weight: 750; }
 .s-demo-bar a { display: inline-block; padding: 6px 0; }
 .s-demo-bar a[aria-current="page"] { font-weight: 800; color: var(--wi-ink); text-decoration-thickness: 2px; }
+.s-demo-bar a[hidden] { display: none; }
+.s-demo-note { flex: 1 1 100%; margin: 0 0 4px; font-size: 14px; color: var(--wi-ink); max-width: 80ch; }
+.s-demo-note[hidden] { display: none; }
+/* connect: starter message for apps without skills, sign-in hint */
+.s-starter { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--wi-line); display: grid; gap: 8px; }
+.s-starter h3 { margin: 0; font-size: 17px; }
+.s-starter p { margin: 0; }
+.s-starter-pre { margin: 0; padding: 12px 16px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--wi-font); font-size: 15px; line-height: 1.5; }
+.s-signin { margin: 16px 0 0; font-size: 15px; padding: 10px 12px; border-radius: 12px; background: var(--wi-surface-2); }
+.s-ai-demo { margin-top: 10px; display: grid; gap: 4px; }
+.s-ai-demo[hidden] { display: none; }
+.s-ai-demo p { margin: 0; }
 .s-has-report-lang .s-head [data-lang-switch] { display: none; }
 .s-next { padding: 24px 0 8px; }
 .s-next h2 { font-size: 22px; margin: 0 0 12px; }
@@ -492,3 +526,6 @@ code { font-family: var(--wi-mono); font-size: 0.92em; background: var(--wi-surf
   .s-head, .s-foot, .s-skip, .s-noprint { display: none !important; }
   body { background: #fff; }
 }
+
+/* Anything marked hidden stays hidden, whatever its button or layout class says. */
+[hidden] { display: none !important; }

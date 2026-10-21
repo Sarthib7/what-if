@@ -5,15 +5,17 @@
  */
 import { isLang, normaliseLang, setLang } from "../i18n/index.ts";
 import type { Lang } from "../i18n/index.ts";
-import { berlinFact } from "./berlin.ts";
+import { berlinFact, MIN_WAGE_2026 } from "./berlin.ts";
 import type { FactId } from "./berlin.ts";
 import { getCurrency, setCurrency } from "./format.ts";
 import { checkInputs } from "./inputs.ts";
 import { analyzeLunch } from "./lunch-offer.ts";
 import { msg } from "./messages.ts";
-import { analyzePrice } from "./price-change.ts";
+import { analyzePrice, priceWageRise } from "./price-change.ts";
 import { demoBusiness, getTemplate } from "./templates.ts";
-import type { Analysis, DecisionTemplate, InputCheck, PublicFact, RawInputs, ResolvedInput, Source, TemplateId } from "./types.ts";
+import { valuesOf } from "./figures.ts";
+import { langOf, withLang } from "./lang.ts";
+import type { Analysis, DecisionTemplate, InputCheck, PublicFact, RawInputs, ResolvedInput, Source, TemplateId, WageRiseCheck } from "./types.ts";
 
 export { checkInputs, parseNumber, show } from "./inputs.ts";
 export type { ParsedNumber } from "./inputs.ts";
@@ -25,6 +27,7 @@ export type { Verdict } from "./decision.ts";
 export { WEEKDAYS_PER_MONTH } from "./lunch-offer.ts";
 export { WEEKS_PER_MONTH } from "./price-change.ts";
 export { money, price, pct, num, signed, signedPct, setCurrency } from "./format.ts";
+export { priceWageRise } from "./price-change.ts";
 export {
   BERLIN_FACTS,
   BERLIN_KIEZE,
@@ -37,8 +40,11 @@ export {
   VAT_FOOD,
   VAT_DRINKS,
   LUNCH_VAT_BLENDED,
+  LUNCH_DRINKS_SHARE,
   MIN_WAGE_2026,
   MIN_WAGE_2027,
+  MIN_WAGE_RISE_2027,
+  FACT_IDS,
 } from "./berlin.ts";
 export type { FactId, Kiez } from "./berlin.ts";
 export { engineMessage, sourceLabel, ENGINE_MESSAGES } from "./messages.ts";
@@ -89,14 +95,43 @@ function notReadyMessage(t: DecisionTemplate, check: InputCheck): string {
   return lines.join("\n");
 }
 
-/** The public facts (VAT rates, minimum wage) the numbers relied on: the fallbacks What-IF filled in. */
+/**
+ * The public facts the numbers relied on: the VAT rates behind a VAT fallback (and, for the lunch blend,
+ * the BMF letter behind its 30% drinks share), and the minimum wage wherever the maths or a warning uses it.
+ */
 export function factsUsed(template: TemplateId, inputs: ResolvedInput[], lang: Lang): PublicFact[] {
   const ids: FactId[] = [];
-  const fell = (k: string) => inputs.find((i) => i.key === k)?.filledBy === "fallback";
-  if (fell("vat_rate")) ids.push(...(template === "lunch_offer" ? (["vat_food_7", "vat_drinks_19"] as const) : (["vat_drinks_19", "vat_food_7"] as const)));
-  const hours = inputs.find((i) => i.key === "extra_staff_hours_per_day")?.value;
-  if (template === "lunch_offer" && fell("staff_hourly_cost") && typeof hours === "number" && hours > 0) ids.push("min_wage_2026", "min_wage_2027");
+  const input = (k: string) => inputs.find((i) => i.key === k);
+  const fell = (k: string) => input(k)?.filledBy === "fallback";
+  const num = (k: string) => (typeof input(k)?.value === "number" ? (input(k)!.value as number) : undefined);
+  if (fell("vat_rate"))
+    ids.push(...(template === "lunch_offer" ? (["vat_food_7", "vat_drinks_19", "bmf_drinks_share_30"] as const) : (["vat_drinks_19", "vat_milk_takeaway_7", "vat_food_7"] as const)));
+  if (template === "lunch_offer") {
+    const hours = num("extra_staff_hours_per_day") ?? 0;
+    const rate = num("staff_hourly_cost");
+    const belowMin = rate !== undefined && rate < MIN_WAGE_2026 - 1e-9 && input("staff_hourly_cost")?.filledBy !== "alias";
+    // The minimum wage is used when it fills in the cost of the extra hours, and cited when the owner's own cost is below it.
+    if ((hours > 0 && fell("staff_hourly_cost")) || belowMin) ids.push("min_wage_2026", "min_wage_2027");
+  }
+  if (template === "price_change" && (num("minimum_wage_hours_per_week") ?? 0) > 0) ids.push("min_wage_2026", "min_wage_2027");
   return ids.map((id) => berlinFact(id, lang));
+}
+
+/**
+ * Price change: the minimum-wage rise on 1 Jan 2027 set against the new price, in the analysis's language.
+ * Undefined unless the owner gave the staff hours a week paid at or near the minimum wage (more than 0).
+ * Same as analysis.wageRise; recomputed from the inputs for analyses saved before that field existed.
+ */
+export function wageRiseCheck(a: Analysis): WageRiseCheck | undefined {
+  if (a.template !== "price_change") return undefined;
+  if (a.wageRise) return a.wageRise;
+  const prev = getCurrency();
+  setCurrency(a.currency);
+  try {
+    return withLang(langOf(a), () => priceWageRise(valuesOf(a.inputs)));
+  } finally {
+    setCurrency(prev);
+  }
 }
 
 /**

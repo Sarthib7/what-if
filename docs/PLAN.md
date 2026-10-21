@@ -61,7 +61,7 @@ Planned on 17 Oct 2026 after QA loop 1, and built by seven parallel agents again
 | **Prices incl. VAT, maths on net prices; staff cost as hours × cost per hour** | Owners know the price on the board, not the net price; VAT (7% food since 1 Jan 2026, 19% drinks) and the €13.90 minimum wage are dated public facts with sources, shown in a "Berlin facts used" card |
 | **Kiez and Berlin events only in the rehearsal** | They make the imagined customers concrete without pretending to be statistics; never in the maths |
 | **`/try` for owners without an AI app** | Selin (the café-owner persona) could not get her own numbers in without "Developer mode"; `/try` builds the same report in the browser |
-| **Near misses answered, not forced** (`template: null`); **hiring and opening hours "not yet"** | The skill and MCP judges found the rain, the rent and the part-timer squeezed into the lunch template; honesty about scope is part of the lesson |
+| **Near misses answered, not forced** (`whatif_start`'s `kind`); **hiring and opening hours "not yet"** | The skill and MCP judges found the rain, the rent and the part-timer squeezed into the lunch template; honesty about scope is part of the lesson |
 | **The model writes numbers plainly and reads them back** | "1.500 €" must become 1500, and the owner should see that it did |
 | **Skill: about 140 lines plus references** | Progressive disclosure; the Berlin facts, both example dialogues and the by-hand path live in `references/` |
 | **Recruit around one dated decision**: the minimum wage step to €14.60 on 1 Jan 2027 (price-change template) | A real, dated question every owner with staff faces; shown as a fact, never as pricing advice |
@@ -75,8 +75,8 @@ Planned on 17 Oct 2026 after QA loop 1, and built by seven parallel agents again
 | Rehearsal | Kiez-based persona mix, `BERLIN_EVENTS`, briefs that ask for answers in the analysis language, a caveat that follows the method | a rule-based run completes in each language; no "played by an AI" when no AI played |
 | Report | "Berlin facts used" card, language switcher, "who did what" line | the same link renders in DE · EN · ES · PL with the numbers recomputed |
 | Site | beta badge, invite-code check, `/try` wizard, starter prompts on the Connect page | an owner reaches her own report from her phone without an AI app |
-| MCP + build | invite codes (`?code=`, header, Bearer; 401 in DE/EN), `lang` on every tool, `template: null` for near misses, `{{BETA_CONTACT}}` templating, `.env.example` | a wrong code gets 401; `GET /api/mcp?code=` reports `valid`; the skill zip points at an https site |
-| Skill + docs | `skill/what-if/**` (four-language triggers, near-miss rule, read-backs, Berlin, by-hand path, price-change example, `references/berlin.md`), `src/mcp/instructions.ts`, README, PRD and PLAN v0.2 sections | SKILL.md ≤ 160 lines; instructions ≤ ~2,800 characters; README leads with the beta and has the env vars |
+| MCP + build | invite codes (`?code=`, header, Bearer; v0.3: a tool error in DE/EN, never 401), `lang` on every tool, `template: null` for near misses, `{{BETA_CONTACT}}` templating, `.env.example` | a wrong code gets the closed-beta tool error (never 401); `GET /api/mcp?code=` reports `valid`; the skill zip points at an https site |
+| Skill + docs | `skill/what-if/**` (four-language triggers, near-miss rule, read-backs, Berlin, by-hand path, price-change example, `references/berlin.md`), `src/mcp/instructions.ts`, README, PRD and PLAN v0.2 sections | SKILL.md ≤ 160 lines; instructions ≤ ~2,900 characters; README leads with the beta and has the env vars |
 | QA bot | checks for languages, codes, `/try`, the skill zip URL; judges re-run | loop 2 scores every component |
 
 Lead: contract (ARCHITECTURE v0.2 section, shared types), `LICENSE`, `.gitattributes`, integration, QA loops, commits.
@@ -91,10 +91,22 @@ Lead: contract (ARCHITECTURE v0.2 section, shared types), `LICENSE`, `.gitattrib
 6. **Beta wave 1 (before 1 Jan 2027):** German invite cards with the question, `/try` and a personal code; one 30-minute session per café in German on the owner's phone with her Z-report; at least 3 cafés on `/try` alone; consented, dated notes.
 7. **Review:** the success measures in PRD §12.5, as counts of cafés; decide what v0.3 builds.
 
+### QA loop 2 → 3
+
+Loop 2 judges (17 Oct 2026): engine 5, capped by one wrong public fact (milk drinks at 7% in the café); MCP 8; rehearsal 7.8; visual 8.0–8.4; skill 8.3; product 7.8–8.2; docs-devex 8.2. The full list with what changes: [`PRD.md` §12.4a](PRD.md#124a-qa-loop-2--3-what-the-judges-found-and-what-changes).
+
+| Area | Loop 3 change |
+|---|---|
+| Engine | drinks drunk in the café at 19% everywhere; optional `minimum_wage_hours_per_week` puts the 2027 step beside a price change |
+| Words | one list (`src/i18n/terms.ts`, the source chips): German "Gewinnschwelle"; de "Sie", es "tú", pl "ty", gender-neutral |
+| Skill + instructions | the by-hand test card and result check are the engine's rule with engine numbers; branch on `kind`; the sign-in line; contact lines that stand on their own; the 2027 wage comparison in the price-change coaching |
+| Build | lines with an empty `{{BETA_CONTACT}}` are dropped |
+| Report + README | `/r#demo-ai`, a Claude-played rehearsal, as the fourth demo; README "For judges" |
+
+Then `npm run qa:dry` while fixing and one counted `npm run qa` for loop 3 (same rule: each part 1–10, pass ≥ 8.5, stop after the fifth failed loop).
+
 ### Later (after the beta)
 
 - Model hiring and opening hours properly (today: the method on paper).
-- A calendar file (.ics) for the test's check-in days, generated in the browser.
-- A "log your result" screen at the end of `/try`, so owners without an AI app close the loop too.
-- What the minimum-wage step could cost a week, beside the price-change result (tagged as a guess until checked against payroll).
+- What the minimum-wage step could cost a week, beside the price-change result (tagged as a guess until checked against payroll): moved into loop 3 as the optional `minimum_wage_hours_per_week`.
 - More cities and kinds of business, once the Berlin beta shows owners come back.

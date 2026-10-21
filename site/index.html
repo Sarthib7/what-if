@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#f6f3ed" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="What-IF — rehearse a decision for your Berlin café">
-<meta property="og:description" content="Your numbers, three possible outcomes, the one number to remember, and a small test. Closed beta for Berlin cafés, in German, English, Spanish and Polish.">
+<meta property="og:description" content="Your numbers, three possible outcomes, your break-even, and a small test. Closed beta for Berlin cafés, in German, English, Spanish and Polish.">
 <meta property="og:url" content="{{SITE_URL}}/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/site.css">
@@ -84,9 +84,9 @@
       </header>
       <ul class="s-facts">
         <li class="s-fact">
-          <p class="s-fact-big" aria-hidden="true">7% · 19%</p>
+          <p class="s-fact-big" aria-hidden="true" data-i18n="b.vat_big">7% · 19%</p>
           <h3 data-i18n="b.vat_t">VAT on food: 7% since 1 January 2026</h3>
-          <p data-i18n="b.vat">Food in restaurants and cafés is taxed at 7%, eat-in and take-away. Drinks stay at 19% (milk drinks with at least 75% milk: 7%). The prices you type are what customers pay; What-IF takes the VAT out before it counts what you keep.</p>
+          <p data-i18n="b.vat">Food in restaurants and cafés is taxed at 7%, eat-in and take-away. Every drink consumed in the café stays at 19%; only take-away milk drinks with at least 75% milk are 7%. The prices you type are what customers pay; What-IF takes the VAT out before it counts what you keep.</p>
           <p class="s-fact-src" data-i18n="b.vat_src">Source: Steueränderungsgesetz 2025, § 12 (2) No. 15 UStG; BMF letter of 22 December 2025.</p>
         </li>
         <li class="s-fact">
@@ -137,12 +137,12 @@
         <li class="s-mstep" data-mstep>
           <div class="s-mrail" aria-hidden="true"><span>3</span></div>
           <div class="s-mtext"><h3 data-i18n="m.s3_t">Possible outcomes</h3><p data-teaser="s3">Three versions of the 10-day test — a slow start, your likely guess and a strong one — worked out with plain arithmetic you can open and check.</p></div>
-          <div class="s-mvis" aria-hidden="true" data-teaser="bars"><svg viewBox="0 0 240 96" class="s-minichart"><line x1="120" x2="120" y1="4" y2="92" class="s-mc-zero"/><text x="4" y="22" class="s-mc-t">cautious</text><rect x="74" y="12" width="46" height="14" rx="3" class="s-mc-neg"/><text x="4" y="52" class="s-mc-t">expected</text><rect x="113" y="42" width="7" height="14" rx="3" class="s-mc-neg"/><text x="4" y="82" class="s-mc-t">optimistic</text><rect x="120" y="72" width="48" height="14" rx="3" class="s-mc-pos"/></svg></div>
+          <div class="s-mvis" aria-hidden="true" data-teaser="bars"><svg viewBox="0 0 260 108" class="s-minichart"><line x1="130" x2="130" y1="15" y2="107" class="s-mc-zero"/><text x="4" y="13" class="s-mc-t">cautious</text><rect x="60" y="17" width="70" height="13" rx="3" class="s-mc-neg"/><text x="56" y="27.5" class="s-mc-t s-mc-t--b" text-anchor="end">−385 €</text><text x="4" y="48" class="s-mc-t">expected</text><rect x="108.6" y="52" width="21.4" height="13" rx="3" class="s-mc-neg"/><text x="104.6" y="62.5" class="s-mc-t s-mc-t--b" text-anchor="end">−118 €</text><text x="4" y="83" class="s-mc-t">optimistic</text><rect x="130" y="87" width="46.7" height="13" rx="3" class="s-mc-pos"/><text x="180.7" y="97.5" class="s-mc-t s-mc-t--b">+257 €</text></svg></div>
         </li>
         <li class="s-mstep" data-mstep>
           <div class="s-mrail" aria-hidden="true"><span>4</span></div>
-          <div class="s-mtext"><h3 data-i18n="m.s4_t">The one number to remember</h3><p data-i18n="m.s4">Break-even: how many extra customers a day you need before the change pays. Move a slider and watch the result — and the explanation — change.</p></div>
-          <div class="s-mvis" aria-hidden="true"><svg viewBox="0 0 220 96" class="s-minichart"><rect x="0" y="0" width="220" height="56" class="s-mc-zone-pos"/><rect x="0" y="56" width="220" height="40" class="s-mc-zone-neg"/><line x1="0" x2="220" y1="56" y2="56" class="s-mc-zero"/><path d="M8 86 L212 14" class="s-mc-line"/><line x1="122" x2="122" y1="4" y2="92" class="s-mc-be"/><text x="128" y="88" class="s-mc-t s-mc-t--b" data-teaser="be">break-even: 11 a day</text><circle cx="122" cy="56" r="6" class="s-mc-dot"/></svg></div>
+          <div class="s-mtext"><h3 data-i18n="m.s4_t">Your break-even: two numbers</h3><p data-i18n="m.s4">How many extra customers a day pay back the test, and from how many the change pays its way after that. Move a slider and watch the result — and the explanation — change.</p></div>
+          <div class="s-mvis" aria-hidden="true"><svg viewBox="0 0 220 96" class="s-minichart"><rect x="0" y="0" width="220" height="56" class="s-mc-zone-pos"/><rect x="0" y="56" width="220" height="40" class="s-mc-zone-neg"/><line x1="0" x2="220" y1="56" y2="56" class="s-mc-zero"/><path d="M8 82 L212 12" class="s-mc-line"/><line x1="83.8" x2="83.8" y1="4" y2="92" class="s-mc-be"/><text x="214" y="74" class="s-mc-t" text-anchor="end" data-teaser="be_t" data-i18n="m.be_t">break-even</text><text x="214" y="89" class="s-mc-t s-mc-t--b" text-anchor="end" data-teaser="be_n">11 a day</text><circle cx="83.8" cy="56" r="6" class="s-mc-dot"/></svg></div>
         </li>
         <li class="s-mstep" data-mstep>
           <div class="s-mrail" aria-hidden="true"><span>5</span></div>
@@ -198,6 +198,10 @@
         <h3 id="caveat-h" data-i18n="r.caveat_t">Honest by design</h3>
         <p data-i18n="r.caveat">Imagined customers are not data. A rehearsal can show you questions, doubts and wording problems before you spend money. It cannot tell you how many real people will come, and it never feeds the maths. The small test with real customers does that.</p>
         <p data-i18n="r.caveat_who">Who plays them: in the demo, simple fixed rules (no AI). With your AI coach, the AI plays each one from a short description. Either way they stay imagined.</p>
+        <div class="s-ai-demo" data-ai-demo hidden>
+          <p class="s-fact-link"><a href="/r#demo-ai"><span data-i18n="r.ai_link">Same deal, different imagined customers: see a rehearsal played by Claude (AI)</span> <span aria-hidden="true">→</span></a></p>
+          <p class="s-small" data-ai-demo-note></p>
+        </div>
       </aside>
     </div>
   </section>
@@ -246,12 +250,20 @@
             <h3 data-i18n="k.claude_t">Claude.ai</h3>
             <ol class="s-steps"><li data-i18n-html="k.claude1_html">Open <b>Settings → Capabilities → Skills</b>.</li><li data-i18n-html="k.claude2_html">Choose <b>Upload skill</b> and pick <code>what-if-skill.zip</code>.</li><li data-i18n="k.claude3">Ask “What if…?” in any chat.</li></ol>
           </article>
-          <article class="s-app">
-            <h3 data-i18n="k.cc_t">Claude Code</h3>
-            <p data-i18n-html="k.cc_html">Unzip it into your skills folder, so you get <code>~/.claude/skills/what-if/SKILL.md</code>:</p>
-            <div class="s-code"><pre><code id="cmd-skill">unzip what-if-skill.zip -d ~/.claude/skills/</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill"><span data-copy-label data-i18n="c.copy">Copy</span></button></div>
-          </article>
         </div>
+        <details class="s-dev">
+          <summary data-i18n="k.dev_summary">For developers: the skill in Claude Code</summary>
+          <div class="s-dev-in">
+            <section class="s-app">
+              <h3 data-i18n="k.cc_t">Claude Code</h3>
+              <p data-i18n-html="k.cc_html">Unzip it into your skills folder, so you get <code>~/.claude/skills/what-if/SKILL.md</code>:</p>
+              <p class="s-code-label" data-i18n="k.cc_unix">macOS and Linux (Terminal):</p>
+              <div class="s-code"><pre><code id="cmd-skill">unzip what-if-skill.zip -d ~/.claude/skills/</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill"><span data-copy-label data-i18n="c.copy">Copy</span></button></div>
+              <p class="s-code-label" data-i18n="k.cc_win">Windows (PowerShell):</p>
+              <div class="s-code"><pre><code id="cmd-skill-win">Expand-Archive what-if-skill.zip -DestinationPath "$HOME\.claude\skills" -Force</code></pre><button type="button" class="s-copy" data-copy="#cmd-skill-win"><span data-copy-label data-i18n="c.copy">Copy</span></button></div>
+            </section>
+          </div>
+        </details>
       </div>
     </div>
   </section>
@@ -265,7 +277,7 @@
       </header>
       <ul class="s-prompts">
         <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p1" data-i18n="p.q1">What if I run a weekday lunch deal at €9.90?</p><p class="s-prompt-then" data-i18n="p.a1">What-IF asks for a few numbers, one at a time, then shows three outcomes and your break-even.</p><div class="s-prompt-acts"><button type="button" class="s-copy s-copy--inline" data-copy="#p1"><span data-copy-label data-i18n="c.copy_prompt">Copy prompt</span></button><a href="/r#demo" data-demo="lunch_offer" data-i18n="p.see">See this demo</a></div></li>
-        <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p2" data-i18n="p.q2">What if I put my flat white up by 20 cents when the minimum wage rises to €14.60 in January 2027?</p><p class="s-prompt-then" data-i18n="p.a2">You see how many sales you could lose before you are worse off, and how to test it for two weeks. The wage rise is a dated fact; whether to change your price is your call.</p><div class="s-prompt-acts"><button type="button" class="s-copy s-copy--inline" data-copy="#p2"><span data-copy-label data-i18n="c.copy_prompt">Copy prompt</span></button><a href="/r#demo-price" data-demo="price_change" data-i18n="p.see">See this demo</a></div></li>
+        <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p2" data-i18n="p.q2">What if I put my flat white up by 20 cents when the minimum wage rises to €14.60 in January 2027? My staff work 60 minimum-wage hours a week.</p><p class="s-prompt-then" data-i18n="p.a2">You see what the wage rise costs you a week, whether 20 cents a cup covers it, how many sales you could lose before you are worse off, and how to test it for two weeks. The wage rise is a dated fact; whether to change your price is your call.</p><div class="s-prompt-acts"><button type="button" class="s-copy s-copy--inline" data-copy="#p2"><span data-copy-label data-i18n="c.copy_prompt">Copy prompt</span></button><a href="/r#demo-price" data-demo="price_change" data-i18n="p.see">See this demo</a></div></li>
         <li class="s-prompt"><p class="s-bubble s-bubble--lg" id="p3" data-i18n="p.q3">What if I try a lunch deal? Rehearse it with imagined customers from Neukölln first.</p><p class="s-prompt-then" data-i18n="p.a3">Imagined customers react over four rounds; you get the questions to ask real ones this week.</p><div class="s-prompt-acts"><button type="button" class="s-copy s-copy--inline" data-copy="#p3"><span data-copy-label data-i18n="c.copy_prompt">Copy prompt</span></button></div></li>
       </ul>
     </div>

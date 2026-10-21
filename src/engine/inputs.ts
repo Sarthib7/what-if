@@ -301,6 +301,8 @@ export function show(f: Pick<FieldSpec, "unit">, v: number | string): string {
       return t("unit.days", { n: v });
     case "hours/day":
       return t("unit.hoursPerDay", { n: v });
+    case "hours/week":
+      return t("unit.hoursPerWeek", { n: v });
     default:
       return String(v);
   }

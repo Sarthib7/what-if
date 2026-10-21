@@ -11,6 +11,7 @@ import {
   demoBusiness,
   demoInputs,
   ENGINE_MESSAGES,
+  engineMessage,
   getTemplate,
   normaliseKiez,
   OBSERVED_FIELDS,
@@ -20,12 +21,14 @@ import {
   sourceLabel,
   TEMPLATES,
   verdictFor,
+  wageRiseCheck,
   whatChanged,
   WEEKDAYS_PER_MONTH,
   WEEKS_PER_MONTH,
 } from "../src/engine/index.ts";
 import type { Analysis, RawInputs, TemplateId } from "../src/engine/index.ts";
 import type { Lang } from "../src/i18n/index.ts";
+import { TERMS } from "../src/i18n/terms.ts";
 
 const T = "2026-10-17T12:00:00.000Z";
 const LANGS: Lang[] = ["en", "de", "es", "pl"];
@@ -208,7 +211,9 @@ function mathsProblems(text: string, lang: Lang): { problems: string[]; checked:
   return { problems, checked };
 }
 function strings(x: unknown, out: string[] = []): string[] {
-  if (typeof x === "string") out.push(x);
+  if (typeof x === "string") {
+    if (!/^https?:\/\//.test(x)) out.push(x); // a fact's link is not a sum ("…?__blob=publicationFile&v=6")
+  }
   else if (Array.isArray(x)) for (const y of x) strings(y, out);
   else if (x && typeof x === "object") for (const y of Object.values(x)) strings(y, out);
   return out;
@@ -253,7 +258,9 @@ describe("lunch offer: the Berlin demo café", () => {
     assert.equal(vat.value, 0.106);
     assert.equal(vat.source, "assumption");
     assert.equal(vat.filledBy, "fallback");
-    assert.match(vat.note!, /70% food at 7% VAT and 30% drinks at 19%/);
+    assert.match(vat.note!, /The rates are law/, "the VAT rates are public facts, not a guess");
+    assert.match(vat.note!, /Only the split is a guess: 70% food and 30% drinks/);
+    assert.match(vat.note!, /22 December 2025/, "the 30% drinks share names the BMF letter it rests on");
     assert.match(vat.note!, /Steuerberater/);
     assert.match(DEMO_BUSINESS, /Lindenblatt.*Neukölln/);
   });
@@ -290,8 +297,8 @@ describe("lunch offer: the Berlin demo café", () => {
     assert.equal(a.breakEven.reachable, true);
     assert.ok(r.netTest(11) >= 0 && r.netTest(10) < 0);
     assert.ok(r.netDay(7) >= 0 && r.netDay(6) < 0);
-    assert.match(a.breakEven.plain, /11 extra lunch customers a day/);
-    assert.match(a.breakEven.plain, /7 a day keeps you level/);
+    assert.match(a.breakEven.plain, /^Two numbers: from 11 extra lunch customers a day the deal pays back the test/);
+    assert.match(a.breakEven.plain, /From 7 a day it pays its way after that; that is the number for keeping it/);
     assert.match(a.breakEven.maths, /€54\.57 a day to cover/);
     assert.match(a.breakEven.label, /pay back the test/);
     const on = a.breakEven.ongoing!;
@@ -354,8 +361,8 @@ describe("lunch offer: the Berlin demo café", () => {
       close(p.netMonth, r.netMonth(p.x), `netMonth at ${p.x}`);
       assert.ok(p.explanation.includes(`${p.x} extra customer`), `explanation at ${p.x} names x`);
     }
-    assert.match(s.points[11]!.explanation, /at or above the 11 a day needed/);
-    assert.match(s.points[8]!.explanation, /setup is not paid back/);
+    assert.match(s.points[11]!.explanation, /reaches the 11 a day needed, so the deal pays back the test/);
+    assert.match(s.points[8]!.explanation, /does not pay back the test yet: that needs 11 a day/);
     assert.match(s.points[3]!.explanation, /below the 7 a day the deal needs to pay its way/);
     assert.equal(s.points[8]!.vsGuess, 0);
     assert.equal(s.points[9]!.vsGuess, 53.5);
@@ -373,13 +380,19 @@ describe("lunch offer: the Berlin demo café", () => {
     assert.ok(a.warnings.some((w) => /€1\.19 less/.test(w)), "deal margin below today's lunch margin");
   });
 
-  test("public facts used: the VAT rates behind the 10.6% guess", () => {
-    assert.deepEqual(a.facts.map((f) => f.id), ["vat_food_7", "vat_drinks_19"]);
-    for (const f of a.facts) {
-      assert.match(f.source, /Steueränderungsgesetz 2025/);
-      assert.equal(f.url, "https://www.bundesfinanzministerium.de");
+  test("public facts used: the VAT rates behind the 10.6% guess and the BMF letter behind its 30% drinks share", () => {
+    assert.deepEqual(a.facts.map((f) => f.id), ["vat_food_7", "vat_drinks_19", "bmf_drinks_share_30"]);
+    const [food, drinks, bmf] = a.facts;
+    assert.match(food!.source, /Steueränderungsgesetz 2025, § 12 Abs\. 2 Nr\. 15 UStG/);
+    assert.match(drinks!.source, /§ 12/);
+    for (const f of [food!, drinks!]) {
+      assert.equal(f.url, "https://www.gesetze-im-internet.de/ustg_1980/__12.html", "the law text itself, not a home page");
       assert.equal(f.asOf, "2026-01-01");
     }
+    assert.equal(bmf!.source, "Bundesministerium der Finanzen, BMF-Schreiben vom 22.12.2025");
+    assert.equal(bmf!.asOf, "2025-12-22");
+    assert.match(bmf!.url, /^https:\/\/www\.bundesfinanzministerium\.de\/.+2025-12-22-verpflegungsdienstleistungen\.pdf/);
+    assert.match(bmf!.value, /30%/);
   });
 
   test("analysis metadata", () => {
@@ -481,7 +494,7 @@ describe("inputs", () => {
     assert.ok(a.nextQuestions.some((q) => /lunchtime customer really spend/.test(q)));
     assert.ok(a.nextQuestions.length <= 6);
     assert.equal(a.business, "Your café");
-    assert.deepEqual(a.facts.map((f) => f.id), ["vat_food_7", "vat_drinks_19"], "no staff hours: the minimum wage is not used");
+    assert.deepEqual(a.facts.map((f) => f.id), ["vat_food_7", "vat_drinks_19", "bmf_drinks_share_30"], "no staff hours: the minimum wage is not used");
   });
 
   test("staff cost = hours × cost per hour; the minimum wage fallback says so and is listed as a fact", () => {
@@ -493,7 +506,7 @@ describe("inputs", () => {
     assert.match(rate.note!, /minimum wage.*1 January 2026.*€14\.60 from 1 January 2027/);
     assert.match(rate.note!, /employer contributions/);
     close(fig(a, "running_cost_day").value, 2 * 13.9 + 5, "2 h × €13.90 + €5 promotion");
-    assert.deepEqual(a.facts.map((f) => f.id), ["vat_food_7", "vat_drinks_19", "min_wage_2026", "min_wage_2027"]);
+    assert.deepEqual(a.facts.map((f) => f.id), ["vat_food_7", "vat_drinks_19", "bmf_drinks_share_30", "min_wage_2026", "min_wage_2027"]);
     const own = analyze("lunch_offer", { ...demoInputs("lunch_offer"), vat_rate: "7%" }, { createdAt: T });
     assert.deepEqual(own.facts, [], "the owner's own VAT rate and staff cost: no public facts used");
   });
@@ -624,8 +637,10 @@ describe("price change (19% VAT on a flat white)", () => {
     close(fig(a, "margin_now").value, 2.33, "margin now");
     close(fig(a, "margin_new").value, 2.58, "margin new");
     close(fig(a, "left_week_now").value, 1444.6, "weekly left now");
-    assert.deepEqual(a.facts.map((f) => f.id), ["vat_drinks_19", "vat_food_7"]);
-    assert.match(a.inputs.find((i) => i.key === "vat_rate")!.note!, /milk drinks with at least 75% milk/);
+    assert.deepEqual(a.facts.map((f) => f.id), ["vat_drinks_19", "vat_milk_takeaway_7", "vat_food_7", "min_wage_2026", "min_wage_2027"]);
+    const note = a.inputs.find((i) => i.key === "vat_rate")!.note!;
+    assert.match(note, /milk drinks drunk in the café included/);
+    assert.match(note, /Only milk drinks sold to take away with at least 75% milk are 7%/);
   });
 
   test("break-even volume change and lost sales", () => {
@@ -835,7 +850,8 @@ describe("planTest", () => {
     assert.deepEqual(p.rule, { unit: "customers/day", keepFrom: 7, tweakFrom: 4, payBackFrom: 11, testable: true });
     assert.match(p.decisionRule.keep, /^7 or more extra lunch customers a day on average: keep the deal/);
     assert.match(p.decisionRule.keep, /setup is already spent/);
-    assert.match(p.decisionRule.keep, /At 11 or more, the test has also paid back its setup/);
+    assert.match(p.decisionRule.keep, /From 11 a day it also pays back the test/);
+    assert.match(p.plain, /from there it pays its way \(from 11 a day it also pays back the test\)/);
     assert.match(p.decisionRule.tweak, /^4 to under 7 a day/);
     assert.match(p.decisionRule.stop, /^Fewer than 4 a day/);
     assert.deepEqual(p.checkIns.map((c) => c.day), [3, 5, 10]);
@@ -1017,11 +1033,12 @@ describe("four languages", () => {
       assert.equal(a.id, en.id, "the analysis id does not depend on the language");
       assert.deepEqual(a.scenarios.map((s) => s.netTest), en.scenarios.map((s) => s.netTest));
       assert.equal(a.breakEven.value, en.breakEven.value);
-      assert.equal(a.facts.length, 2);
+      assert.equal(a.facts.length, 3);
       assert.equal(a.inputs.length, en.inputs.length);
     }
     assert.match(fig(lunchDemo("de"), "deal_margin").maths, /^9,90\s€ Angebotspreis ÷ 1,106 \(ohne 10,6\s% Mehrwertsteuer\) − 3,60\s€ Zutaten = 5,35\s€ pro Angebot$/);
-    assert.match(lunchDemo("de").breakEven.plain, /11 zusätzliche Mittagsgäste pro Tag/);
+    assert.match(lunchDemo("de").breakEven.plain, /^Zwei Zahlen: Ab 11 zusätzlichen Mittagsgästen pro Tag holt das Angebot den Test herein/);
+    assert.match(lunchDemo("de").breakEven.plain, /Ab 7 pro Tag trägt sich das Angebot danach; das ist die Zahl, um es zu behalten/);
     assert.match(lunchDemo("es").breakEven.label, /Clientes más al mediodía/);
     assert.match(lunchDemo("pl").worstCase.plain, /546\s€/);
     assert.match(lunchDemo("de").facts[0]!.label, /Mehrwertsteuer auf Speisen/);
@@ -1058,17 +1075,318 @@ describe("four languages", () => {
 });
 
 describe("Berlin facts", () => {
-  test("four dated, sourced facts", () => {
-    assert.deepEqual(BERLIN_FACTS.map((f) => f.id), ["vat_food_7", "vat_drinks_19", "min_wage_2026", "min_wage_2027"]);
+  const byId = (id: string, lang: Lang = "en") => berlinFacts(lang).find((f) => f.id === id)!;
+
+  test("six dated, sourced facts, each linked to the document itself (a path, not a home page)", () => {
+    assert.deepEqual(BERLIN_FACTS.map((f) => f.id), ["vat_food_7", "vat_drinks_19", "vat_milk_takeaway_7", "bmf_drinks_share_30", "min_wage_2026", "min_wage_2027"]);
     for (const f of BERLIN_FACTS) {
-      assert.match(f.url, /^https:\/\/www\.(bundesfinanzministerium|bundesregierung)\.de$/);
+      const u = new URL(f.url);
+      assert.equal(u.protocol, "https:");
+      assert.ok(u.pathname.length > 1, `${f.id}: ${f.url} opens the cited text, not a home page`);
       assert.match(f.asOf, /^\d{4}-\d{2}-\d{2}$/);
       assert.ok(f.source.length > 10 && f.label.length > 5 && f.value.length > 1);
     }
-    assert.match(BERLIN_FACTS[2]!.value, /€13\.90/);
-    assert.match(BERLIN_FACTS[3]!.value, /€14\.60.*2027/);
-    assert.match(BERLIN_FACTS[2]!.source, /Fünfte Mindestlohnanpassungsverordnung/);
-    assert.match(berlinFacts("de")[2]!.value, /13,90 €/);
+  });
+
+  test("VAT links to § 12 UStG and Anlage 2, the minimum wage to the MiLoV5, the 30% drinks share to the BMF letter", () => {
+    for (const id of ["vat_food_7", "vat_drinks_19"]) assert.equal(byId(id).url, "https://www.gesetze-im-internet.de/ustg_1980/__12.html");
+    assert.equal(byId("vat_milk_takeaway_7").url, "https://www.gesetze-im-internet.de/ustg_1980/anlage_2.html");
+    assert.match(byId("vat_milk_takeaway_7").source, /§ 12 Abs\. 2 Nr\. 1 UStG mit Anlage 2/);
+    for (const id of ["min_wage_2026", "min_wage_2027"]) {
+      assert.equal(byId(id).url, "https://www.gesetze-im-internet.de/milov5/BJNR10C0A0025.html");
+      assert.match(byId(id).source, /Fünfte Mindestlohnanpassungsverordnung \(MiLoV5\)/);
+    }
+    const bmf = byId("bmf_drinks_share_30");
+    assert.equal(bmf.source, "Bundesministerium der Finanzen, BMF-Schreiben vom 22.12.2025");
+    assert.equal(bmf.asOf, "2025-12-22");
+    assert.match(new URL(bmf.url).pathname, /2025-12-22-verpflegungsdienstleistungen\.pdf$/);
+    assert.match(byId("min_wage_2026").value, /€13\.90/);
+    assert.match(byId("min_wage_2027").value, /€14\.60.*2027/);
+    assert.match(byId("min_wage_2026", "de").value, /13,90 €/);
+  });
+
+  test("milk drinks: every language puts the 7% rate on take-away only, never on drinks in the café", () => {
+    const words: Record<Lang, { milk: RegExp; cafe: RegExp; away: RegExp }> = {
+      en: { milk: /milk/i, cafe: /in the café/i, away: /take[- ]away/i },
+      de: { milk: /milch/i, cafe: /im Café/i, away: /zum Mitnehmen/i },
+      es: { milk: /leche/i, cafe: /en el local/i, away: /para llevar/i },
+      pl: { milk: /mlek|mlecz/i, cafe: /na miejscu/i, away: /na wynos/i },
+    };
+    const seven = /(^|[^\d.,])7\s?%/;
+    for (const l of LANGS) {
+      const w = words[l];
+      const msg = (k: string) => engineMessage(k as never, { value: "19%", item: "flat white", vat: "19%" }, l);
+      // The four places that state the milk-drink rule each name take-away.
+      for (const k of ["f.price.vat_rate.ask", "note.vatPrice", "price.q.vat", "fact.vat_milk_takeaway_7.label"]) {
+        assert.match(msg(k), w.milk, `${l} ${k} talks about milk drinks`);
+        assert.match(msg(k), w.away, `${l} ${k} names take-away`);
+      }
+      assert.match(msg("fact.vat_drinks_19.label"), w.cafe, `${l}: the drinks fact says milk drinks in the café are 19%`);
+      // Every clause of the price analysis, plan, template and facts: milk at 7% only with take-away, never with the café.
+      const texts = strings([priceDemo(l), planTest(priceDemo(l)), getTemplate("price_change", l), berlinFacts(l), lunchDemo(l)]);
+      for (const text of texts)
+        for (const clause of text.split(/[.;!?](?:\s|$)|[()]/)) {
+          if (!w.milk.test(clause)) continue;
+          if (seven.test(clause)) assert.match(clause, w.away, `${l}: "${clause}" puts milk drinks at 7% without saying take-away`);
+          if (w.cafe.test(clause)) assert.doesNotMatch(clause, seven, `${l}: "${clause}" puts milk drinks in the café at 7%`);
+        }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The price demo answers its own wage question (1 Jan 2027: €13.90 → €14.60)
+// ---------------------------------------------------------------------------
+describe("price change and the 2027 minimum wage", () => {
+  const withHours = (patch: RawInputs = {}, lang?: Lang) =>
+    analyze("price_change", { ...demoInputs("price_change", "en"), ...patch }, { demo: true, createdAt: T, ...(lang ? { lang } : {}) });
+
+  test("demo: 60 h a week at the minimum wage; the rise costs 60 × €0.70 = €42 in wages, €50.82 with ~21% employer contributions; the 30 cents bring €91.02", () => {
+    assert.equal(demoInputs("price_change").minimum_wage_hours_per_week, 60);
+    const a = priceDemo();
+    const w = a.wageRise!;
+    assert.deepEqual([w.hoursPerWeek, w.risePerHour, w.wageWeek, w.employerShare, w.costWeek, w.gainWeek, w.leftWeek, w.covers], [60, 0.7, 42, 0.21, 50.82, 91.02, 40.2, true]);
+    assert.equal(w.gainWeek, scen(a, "expected").figures.find((f) => f.id === "delta_week")!.value, "the gain is the expected scenario's weekly difference");
+    assert.equal(fig(a, "min_wage_rise_week").value, 50.82);
+    assert.equal(
+      fig(a, "min_wage_rise_week").maths,
+      "From 1 January 2027 the minimum wage rises from €13.90 to €14.60 an hour: €14.60 − €13.90 = €0.70 more an hour. 60 staff hours a week × €0.70 = €42.00 a week in wages; with about 21% employer contributions on top (a guess; Minijobs cost more) = €50.82 a week.",
+    );
+    assert.equal(fig(a, "left_after_wage_rise_week").maths, "+€91.02 a week from the new price − €50.82 for the wage rise = +€40.20 a week. Both at your likely guess (−4% sales).");
+    assert.match(w.plain, /the rise of 30 cents brings about €91 a week/);
+    assert.match(w.plain, /€42 a week in wages for 60 staff hours, about €51 with employer contributions \(a guess: about 21%\)/);
+    assert.match(w.plain, /covers the wage rise, with about €40 a week to spare/);
+    assert.match(w.plain, /The rise comes either way; the decision is only about the price\./);
+    assert.ok(a.lessons[0]!.startsWith(w.plain), "the wage answer is the first lesson");
+    assert.deepEqual(a.facts.map((f) => f.id), ["vat_drinks_19", "vat_milk_takeaway_7", "vat_food_7", "min_wage_2026", "min_wage_2027"]);
+    assert.equal(wageRiseCheck(a), w);
+  });
+
+  test("the shipped report demo (+20 cents): €43.40 a week against €50.82 with contributions, so the price covers only part of the rise", () => {
+    const a = withHours({ new_price: 4.1 });
+    assert.deepEqual([a.wageRise!.gainWeek, a.wageRise!.wageWeek, a.wageRise!.costWeek, a.wageRise!.leftWeek, a.wageRise!.covers], [43.4, 42, 50.82, -7.42, false]);
+    assert.match(a.wageRise!.plain, /the rise of 20 cents brings about €43 a week/);
+    assert.match(a.wageRise!.plain, /covers only part of the wage rise: about €7\.42 a week is still missing/);
+    const de = withHours({ new_price: 4.1 }, "de");
+    assert.match(de.wageRise!.plain, /bringt die Erhöhung um 20 Cent etwa 43\s€ pro Woche/);
+    assert.match(de.wageRise!.maths, /60 Personalstunden pro Woche × 0,70\s€ = 42,00\s€ Lohn pro Woche; mit etwa 21\s%\s?Arbeitgeberanteil/);
+    assert.match(de.wageRise!.maths, /\+43,40\s€ pro Woche durch den neuen Preis − 50,82\s€ für die Lohnerhöhung = −7,42\s€ pro Woche/);
+  });
+
+  test("short and none: more hours than the price covers, and a price that brings nothing", () => {
+    const short = withHours({ minimum_wage_hours_per_week: 200 }).wageRise!;
+    assert.deepEqual([short.wageWeek, short.costWeek, short.leftWeek, short.covers], [140, 169.4, -78.38, false]);
+    assert.match(short.plain, /covers only part of the wage rise: about €78 a week is still missing/);
+    const none = withHours({ new_price: 3.6, volume_low: -0.02, volume_likely: 0, volume_high: 0.02 }).wageRise!;
+    assert.ok(none.gainWeek < 0 && !none.covers);
+    assert.match(none.plain, /brings no extra money \(−€\d+ a week\), so it does nothing towards the minimum-wage rise/);
+  });
+
+  test("without the hours: no wage line, no minimum-wage facts, no extra figures", () => {
+    const d = { ...demoInputs("price_change") } as RawInputs;
+    delete d.minimum_wage_hours_per_week;
+    for (const raw of [d, { ...d, minimum_wage_hours_per_week: 0 }]) {
+      const a = analyze("price_change", raw, { demo: true, createdAt: T });
+      assert.equal(a.wageRise, undefined);
+      assert.equal(wageRiseCheck(a), undefined);
+      assert.ok(!a.current.some((f) => f.id === "min_wage_rise_week"));
+      assert.ok(!a.facts.some((f) => f.id.startsWith("min_wage")));
+    }
+  });
+
+  test("wageRiseCheck recomputes for an older saved analysis, in its own language and currency", () => {
+    const de = withHours({}, "de");
+    const { wageRise, ...old } = de;
+    analyze("lunch_offer", demoInputs("lunch_offer"), { lang: "en", currency: "GBP" });
+    assert.deepEqual(wageRiseCheck(old as Analysis), wageRise);
+  });
+
+  test("every wage sum checks out in every language; changing the hours explains itself", () => {
+    for (const l of LANGS) {
+      const a = withHours({}, l);
+      assertMaths([a.wageRise!.maths, fig(a, "min_wage_rise_week").maths, fig(a, "left_after_wage_rise_week").maths], l, 4);
+      assert.doesNotMatch(JSON.stringify(a.wageRise), /\{[a-zA-Z]+\}|NaN|undefined/);
+    }
+    const c = whatChanged(withHours(), withHours({ minimum_wage_hours_per_week: 40 }));
+    assert.equal(c.changes[0]!.key, "minimum_wage_hours_per_week");
+    assert.deepEqual([c.changes[0]!.fromText, c.changes[0]!.toText], ["60 hours a week", "40 hours a week"]);
+    assert.match(c.plain[0]!, /from 60 staff hours to 40 staff hours a week, so the wage rise from 1 January 2027 costs €28 a week instead of €42/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plain words for edge cases: low wages, nobody to switch, a test that cannot lose
+// ---------------------------------------------------------------------------
+describe("plain words for edge cases", () => {
+  test("a staff hour below the minimum wage gets a warning, and the minimum wage joins the facts", () => {
+    const low = analyze("lunch_offer", { ...demoInputs("lunch_offer"), staff_hourly_cost: 10 }, { createdAt: T });
+    assert.ok(low.warnings.some((w) => /€10\.00 is below the statutory minimum wage of €13\.90 an hour \(since 1 January 2026; €14\.60 from 1 January 2027\)/.test(w)));
+    assert.ok(low.warnings.some((w) => /Check your number/.test(w)));
+    assert.ok(low.facts.some((f) => f.id === "min_wage_2026"));
+    const de = analyze("lunch_offer", { ...demoInputs("lunch_offer"), staff_hourly_cost: 10 }, { createdAt: T, lang: "de" });
+    assert.ok(de.warnings.some((w) => /unter dem gesetzlichen Mindestlohn von 13,90\s€ pro Stunde/.test(w)));
+    for (const rate of [13.9, 18]) {
+      const ok = analyze("lunch_offer", { ...demoInputs("lunch_offer"), staff_hourly_cost: rate }, { createdAt: T });
+      assert.ok(!ok.warnings.some((w) => /minimum wage/.test(w)), `€${rate} an hour: no warning`);
+    }
+  });
+
+  test("no lunch customers: no 'every regular who switches costs you money', and the lesson says nobody switches", () => {
+    const b = analyze("lunch_offer", { ...demoInputs("lunch_offer"), lunch_customers: 0 }, { createdAt: T });
+    assert.ok(!b.warnings.some((w) => /every regular who switches costs you money/.test(w)));
+    assert.ok(b.lessons.some((l) => /no lunch regular switches to the deal, so switching costs you nothing/.test(l)));
+    assert.doesNotMatch(JSON.stringify(b), /about 0 of them/);
+  });
+
+  test("the /try placeholders (switching is a gain): never an alarm, never '− −', never 'lowers … by €0.00'", () => {
+    const raw: RawInputs = { weekday_customers: 140, avg_spend: 7.4, lunch_customers: 38, offer_price: 9.9, offer_cost: 3.6, extra_likely: 8 };
+    for (const l of LANGS) {
+      const a = analyze("lunch_offer", raw, { createdAt: T, lang: l });
+      const p = planTest(a);
+      assert.ok(a.worstCase.value > 0);
+      assert.equal(a.breakEven.value, 0);
+      const text = strings([a, p]).join("\n");
+      assert.doesNotMatch(text, /−\s*−|\+\s*−|--/, `${l}: a double sign`);
+      assert.doesNotMatch(strings([p.measure, p.costCap, p.checkIns]).join("\n"), /€0\.00|\b0,00\s?€|(^|[^\d.,])0\s?€|€0(?![\d.,])/, `${l}: a zero amount in words`);
+      assertMaths([a, p], l, 10);
+    }
+    const en = analyze("lunch_offer", raw, { createdAt: T });
+    assert.match(en.worstCase.plain, /^Even if nobody new comes, the test does not lose money \(it ends about €100 up\)/);
+    assert.match(en.sensitivity.points[8]!.explanation, /8 × €5\.35 per deal \+ €10\.03 a day left from regulars who switch after running costs = \+€52\.83 a day/);
+    assert.match(en.sensitivity.points[8]!.explanation, /No extra customers are needed/);
+    assert.match(planTest(en).measure[2]!.how, /each one leaves you about €0\.88 more than their usual lunch/);
+    assert.match(planTest(en).costCap, /^The test costs you nothing in cash/);
+  });
+
+  test("a free test with nobody switching says so, without claiming a gain", () => {
+    const b = analyze("lunch_offer", { ...demoInputs("lunch_offer"), switch_share: 0, setup_cost: 0, marketing_per_week: 0, extra_staff_hours_per_day: 0 }, { createdAt: T });
+    assert.equal(b.worstCase.value, 0);
+    assert.match(b.worstCase.plain, /does not lose money: it has no setup, staff or promotion costs/);
+    assert.match(b.breakEven.ongoing!.plain, /it has no daily costs/);
+    assert.ok(b.lessons.some((l) => /costs nothing to run/.test(l)));
+    const p = planTest(b);
+    assert.match(p.decisionRule.keep, /it has no daily costs/);
+    assert.match(p.costCap, /^The test costs you nothing:/);
+    assert.doesNotMatch(JSON.stringify([b, p]), /leave you more than their usual lunch|€0\.00 a day more/);
+  });
+
+  test("words match their numbers: 'what you keep' for a margin, 'VAT included' on the till, the blend named", () => {
+    const a = lunchDemo(), p = planTest(a);
+    assert.match(p.costCap, /lower what you keep by about €13\.57 a day/);
+    assert.match(p.measure[2]!.how, /each one lowers what you keep by about €1\.19/);
+    assert.doesNotMatch(JSON.stringify(p), /takings by/);
+    assert.match(scen(a, "expected").figures.find((f) => f.id === "revenue_change_day")!.label, /VAT included, before costs/);
+    assert.match(fig(lunchDemo("de"), "weekday_left_month").maths, /Die 10,6\s% sind Ihre Mischung beim Mittagessen/);
+    assert.match(scen(lunchDemo("de"), "expected").figures.find((f) => f.id === "revenue_change_day")!.label, /mit Mehrwertsteuer, vor Kosten/);
+    // A VAT change too small to show is "stays", not "9.7% (60) instead of 9.7% (60)".
+    const before = analyze("price_change", demoInputs("price_change", "en"), { demo: true, createdAt: T });
+    const c = whatChanged(before, analyze("price_change", { ...demoInputs("price_change", "en"), vat_rate: 0.16 }, { demo: true, createdAt: T }));
+    assert.deepEqual(c.changes.map((x) => x.key), ["vat_rate"]);
+    assert.match(c.plain[0]!, /break-even stays at −9\.7%/);
+    assert.doesNotMatch(c.plain[0]!, /instead of 9\.7% \(60\)/);
+  });
+
+  test("proper singulars and plurals: 1 extra customer, 1 zusätzlicher Gast, 1 cliente, 1 dodatkowy klient", () => {
+    const raw: RawInputs = { ...demoInputs("lunch_offer"), switch_share: 0, setup_cost: 0, extra_staff_hours_per_day: 0, marketing_per_week: 5, extra_low: 0, extra_likely: 1, extra_high: 2 };
+    const bad: Record<Lang, RegExp> = {
+      en: /\b1 (extra (lunch )?)?customers\b|\b1 sales\b/,
+      de: /\b1 zusätzliche (Mittags)?[gG]äste\b|\b1 zusätzlichen (Mittags)?[gG]ästen\b|\b1 Mittagsgäste\b|\b1 Verkäufe\b/,
+      es: /\b1 clientes\b|\b1 ventas\b/,
+      pl: /\b1 dodatkowych\b|\b1 klientów\b/,
+    };
+    for (const l of LANGS) {
+      const a = analyze("lunch_offer", raw, { createdAt: T, lang: l });
+      assert.equal(a.breakEven.value, 1);
+      assert.equal(a.breakEven.ongoing!.value, 1);
+      const r = compareResult(a, { baseline_lunch_customers: 38, test_lunch_customers: 39, redemptions_per_day: 1 });
+      const text = strings([a, planTest(a), r]).join("\n");
+      assert.doesNotMatch(text, bad[l], `${l}: a plural after 1`);
+      assertMaths([a, planTest(a)], l, 10);
+    }
+    assert.match(analyze("lunch_offer", raw, { createdAt: T, lang: "de" }).breakEven.maths, /aufgerundet 1 zusätzlicher Gast pro Tag/);
+  });
+
+  test("seeded: no '− −', '--' or '+−' anywhere, in any language, for lunch and price (switching gains included)", () => {
+    const rand = rng(1717);
+    const between = (lo: number, hi: number, dp = 2) => Math.round((lo + rand() * (hi - lo)) * 10 ** dp) / 10 ** dp;
+    const DOUBLE = /−\s*−|\+\s*−|--/;
+    let checked = 0;
+    for (let i = 0; i < 40; i++) {
+      const lang = LANGS[i % 4]!;
+      const offer = between(6, 14, 1);
+      const raw: RawInputs = {
+        weekday_customers: 150,
+        avg_spend: between(4, 12),
+        lunch_customers: Math.round(between(0, 60, 0)),
+        offer_price: offer,
+        offer_cost: between(1, Math.max(1.1, offer / 1.106 - 0.5)),
+        extra_likely: Math.round(between(0, 12, 0)),
+        ...(rand() < 0.5 ? {} : { lunch_spend: between(5, 14) }),
+        ...(rand() < 0.5 ? {} : { setup_cost: Math.round(between(0, 300, 0)) }),
+        ...(rand() < 0.5 ? {} : { extra_staff_hours_per_day: 1, staff_hourly_cost: between(10, 20) }),
+        ...(rand() < 0.5 ? {} : { marketing_per_week: Math.round(between(0, 50, 0)) }),
+      };
+      const a = analyze("lunch_offer", raw, { createdAt: T, lang });
+      const after = analyze("lunch_offer", { ...raw, offer_price: offer + 0.5, lunch_customers: 20 }, { createdAt: T, lang });
+      const objs = [a, planTest(a), compareResult(a, { baseline_lunch_customers: 30, test_lunch_customers: 28 + (i % 6), redemptions_per_day: 9 }), whatChanged(a, after)];
+      assert.doesNotMatch(strings(objs).join("\n"), DOUBLE, `lunch case ${i} (${lang})`);
+      assertMaths(objs, lang, 10);
+      const cur = between(1.5, 5);
+      const pr: RawInputs = {
+        item: "Cappuccino",
+        current_price: cur,
+        new_price: Math.max(0.5, Math.round((cur + between(-0.5, 0.8)) * 100) / 100),
+        units_per_week: 300,
+        unit_cost: between(0.3, 1.2),
+        volume_likely: between(-0.1, 0.05),
+        minimum_wage_hours_per_week: Math.round(between(0, 80, 0)),
+      };
+      const check = checkInputs("price_change", pr, { lang });
+      if (!check.ready) continue; // same price, or a new price at or below cost: refused in words (tested above)
+      const p = analyze("price_change", pr, { createdAt: T, lang });
+      const objsP = [p, planTest(p), compareResult(p, { units_before_per_week: 300, units_after_per_week: 280 }), whatChanged(p, analyze("price_change", { ...pr, minimum_wage_hours_per_week: 30 }, { createdAt: T, lang }))];
+      assert.doesNotMatch(strings(objsP).join("\n"), DOUBLE, `price case ${i} (${lang})`);
+      assertMaths(objsP, lang, 5);
+      checked++;
+    }
+    assert.ok(checked >= 20, `${checked} price cases checked`);
+  });
+
+  test("today's price below cost: the weekly difference adds today's loss instead of subtracting a negative", () => {
+    const b = analyze("price_change", { ...demoInputs("price_change"), current_price: 1.0, new_price: 2.0, unit_cost: 0.95 }, { createdAt: T });
+    const dw = scen(b, "expected").figures.find((f) => f.id === "delta_week")!.maths;
+    assert.match(dw, /\+ €68\.20 you lose now = /);
+    assert.doesNotMatch(JSON.stringify(b), /−\s*−/);
+    assertMaths([b], "en", 10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two numbers, the same words everywhere (src/i18n/terms.ts)
+// ---------------------------------------------------------------------------
+describe("two numbers: pays back the test (11) and pays its way, to keep it (7)", () => {
+  /** The shared phrase's words in order, so German word order ("holt das Angebot den Test herein") still counts. */
+  const inOrder = (phrase: string) => new RegExp(phrase.split(" ").map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*"), "i");
+
+  test("the break-even card, first lesson, keep rule and plan use the shared words in every language", () => {
+    for (const l of LANGS) {
+      const a = lunchDemo(l), p = planTest(a);
+      const back = inOrder(TERMS[l].payBackTest), way = inOrder(TERMS[l].paysItsWay);
+      assert.match(a.breakEven.plain, back, `${l}: break-even says "${TERMS[l].payBackTest}"`);
+      assert.match(a.breakEven.plain, way, `${l}: break-even says "${TERMS[l].paysItsWay}"`);
+      assert.ok(a.breakEven.plain.indexOf("11") < a.breakEven.plain.indexOf(" 7 "), `${l}: 11 first, then 7`);
+      assert.match(a.lessons[0]!, back);
+      assert.match(a.lessons[0]!, way);
+      assert.match(p.decisionRule.keep, back, `${l}: the keep rule names paying back the test as the second line`);
+      assert.match(p.plain, way);
+    }
+  });
+
+  test("German owner text says Gewinnschwelle, never Break-even", () => {
+    const all = JSON.stringify([lunchDemo("de"), planTest(lunchDemo("de")), priceDemo("de"), planTest(priceDemo("de"))]);
+    assert.doesNotMatch(all, /break-even/i);
+    for (const [k, v] of Object.entries(ENGINE_MESSAGES.de as Record<string, unknown>)) if (typeof v === "string") assert.doesNotMatch(v, /break-even/i, k);
+    assert.match(all, /Gewinnschwelle/);
   });
 });
 

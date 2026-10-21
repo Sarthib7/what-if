@@ -7,10 +7,14 @@
  * passes them back verbatim. Browser-safe: no Node APIs.
  */
 import { makeT, plural, type Catalog, type Lang, type Msg, type Params } from "../i18n/index.ts";
+import { TERMS } from "../i18n/terms.ts";
 
 type Forms = { one: string; few?: string; many?: string; other: string };
 const n = (p: Params, key: string, forms: Forms, lang: Lang): string => plural(Number(p[key] ?? 0), forms, lang);
 const s = (v: Params[string] | undefined): string => (v === undefined ? "" : String(v));
+/** "behalten" -> "Behalten": a shared word (src/i18n/terms.ts) used as a label. */
+const cap = (w: string): string => w.charAt(0).toLocaleUpperCase() + w.slice(1);
+const EN = TERMS.en, DE = TERMS.de, ES = TERMS.es, PL = TERMS.pl;
 
 const en = {
   open_report: "Open the visual report",
@@ -24,6 +28,7 @@ const en = {
   measured_values: "the test results",
   ignored_keys: "Ignored (not a field of {template}): {list}.",
   ignored_item_suggest: "{key} (did you mean {options}?)",
+  ignored_more: "{n} more",
 
   nr_missing: (p: Params, lang: Lang) =>
     `Not ready yet: ${n(p, "n", { one: "{n} number", other: "{n} numbers" }, lang)} still missing (${s(p.list)}).`,
@@ -31,6 +36,12 @@ const en = {
   nr_call_again: "Then call this tool again with the corrected inputs (whatif_check_inputs gives the next question).",
 
   start_template: "Decision template: {title} ({id}). {summary}",
+  start_like_happy_hour:
+    'A happy hour works like a lunch deal (one price, a fixed time window, regulars may switch to it), so What-IF uses the lunch-offer template: read "lunch" in the questions as the happy-hour window.',
+  start_like_breakfast:
+    'A breakfast deal works like a lunch deal (one price, a fixed time window, regulars may switch to it), so What-IF uses the lunch-offer template: read "lunch" in the questions as the breakfast hours.',
+  start_like_discount:
+    "A discount is a price change: new_price is the price after the discount, and the sales change is the extra sales the owner hopes for (a positive number). If it is only for one group (students, for example), count only that group's sales of the item.",
   start_event_note:
     "The question also mentions {what}: once the numbers are in, it can be rehearsed as an event with imagined customers (whatif_rehearsal_start with `event`).",
   start_numbers: "Numbers to ask for, one at a time ({n} needed):",
@@ -47,7 +58,7 @@ const en = {
   coach_3: "After each answer call whatif_check_inputs; it returns the next question. When ready, call whatif_run_scenarios and share the report link.",
   coach_4:
     "Explain break-even and the worst case in plain words, then offer: rehearse with imagined customers (whatif_rehearsal_start), try another number (whatif_what_changed), or plan a small test (whatif_plan_test). Pass them the `state` from the last result.",
-  coach_5: "Every figure has a source tag: the owner's number, a guess, a calculation, imagined, or demo. Keep them apart when you talk.",
+  coach_5: `Every figure has a source tag, the same as on the report: "${EN.yourNumber}", "${EN.guess}", "${EN.calculated}", "${EN.imagined}" or "${EN.demoData}". Keep them apart when you talk.`,
   hint_start: "Ask one question at a time and say why it matters; share the demo report if the owner wants to see where this is going.",
 
   res_head:
@@ -87,6 +98,8 @@ const en = {
   un_map_staff: 'If the extra help is for a lunch offer, the "{title}" template counts extra staff hours: call whatif_start again with template "{id}".',
   un_by_hand:
     "Otherwise reason it through with the owner by hand, with the same method: three outcomes, the break-even, a small reversible test, and every number labelled as the owner's or a guess. Do not invent numbers.",
+  un_by_hand_only:
+    "Reason it through with the owner by hand, with the same method: three outcomes, the break-even, a small reversible test, and every number labelled as the owner's or a guess. Do not invent numbers.",
   uc_head: "What-IF could not tell which decision this question is about.",
   uc_ask: "Ask the owner which decision they are weighing, for example:",
   hint_unsupported: "Say honestly that What-IF cannot model this yet; offer the part it can rehearse, or a by-hand look with labelled numbers.",
@@ -112,7 +125,7 @@ const en = {
       },
       lang,
     ),
-  ci_run_next: "Next step: call whatif_run_scenarios with the same template and inputs (or this result's `state`).",
+  ci_run_next: "Next step: call whatif_run_scenarios with `state` = this result's state (or with the same template and inputs).",
   hint_check_ready: "Read the filled-in guesses back to the owner before running the scenarios.",
   hint_check_more: "Ask only the next question, in the owner's words, and say why it matters.",
 
@@ -129,6 +142,9 @@ const en = {
 
   rs_ready: "Rehearsal ready: {people} imagined customers, {rounds} rounds. Change they react to: {change}",
   rs_who: "Who they are: {list}.",
+  att_fan: "keen",
+  att_neutral: "open",
+  att_sceptical: "sceptical",
   rs_round1: (p: Params, lang: Lang) =>
     `Round 1 of ${s(p.rounds)}: ${s(p.title)}. ${n(p, "n", { one: "{n} brief", other: "{n} briefs" }, lang)} to run (below)`,
   rs_away: "; {n} not around this round (handled automatically)",
@@ -142,7 +158,8 @@ const en = {
   hint_sub_none: "Each reply must be the JSON object its brief asks for, with one of the allowed actions.",
   sub_done: (p: Params, lang: Lang) => `Accepted ${n(p, "n", { one: "{n} reply", other: "{n} replies" }, lang)}. The rehearsal is done.`,
   hint_sub_done: "Share the link, read out one or two quotes, then turn the open questions into a small real test (whatif_plan_test).",
-  sub_partial: "Accepted {n}; {k} need another try before round {round} can finish:\n{errors}",
+  sub_partial: (p: Params, lang: Lang) =>
+    `Accepted ${s(p.n)}; ${n(p, "k", { one: "{n} needs", other: "{n} need" }, lang)} another try before round ${s(p.round)} can finish:\n${s(p.errors)}`,
   hint_sub_partial: "Re-run only the personas listed, then submit their replies with the new state.",
   sub_next: (p: Params, lang: Lang) =>
     `Accepted ${n(p, "n", { one: "{n} reply", other: "{n} replies" }, lang)}. Round ${s(p.round)} of ${s(p.rounds)} is next${p.title ? `: ${s(p.title)}` : ""}. ${n(p, "k", { one: "{n} brief", other: "{n} briefs" }, lang)} to run (below).`,
@@ -182,9 +199,9 @@ const en = {
   pt_checkins: "Check-ins:",
   pt_day: "Day {day}: {look}",
   pt_rule: "Decision rule:",
-  pt_keep: "Keep",
-  pt_tweak: "Tweak",
-  pt_stop: "Stop",
+  pt_keep: cap(EN.keep),
+  pt_tweak: cap(EN.tweak),
+  pt_stop: cap(EN.stop),
   pt_cap: "Cost cap: {cap}",
   pt_after: "After the test, call whatif_log_result with what was measured and this result's `state`.",
   hint_plan: "Agree the start date and who counts what, and ask the owner to come back with the numbers.",
@@ -197,9 +214,9 @@ const en = {
   lr_closest: 'closest to the "{name}" scenario',
   lr_line: "{label}: {actual} ({closest}). Result over the test: {net}.",
   lr_verdict: "Verdict: {verdict}.",
-  verdict_keep: "KEEP",
-  verdict_tweak: "TWEAK",
-  verdict_stop: "STOP",
+  verdict_keep: EN.keep.toUpperCase(),
+  verdict_tweak: EN.tweak.toUpperCase(),
+  verdict_stop: EN.stop.toUpperCase(),
   lr_teaches: "What this teaches:",
   hint_log: "Celebrate that they tested before committing, then ask what they will change next time.",
 
@@ -238,6 +255,7 @@ const de: Record<McpKey, Msg> = {
   measured_values: "den Testergebnissen",
   ignored_keys: "Nicht verwendet (kein Feld in {template}): {list}.",
   ignored_item_suggest: "{key} (meinten Sie {options}?)",
+  ignored_more: "{n} weitere",
 
   nr_missing: (p, lang) =>
     `${n(p, "n", { one: "Noch nicht bereit: {n} Zahl fehlt noch", other: "Noch nicht bereit: {n} Zahlen fehlen noch" }, lang)} (${s(p.list)}).`,
@@ -245,23 +263,29 @@ const de: Record<McpKey, Msg> = {
   nr_call_again: "Danach dieses Tool mit den korrigierten Werten erneut aufrufen (whatif_check_inputs nennt die nächste Frage).",
 
   start_template: "Entscheidungsvorlage: {title} ({id}). {summary}",
+  start_like_happy_hour:
+    "Eine Happy Hour funktioniert wie ein Mittagsangebot (ein Preis, ein festes Zeitfenster, Stammgäste wechseln vielleicht dazu). Deshalb nutzt What-IF die Vorlage für das Mittagsangebot: „Mittag“ in den Fragen heißt hier das Zeitfenster der Happy Hour.",
+  start_like_breakfast:
+    "Ein Frühstücksangebot funktioniert wie ein Mittagsangebot (ein Preis, ein festes Zeitfenster, Stammgäste wechseln vielleicht dazu). Deshalb nutzt What-IF die Vorlage für das Mittagsangebot: „Mittag“ in den Fragen heißt hier die Frühstückszeit.",
+  start_like_discount:
+    "Ein Rabatt ist eine Preisänderung: new_price ist der Preis nach dem Rabatt, und die Absatzänderung ist das erhoffte Plus an Verkäufen (eine positive Zahl). Gilt der Rabatt nur für eine Gruppe (zum Beispiel Studierende), zählen nur deren Verkäufe des Produkts.",
   start_event_note:
-    "Die Frage nennt auch {what}: Sobald die Zahlen da sind, lässt sich das als Ereignis mit vorgestellten Gästen proben (whatif_rehearsal_start mit `event`).",
+    "Die Frage nennt auch {what}: Sobald die Zahlen da sind, lässt sich das im Probelauf mit ausgedachten Gästen als Ereignis durchspielen (whatif_rehearsal_start mit `event`).",
   start_numbers: "Diese Zahlen einzeln erfragen ({n} nötig):",
   start_optional: "Optional (sonst gilt eine gekennzeichnete Schätzung): {list}.",
-  start_kiez: "Kiez (optional, prägt die vorgestellten Gäste): {list} oder anderer.",
+  start_kiez: "Kiez (optional, prägt die ausgedachten Gäste): {list} oder anderer.",
   start_first: "Beginnen Sie mit: „{ask}“",
   start_demo:
-    "Oder zeigen Sie es zuerst am Demo-Café ({demo}, erfundene Zahlen, als Demo gekennzeichnet): whatif_run_scenarios mit demo: true aufrufen.",
-  start_events: "Berliner Ereignisse, die später in eine Probe kommen können (vorgestellt, keine Fakten): {list}.",
+    `Oder zeigen Sie es zuerst am Demo-Café ({demo}, erfundene Zahlen, gekennzeichnet als „${DE.demoData}“): whatif_run_scenarios mit demo: true aufrufen.`,
+  start_events: "Berliner Ereignisse, die später in einen Probelauf kommen können (ausgedacht, keine Fakten): {list}.",
   coach_1:
     "Die Frage in einem Satz zurückspiegeln und sagen: What-IF vergleicht einen vorsichtigen, einen erwarteten und einen optimistischen Verlauf. Es sagt die Zukunft nicht voraus.",
   coach_2:
     "Die Zahlen EINZELN in der genannten Reihenfolge erfragen und jeweils sagen, warum sie zählen. Grobe Antworten sind in Ordnung. Bei optionalen Werten ist „weiß ich nicht“ okay (dann gilt eine gekennzeichnete Schätzung).",
   coach_3: "Nach jeder Antwort whatif_check_inputs aufrufen; es nennt die nächste Frage. Wenn alles da ist, whatif_run_scenarios aufrufen und den Berichtslink teilen.",
   coach_4:
-    "Break-even und schlechtesten Fall in einfachen Worten erklären. Dann anbieten: Probe mit vorgestellten Gästen (whatif_rehearsal_start), eine andere Zahl ausprobieren (whatif_what_changed) oder einen kleinen Test planen (whatif_plan_test). Dabei den `state` des letzten Ergebnisses mitgeben.",
-  coach_5: "Jede Zahl hat eine Herkunft: eigene Zahl, Schätzung, Rechnung, vorgestellt oder Demo. Halten Sie das beim Erklären auseinander.",
+    "Gewinnschwelle und schlimmsten Fall in einfachen Worten erklären. Dann anbieten: Probelauf mit ausgedachten Gästen (whatif_rehearsal_start), eine andere Zahl ausprobieren (whatif_what_changed) oder einen kleinen Test planen (whatif_plan_test). Dabei den `state` des letzten Ergebnisses mitgeben.",
+  coach_5: `Jede Zahl hat eine Herkunft, mit denselben Wörtern wie im Bericht: „${DE.yourNumber}“, „${DE.guess}“, „${DE.calculated}“, „${DE.imagined}“ oder „${DE.demoData}“. Halten Sie das beim Erklären auseinander.`,
   hint_start: "Eine Frage nach der anderen stellen und sagen, warum sie zählt. Den Demo-Bericht zeigen, wenn Ihr Gegenüber sehen möchte, wohin es geht.",
 
   res_head:
@@ -287,9 +311,9 @@ const de: Record<McpKey, Msg> = {
   sug_event_2: "Was wäre, wenn ich Kaffee zum Mitnehmen am Festwochenende teurer verkaufe?",
   nd_head: "Das ist keine Entscheidung, die das Café selbst trifft ({what}). Deshalb wählt What-IF keine Vorlage und fragt noch keine Zahlen ab.",
   can_do:
-    "What-IF probt eine Entscheidung, die das Café selbst trifft. Heute rechnet es zwei durch: ein Mittagsangebot unter der Woche und einen neuen Preis für ein Produkt. Jeweils mit vorsichtigem, erwartetem und optimistischem Verlauf, Break-even, einer Probe mit vorgestellten Gästen und einem kleinen Test. Es sagt die Zukunft nicht voraus.",
+    "What-IF probt eine Entscheidung, die das Café selbst trifft. Heute rechnet es zwei durch: ein Mittagsangebot unter der Woche und einen neuen Preis für ein Produkt. Jeweils mit vorsichtigem, erwartetem und optimistischem Verlauf, der Gewinnschwelle, einem Probelauf mit ausgedachten Gästen und einem kleinen Test. Es sagt die Zukunft nicht voraus.",
   nd_reframe: "Machen Sie daraus eine Entscheidung: Fragen Sie, was das Café dagegen tun würde, zum Beispiel:",
-  nd_event: "Sobald es eine Entscheidung gibt, kann das als vorgestelltes Ereignis in die Probe (whatif_rehearsal_start mit `event` oder whatif_rehearsal_event).",
+  nd_event: "Sobald es eine Entscheidung gibt, kann das als ausgedachtes Ereignis in den Probelauf (whatif_rehearsal_start mit `event` oder whatif_rehearsal_event).",
   topic_hiring: "Personal einstellen",
   topic_hours: "Öffnungszeiten",
   topic_location: "Miete, Umzug oder ein zweiter Standort",
@@ -301,7 +325,9 @@ const de: Record<McpKey, Msg> = {
   un_map_staff:
     "Falls die zusätzliche Hilfe für ein Mittagsangebot gedacht ist: Die Vorlage „{title}“ rechnet zusätzliche Personalstunden mit. Dafür whatif_start erneut mit template „{id}“ aufrufen.",
   un_by_hand:
-    "Sonst gemeinsam von Hand nach derselben Methode überlegen: drei Verläufe, Break-even, ein kleiner, umkehrbarer Test. Jede Zahl als eigene Zahl oder Schätzung kennzeichnen. Keine Zahlen erfinden.",
+    "Sonst gemeinsam von Hand nach derselben Methode überlegen: drei Verläufe, die Gewinnschwelle, ein kleiner, umkehrbarer Test. Jede Zahl als eigene Zahl oder Schätzung kennzeichnen. Keine Zahlen erfinden.",
+  un_by_hand_only:
+    "Gemeinsam von Hand nach derselben Methode überlegen: drei Verläufe, die Gewinnschwelle, ein kleiner, umkehrbarer Test. Jede Zahl als eigene Zahl oder Schätzung kennzeichnen. Keine Zahlen erfinden.",
   uc_head: "What-IF konnte nicht erkennen, um welche Entscheidung es geht.",
   uc_ask: "Fragen Sie, welche Entscheidung ansteht, zum Beispiel:",
   hint_unsupported: "Ehrlich sagen, dass What-IF das noch nicht durchrechnen kann. Den Teil anbieten, der sich proben lässt, oder eine Überlegung von Hand mit gekennzeichneten Zahlen.",
@@ -310,7 +336,8 @@ const de: Record<McpKey, Msg> = {
   ci_check_this: "Bitte nachfragen: {problem}",
   ci_check_why: "Mit dieser Zahl wären die Szenarien falsch.",
   ci_ready: (p, lang) => `Bereit: Alle Zahlen für „${s(p.title)}“ sind da (${n(p, "n", { one: "{n} Wert", other: "{n} Werte" }, lang)}).`,
-  ci_not_ready: "Noch nicht bereit: fehlend {missing}, zu korrigieren {problems}.",
+  ci_not_ready: (p, lang) =>
+    `Noch nicht bereit: ${n(p, "missing", { one: "{n} Zahl fehlt", other: "{n} Zahlen fehlen" }, lang)}, ${n(p, "problems", { one: "{n} ist zu korrigieren", other: "{n} sind zu korrigieren" }, lang)}.`,
   ci_next_field: "Nächste Frage: „{ask}“ [{key}] (warum: {why})",
   ci_next: "Nächste Frage: „{ask}“",
   ci_still: "Danach fehlt noch: {list}.",
@@ -326,43 +353,47 @@ const de: Record<McpKey, Msg> = {
       },
       lang,
     ),
-  ci_run_next: "Nächster Schritt: whatif_run_scenarios mit derselben Vorlage und denselben Werten aufrufen (oder mit dem `state` dieses Ergebnisses).",
+  ci_run_next: "Nächster Schritt: whatif_run_scenarios mit `state` = dem state dieses Ergebnisses aufrufen (oder mit derselben Vorlage und denselben Werten).",
   hint_check_ready: "Die eingesetzten Schätzungen vorlesen, bevor die Szenarien laufen.",
   hint_check_more: "Nur die nächste Frage stellen, in einfachen Worten, und sagen, warum sie zählt.",
 
   state_next:
     "Die nächsten Aufrufe (whatif_what_changed, whatif_rehearsal_start, whatif_plan_test, whatif_log_result) können statt Vorlage und Werten einfach `state` bekommen: den state dieses Ergebnisses oder den Berichtslink.",
-  hint_run: "Link teilen, Break-even in einem Satz erklären, dann fragen, bei welcher Schätzung die Unsicherheit am größten ist.",
+  hint_run: "Link teilen, die Gewinnschwelle in einem Satz erklären, dann fragen, bei welcher Schätzung die Unsicherheit am größten ist.",
 
   wc_nothing: "Zwischen den beiden Zahlenreihen hat sich nichts geändert.",
   wc_changed: "Geändert: {list}.",
   wc_why: "Warum sich das Ergebnis bewegt hat:",
   wc_expected: "Erwartetes Ergebnis jetzt: {test} über den Test, {month} pro Monat danach.",
-  wc_break_even: "Break-even jetzt: {plain}",
+  wc_break_even: "Gewinnschwelle jetzt: {plain}",
   hint_changed: "Fragen, was das darüber sagt, welche Zahl am meisten zählt.",
 
-  rs_ready: "Probe bereit: {people} vorgestellte Gäste, {rounds} Runden. Darauf reagieren sie: {change}",
+  rs_ready: "Probelauf bereit: {people} ausgedachte Gäste, {rounds} Runden. Darauf reagieren sie: {change}",
   rs_who: "Wer sie sind: {list}.",
+  att_fan: "angetan",
+  att_neutral: "offen",
+  att_sceptical: "skeptisch",
   rs_round1: (p, lang) => `Runde 1 von ${s(p.rounds)}: ${s(p.title)}. ${n(p, "n", { one: "{n} Briefing", other: "{n} Briefings" }, lang)} zum Ausführen (unten)`,
   rs_away: (p, lang) => `; ${n(p, "n", { one: "{n} Person ist", other: "{n} Personen sind" }, lang)} diese Runde nicht da (wird automatisch erledigt)`,
-  rs_imagined: "Diese Menschen sind vorgestellt. Ihre Reaktionen sind Fragen an echte Gäste, keine Prognose.",
-  hint_rehearsal_start: "Sagen, wer die vorgestellten Gäste sind, die Briefings ausführen und den Link teilen, während sich die Zeitleiste füllt.",
+  rs_imagined: "Diese Gäste sind ausgedacht. Ihre Reaktionen sind Fragen an echte Gäste, keine Prognose.",
+  hint_rehearsal_start: "Sagen, wer die ausgedachten Gäste sind, die Briefings ausführen und den Link teilen, während sich die Zeitleiste füllt.",
 
-  err_rehearsal_done: "Diese Probe ist schon beendet. Mit whatif_rehearsal_interview können Sie den vorgestellten Gästen eine Frage stellen, oder Sie teilen den Bericht.",
+  err_rehearsal_done: "Dieser Probelauf ist schon beendet. Mit whatif_rehearsal_interview können Sie den ausgedachten Gästen eine Frage stellen, oder Sie teilen den Bericht.",
   err_no_reactions: "Es wurden keine Reaktionen gesendet. `reactions` als Liste mit der JSON-Antwort jeder Persona übergeben.",
   sub_none:
     "Keine Antwort war verwendbar, deshalb geht Runde {round} noch nicht weiter.\nWas nicht stimmte:\n{errors}\nDiese Antworten korrigieren (bei Bedarf die Briefings unten neu ausführen) und whatif_rehearsal_submit mit demselben state erneut aufrufen.",
   hint_sub_none: "Jede Antwort muss das JSON-Objekt sein, das ihr Briefing verlangt, mit einer der erlaubten Aktionen.",
-  sub_done: (p, lang) => `${n(p, "n", { one: "{n} Antwort", other: "{n} Antworten" }, lang)} angenommen. Die Probe ist fertig.`,
+  sub_done: (p, lang) => `${n(p, "n", { one: "{n} Antwort", other: "{n} Antworten" }, lang)} angenommen. Der Probelauf ist fertig.`,
   hint_sub_done: "Link teilen, ein, zwei Zitate vorlesen und die offenen Fragen in einen kleinen echten Test verwandeln (whatif_plan_test).",
-  sub_partial: "{n} angenommen; {k} brauchen einen neuen Versuch, bevor Runde {round} fertig ist:\n{errors}",
+  sub_partial: (p, lang) =>
+    `${s(p.n)} angenommen; ${n(p, "k", { one: "{n} Antwort braucht", other: "{n} Antworten brauchen" }, lang)} einen neuen Versuch, bevor Runde ${s(p.round)} fertig ist:\n${s(p.errors)}`,
   hint_sub_partial: "Nur die genannten Personas neu ausführen und ihre Antworten mit dem neuen state senden.",
   sub_next: (p, lang) =>
     `${n(p, "n", { one: "{n} Antwort", other: "{n} Antworten" }, lang)} angenommen. Als Nächstes Runde ${s(p.round)} von ${s(p.rounds)}${p.title ? `: ${s(p.title)}` : ""}. ${n(p, "k", { one: "{n} Briefing", other: "{n} Briefings" }, lang)} zum Ausführen (unten).`,
   hint_sub_next: "Kurz sagen, wie die Runde lief, und anbieten, vor der nächsten ein Ereignis aus dem Kiez einzubauen (whatif_rehearsal_event).",
 
-  sum_done: "Probe beendet: {people} vorgestellte Gäste, {rounds} Runden. Änderung: {change}",
-  sum_so_far: "Probe bisher: {people} vorgestellte Gäste, {rounds} Runden. Änderung: {change}",
+  sum_done: "Probelauf beendet: {people} ausgedachte Gäste, {rounds} Runden. Änderung: {change}",
+  sum_so_far: "Probelauf bisher: {people} ausgedachte Gäste, {rounds} Runden. Änderung: {change}",
   sum_did: "Was sie getan haben: {list}.",
   of_count: "{label}: {count} von {of}",
   sum_words: "In ihren Worten:",
@@ -370,7 +401,7 @@ const de: Record<McpKey, Msg> = {
   sum_questions: "Fragen, die sie Ihnen stellen würden:",
   sum_check: "Mit echten Gästen prüfen:",
 
-  err_event_done: "Diese Probe ist schon beendet, es gibt keine nächste Runde für das Ereignis. Starten Sie stattdessen eine neue Probe mit `event`.",
+  err_event_done: "Dieser Probelauf ist schon beendet, es gibt keine nächste Runde für das Ereignis. Starten Sie stattdessen einen neuen Probelauf mit `event`.",
   ev_added: (p, lang) =>
     `Vor Runde ${s(p.round)} eingefügt: „${s(p.event)}“. ${n(p, "n", { one: "Das Briefing unten enthält es jetzt.", other: "Die {n} Briefings unten enthalten es jetzt." }, lang)}`,
   hint_event: "Fragen, was das Ereignis wohl ändert, dann die Runde ausführen und vergleichen.",
@@ -379,12 +410,12 @@ const de: Record<McpKey, Msg> = {
   hint_autoplay: "Sagen, dass diese Reaktionen aus einfachen Regeln stammen, nicht von Menschen. Sie helfen bei der Wahl, was man echte Gäste fragt.",
 
   iv_briefs: (p, lang) =>
-    `Interviewfrage: „${s(p.question)}“. ${n(p, "n", { one: "{n} Briefing unten", other: "{n} Briefings unten" }, lang)}, eines pro vorgestelltem Gast.`,
-  hint_iv_briefs: "Daran erinnern, dass die Antworten vorgestellt sind. Wertvoll sind die Fragen, die sie für echte Gäste nahelegen.",
+    `Interviewfrage: „${s(p.question)}“. ${n(p, "n", { one: "{n} Briefing unten", other: "{n} Briefings unten" }, lang)}, eines pro ausgedachtem Gast.`,
+  hint_iv_briefs: "Daran erinnern, dass die Antworten ausgedacht sind. Wertvoll sind die Fragen, die sie für echte Gäste nahelegen.",
   iv_none: "Keine Antwort ließ sich speichern:\n{errors}\nKorrigieren und whatif_rehearsal_interview mit demselben state, derselben Frage und den answers erneut aufrufen.",
   hint_iv_none: "Jede Antwort muss das JSON-Objekt sein, das ihr Briefing verlangt.",
   iv_recorded: (p, lang) =>
-    `${n(p, "n", { one: "{n} vorgestellte Antwort", other: "{n} vorgestellte Antworten" }, lang)} auf „${s(p.question)}“ gespeichert:`,
+    `${n(p, "n", { one: "{n} ausgedachte Antwort", other: "{n} ausgedachte Antworten" }, lang)} auf „${s(p.question)}“ gespeichert:`,
   quoted: "„{text}“",
   iv_could_not: "Nicht gespeichert:",
   hint_iv_recorded: "Die überraschendste Antwort in eine Frage verwandeln, die Sie diese Woche drei echten Gästen stellen.",
@@ -395,9 +426,9 @@ const de: Record<McpKey, Msg> = {
   pt_checkins: "Zwischenstände:",
   pt_day: "Tag {day}: {look}",
   pt_rule: "Entscheidungsregel:",
-  pt_keep: "Behalten",
-  pt_tweak: "Anpassen",
-  pt_stop: "Stoppen",
+  pt_keep: cap(DE.keep),
+  pt_tweak: cap(DE.tweak),
+  pt_stop: cap(DE.stop),
   pt_cap: "Kostengrenze: {cap}",
   pt_after: "Nach dem Test whatif_log_result mit den Messwerten und dem `state` dieses Ergebnisses aufrufen.",
   hint_plan: "Startdatum vereinbaren und klären, wer was zählt. Dann bitten, mit den Zahlen wiederzukommen.",
@@ -410,9 +441,9 @@ const de: Record<McpKey, Msg> = {
   lr_closest: "am nächsten am Szenario „{name}“",
   lr_line: "{label}: {actual} ({closest}). Ergebnis über den Test: {net}.",
   lr_verdict: "Urteil: {verdict}.",
-  verdict_keep: "BEHALTEN",
-  verdict_tweak: "ANPASSEN",
-  verdict_stop: "STOPPEN",
+  verdict_keep: DE.keep.toLocaleUpperCase("de-DE"),
+  verdict_tweak: DE.tweak.toLocaleUpperCase("de-DE"),
+  verdict_stop: DE.stop.toLocaleUpperCase("de-DE"),
   lr_teaches: "Was das lehrt:",
   hint_log: "Würdigen, dass vor der Entscheidung getestet wurde. Dann fragen, was beim nächsten Mal anders laufen soll.",
 
@@ -421,18 +452,18 @@ const de: Record<McpKey, Msg> = {
   err_bad_link: "Dieser What-IF-Link ist beschädigt oder abgeschnitten. Beginnen Sie mit den Zahlen neu, um einen frischen Link zu bekommen.",
   err_old_link: "Dieser What-IF-Link hat ein Format, das diese Version nicht versteht.",
   err_bad_link_hint: "(Den `state` aus dem letzten What-IF-Ergebnis genau so übergeben, wie er kam, oder dessen report_url.)",
-  err_no_rehearsal: "In diesem state steckt keine Probe. Starten Sie eine mit whatif_rehearsal_start und geben Sie den zurückgegebenen state weiter.",
+  err_no_rehearsal: "In diesem state steckt kein Probelauf. Starten Sie einen mit whatif_rehearsal_start und geben Sie den zurückgegebenen state weiter.",
 
-  at_demo: "Demo-Daten: Das sind erfundene Zahlen für ein Demo-Café.",
-  at_break_even: "Break-even (Gewinnschwelle, die eine Zahl zum Merken): {plain}",
+  at_demo: `${DE.demoData}: Das sind erfundene Zahlen für ein Demo-Café.`,
+  at_break_even: `${cap(DE.breakEven)} (die eine Zahl zum Merken): {plain}`,
   at_three: "Drei mögliche Verläufe (berechnet aus Ihren Zahlen und Schätzungen):",
   at_scenario: "{test} über den Test; {month} pro Monat.",
-  at_worst: "Schlechtester Fall: {plain}",
+  at_worst: `${cap(DE.worstCase)}: {plain}`,
   at_uncertainty: "Größte Unsicherheit: {plain}",
   at_watch: "Achtung:",
   at_facts: "Öffentliche Fakten in der Rechnung: {list}.",
   at_next:
-    "Nächster Schritt: eine Schätzung verändern (whatif_what_changed), mit vorgestellten Gästen proben (whatif_rehearsal_start) oder einen kleinen Test planen (whatif_plan_test).",
+    "Nächster Schritt: eine Schätzung verändern (whatif_what_changed), einen Probelauf mit ausgedachten Gästen machen (whatif_rehearsal_start) oder einen kleinen Test planen (whatif_plan_test).",
 
   prompt_lang: "Bitte sprechen Sie {name} mit mir und geben Sie lang: \"{code}\" an jedes What-IF-Tool.",
 };
@@ -449,6 +480,7 @@ const es: Record<McpKey, Msg> = {
   measured_values: "los resultados de la prueba",
   ignored_keys: "No usado (no es un campo de {template}): {list}.",
   ignored_item_suggest: "{key} (¿quería decir {options}?)",
+  ignored_more: "{n} más",
 
   nr_missing: (p, lang) =>
     `${n(p, "n", { one: "Aún no está listo: falta {n} dato", other: "Aún no está listo: faltan {n} datos" }, lang)} (${s(p.list)}).`,
@@ -456,6 +488,12 @@ const es: Record<McpKey, Msg> = {
   nr_call_again: "Después, llamar de nuevo a esta herramienta con los datos corregidos (whatif_check_inputs da la siguiente pregunta).",
 
   start_template: "Plantilla de decisión: {title} ({id}). {summary}",
+  start_like_happy_hour:
+    "Una happy hour funciona como una oferta de almuerzo (un precio, una franja horaria fija, los clientes habituales pueden pasarse a ella), así que What-IF usa la plantilla de la oferta de almuerzo: «almuerzo» en las preguntas es aquí la franja de la happy hour.",
+  start_like_breakfast:
+    "Una oferta de desayuno funciona como una oferta de almuerzo (un precio, una franja horaria fija, los clientes habituales pueden pasarse a ella), así que What-IF usa la plantilla de la oferta de almuerzo: «almuerzo» en las preguntas es aquí la hora del desayuno.",
+  start_like_discount:
+    "Un descuento es un cambio de precio: new_price es el precio con el descuento, y el cambio de ventas es el aumento de ventas que se espera (un número positivo). Si es solo para un grupo (por ejemplo, estudiantes), contar solo las ventas de ese grupo para el producto.",
   start_event_note:
     "La pregunta también menciona {what}: cuando estén los números, se puede ensayar como evento con clientes imaginados (whatif_rehearsal_start con `event`).",
   start_numbers: "Números que preguntar, de uno en uno ({n} necesarios):",
@@ -471,7 +509,7 @@ const es: Record<McpKey, Msg> = {
   coach_3: "Tras cada respuesta, llamar a whatif_check_inputs; devuelve la siguiente pregunta. Cuando esté listo, llamar a whatif_run_scenarios y compartir el enlace del informe.",
   coach_4:
     "Explicar el punto de equilibrio y el peor caso con palabras sencillas y luego ofrecer: ensayar con clientes imaginados (whatif_rehearsal_start), probar otro número (whatif_what_changed) o planear una prueba pequeña (whatif_plan_test). Pasarles el `state` del último resultado.",
-  coach_5: "Cada cifra tiene su origen: número propio, estimación, cálculo, imaginado o demo. Mantenerlos separados al hablar.",
+  coach_5: `Cada cifra tiene su origen, con las mismas palabras que el informe: «${ES.yourNumber}», «${ES.guess}», «${ES.calculated}», «${ES.imagined}» o «${ES.demoData}». Mantenerlos separados al hablar.`,
   hint_start: "Hacer una pregunta cada vez y decir por qué importa; enseñar el informe de demostración si quiere ver adónde lleva esto.",
 
   res_head:
@@ -511,6 +549,8 @@ const es: Record<McpKey, Msg> = {
   un_map_staff: "Si la ayuda extra es para una oferta de almuerzo, la plantilla «{title}» incluye horas extra de personal: llamar de nuevo a whatif_start con template «{id}».",
   un_by_hand:
     "Si no, razonarlo a mano con el mismo método: tres resultados, el punto de equilibrio, una prueba pequeña y reversible, y cada número marcado como propio o estimado. No inventar números.",
+  un_by_hand_only:
+    "Razonarlo a mano con el mismo método: tres resultados, el punto de equilibrio, una prueba pequeña y reversible, y cada número marcado como propio o estimado. No inventar números.",
   uc_head: "What-IF no pudo saber de qué decisión trata la pregunta.",
   uc_ask: "Preguntar qué decisión se está pensando, por ejemplo:",
   hint_unsupported: "Decir con honestidad que What-IF aún no puede calcularlo; ofrecer la parte que sí se puede ensayar o un análisis a mano con números marcados.",
@@ -519,7 +559,8 @@ const es: Record<McpKey, Msg> = {
   ci_check_this: "Comprobar esto: {problem}",
   ci_check_why: "Con este número los escenarios estarían mal.",
   ci_ready: (p, lang) => `Listo: están todos los números para «${s(p.title)}» (${n(p, "n", { one: "{n} valor", other: "{n} valores" }, lang)}).`,
-  ci_not_ready: "Aún no está listo: faltan {missing}; por corregir: {problems}.",
+  ci_not_ready: (p, lang) =>
+    `Aún no está listo: ${n(p, "missing", { one: "falta {n} dato", other: "faltan {n} datos" }, lang)}; ${n(p, "problems", { one: "{n} por corregir", other: "{n} por corregir" }, lang)}.`,
   ci_next_field: "Siguiente pregunta: «{ask}» [{key}] (por qué: {why})",
   ci_next: "Siguiente pregunta: «{ask}»",
   ci_still: "Después aún falta: {list}.",
@@ -535,7 +576,7 @@ const es: Record<McpKey, Msg> = {
       },
       lang,
     ),
-  ci_run_next: "Siguiente paso: llamar a whatif_run_scenarios con la misma plantilla y los mismos datos (o con el `state` de este resultado).",
+  ci_run_next: "Siguiente paso: llamar a whatif_run_scenarios con `state` = el state de este resultado (o con la misma plantilla y los mismos datos).",
   hint_check_ready: "Leer las estimaciones puestas antes de calcular los escenarios.",
   hint_check_more: "Hacer solo la siguiente pregunta, con palabras sencillas, y decir por qué importa.",
 
@@ -552,6 +593,9 @@ const es: Record<McpKey, Msg> = {
 
   rs_ready: "Ensayo listo: {people} clientes imaginados, {rounds} rondas. Reaccionan a: {change}",
   rs_who: "Quiénes son: {list}.",
+  att_fan: "entusiasta",
+  att_neutral: "con mente abierta",
+  att_sceptical: "con dudas",
   rs_round1: (p, lang) => `Ronda 1 de ${s(p.rounds)}: ${s(p.title)}. ${n(p, "n", { one: "{n} instrucción", other: "{n} instrucciones" }, lang)} para ejecutar (abajo)`,
   rs_away: (p, lang) => `; ${n(p, "n", { one: "{n} persona no está", other: "{n} personas no están" }, lang)} en esta ronda (se gestiona solo)`,
   rs_imagined: "Estas personas son imaginadas. Sus reacciones son preguntas para comprobar con clientes reales, no un pronóstico.",
@@ -564,7 +608,8 @@ const es: Record<McpKey, Msg> = {
   hint_sub_none: "Cada respuesta debe ser el objeto JSON que pide su instrucción, con una de las acciones permitidas.",
   sub_done: (p, lang) => `${n(p, "n", { one: "Aceptada {n} respuesta", other: "Aceptadas {n} respuestas" }, lang)}. El ensayo ha terminado.`,
   hint_sub_done: "Compartir el enlace, leer una o dos citas y convertir las preguntas abiertas en una prueba real pequeña (whatif_plan_test).",
-  sub_partial: "Aceptadas {n}; {k} necesitan otro intento antes de terminar la ronda {round}:\n{errors}",
+  sub_partial: (p, lang) =>
+    `${n(p, "n", { one: "Aceptada {n}", other: "Aceptadas {n}" }, lang)}; ${n(p, "k", { one: "{n} necesita", other: "{n} necesitan" }, lang)} otro intento antes de terminar la ronda ${s(p.round)}:\n${s(p.errors)}`,
   hint_sub_partial: "Volver a ejecutar solo las personas indicadas y enviar sus respuestas con el nuevo state.",
   sub_next: (p, lang) =>
     `${n(p, "n", { one: "Aceptada {n} respuesta", other: "Aceptadas {n} respuestas" }, lang)}. Sigue la ronda ${s(p.round)} de ${s(p.rounds)}${p.title ? `: ${s(p.title)}` : ""}. ${n(p, "k", { one: "{n} instrucción", other: "{n} instrucciones" }, lang)} para ejecutar (abajo).`,
@@ -604,9 +649,9 @@ const es: Record<McpKey, Msg> = {
   pt_checkins: "Revisiones:",
   pt_day: "Día {day}: {look}",
   pt_rule: "Regla de decisión:",
-  pt_keep: "Mantener",
-  pt_tweak: "Ajustar",
-  pt_stop: "Parar",
+  pt_keep: cap(ES.keep),
+  pt_tweak: cap(ES.tweak),
+  pt_stop: cap(ES.stop),
   pt_cap: "Límite de coste: {cap}",
   pt_after: "Después de la prueba, llamar a whatif_log_result con lo medido y el `state` de este resultado.",
   hint_plan: "Acordar la fecha de inicio y quién cuenta qué, y pedir que vuelva con los números.",
@@ -619,9 +664,9 @@ const es: Record<McpKey, Msg> = {
   lr_closest: "más cerca del escenario «{name}»",
   lr_line: "{label}: {actual} ({closest}). Resultado durante la prueba: {net}.",
   lr_verdict: "Veredicto: {verdict}.",
-  verdict_keep: "MANTENER",
-  verdict_tweak: "AJUSTAR",
-  verdict_stop: "PARAR",
+  verdict_keep: ES.keep.toLocaleUpperCase("es-ES"),
+  verdict_tweak: ES.tweak.toLocaleUpperCase("es-ES"),
+  verdict_stop: ES.stop.toLocaleUpperCase("es-ES"),
   lr_teaches: "Qué enseña esto:",
   hint_log: "Celebrar que probó antes de comprometerse y preguntar qué cambiará la próxima vez.",
 
@@ -632,11 +677,11 @@ const es: Record<McpKey, Msg> = {
   err_bad_link_hint: "(Pasar el `state` del último resultado de What-IF tal como llegó, o su report_url.)",
   err_no_rehearsal: "Este state no contiene ningún ensayo. Empezar uno con whatif_rehearsal_start y devolver el state que da.",
 
-  at_demo: "Datos de demostración: son números inventados de un café de demostración.",
-  at_break_even: "Punto de equilibrio (break-even, el número que hay que recordar): {plain}",
+  at_demo: `${ES.demoData}: son números inventados de un café de demostración.`,
+  at_break_even: `${cap(ES.breakEven)} (el número que hay que recordar): {plain}`,
   at_three: "Tres resultados posibles (calculados con los números y las estimaciones):",
   at_scenario: "{test} durante la prueba; {month} al mes.",
-  at_worst: "Peor caso: {plain}",
+  at_worst: `${cap(ES.worstCase)}: {plain}`,
   at_uncertainty: "Mayor incertidumbre: {plain}",
   at_watch: "Atención:",
   at_facts: "Datos públicos que usa el cálculo: {list}.",
@@ -658,6 +703,7 @@ const pl: Record<McpKey, Msg> = {
   measured_values: "wynikach testu",
   ignored_keys: "Pominięto (brak takiego pola w {template}): {list}.",
   ignored_item_suggest: "{key} (czy chodziło o {options}?)",
+  ignored_more: "i jeszcze {n}",
 
   nr_missing: (p, lang) =>
     `Jeszcze nie gotowe: ${n(p, "n", { one: "brakuje {n} liczby", few: "brakuje {n} liczb", many: "brakuje {n} liczb", other: "brakuje {n} liczby" }, lang)} (${s(p.list)}).`,
@@ -665,6 +711,12 @@ const pl: Record<McpKey, Msg> = {
   nr_call_again: "Potem wywołaj to narzędzie ponownie z poprawionymi danymi (whatif_check_inputs poda następne pytanie).",
 
   start_template: "Szablon decyzji: {title} ({id}). {summary}",
+  start_like_happy_hour:
+    "Happy hour działa jak oferta lunchowa (jedna cena, stałe okno czasowe, stali klienci mogą się na nią przerzucić), więc What-IF używa szablonu oferty lunchowej: „lunch” w pytaniach oznacza tu okno happy hour.",
+  start_like_breakfast:
+    "Oferta śniadaniowa działa jak oferta lunchowa (jedna cena, stałe okno czasowe, stali klienci mogą się na nią przerzucić), więc What-IF używa szablonu oferty lunchowej: „lunch” w pytaniach oznacza tu godziny śniadania.",
+  start_like_discount:
+    "Zniżka to zmiana ceny: new_price to cena po zniżce, a zmiana sprzedaży to oczekiwany wzrost sprzedaży (liczba dodatnia). Jeśli zniżka jest tylko dla jednej grupy (na przykład studentów), licz tylko sprzedaż tego produktu w tej grupie.",
   start_event_note:
     "W pytaniu pojawia się też temat: {what}. Gdy liczby będą gotowe, można go przećwiczyć jako zdarzenie z wyobrażonymi klientami (whatif_rehearsal_start z `event`).",
   start_numbers: "Liczby do zebrania, po jednej (potrzebne: {n}):",
@@ -680,7 +732,7 @@ const pl: Record<McpKey, Msg> = {
   coach_3: "Po każdej odpowiedzi wywołaj whatif_check_inputs; poda następne pytanie. Gdy wszystko gotowe, wywołaj whatif_run_scenarios i udostępnij link do raportu.",
   coach_4:
     "Wyjaśnij prostymi słowami próg rentowności i najgorszy przypadek, potem zaproponuj: próbę z wyobrażonymi klientami (whatif_rehearsal_start), inną liczbę (whatif_what_changed) albo mały test (whatif_plan_test). Przekaż im `state` z ostatniego wyniku.",
-  coach_5: "Każda liczba ma źródło: liczba właściciela, szacunek, obliczenie, wyobrażone lub demo. Nie mieszaj ich w rozmowie.",
+  coach_5: `Każda liczba ma źródło, tymi samymi słowami co w raporcie: „${PL.yourNumber}”, „${PL.guess}”, „${PL.calculated}”, „${PL.imagined}” lub „${PL.demoData}”. Nie mieszaj ich w rozmowie.`,
   hint_start: "Zadawaj jedno pytanie naraz i mów, dlaczego jest ważne; pokaż raport demo, jeśli rozmówca chce zobaczyć, dokąd to prowadzi.",
 
   res_head:
@@ -720,6 +772,8 @@ const pl: Record<McpKey, Msg> = {
   un_map_staff: "Jeśli dodatkowa pomoc ma być do oferty lunchowej, szablon „{title}” uwzględnia dodatkowe godziny pracy: wywołaj ponownie whatif_start z template „{id}”.",
   un_by_hand:
     "W przeciwnym razie przemyśl to ręcznie tą samą metodą: trzy warianty, próg rentowności, mały odwracalny test, a każda liczba oznaczona jako własna lub szacunkowa. Nie wymyślaj liczb.",
+  un_by_hand_only:
+    "Przemyśl to ręcznie tą samą metodą: trzy warianty, próg rentowności, mały odwracalny test, a każda liczba oznaczona jako własna lub szacunkowa. Nie wymyślaj liczb.",
   uc_head: "What-IF nie rozpoznał, o jaką decyzję chodzi.",
   uc_ask: "Zapytaj, jaką decyzję rozważa kawiarnia, na przykład:",
   hint_unsupported: "Powiedz uczciwie, że What-IF jeszcze tego nie liczy; zaproponuj część, którą da się przećwiczyć, albo ręczne przemyślenie z oznaczonymi liczbami.",
@@ -747,7 +801,7 @@ const pl: Record<McpKey, Msg> = {
       },
       lang,
     ),
-  ci_run_next: "Następny krok: wywołaj whatif_run_scenarios z tym samym szablonem i danymi (albo ze `state` tego wyniku).",
+  ci_run_next: "Następny krok: wywołaj whatif_run_scenarios ze `state` = state tego wyniku (albo z tym samym szablonem i danymi).",
   hint_check_ready: "Przeczytaj wstawione szacunki, zanim uruchomisz scenariusze.",
   hint_check_more: "Zadaj tylko następne pytanie, prostymi słowami, i powiedz, dlaczego jest ważne.",
 
@@ -764,6 +818,9 @@ const pl: Record<McpKey, Msg> = {
 
   rs_ready: "Próba gotowa: wyobrażeni klienci: {people}, rundy: {rounds}. Reagują na: {change}",
   rs_who: "Kim są: {list}.",
+  att_fan: "nastawienie entuzjastyczne",
+  att_neutral: "nastawienie otwarte",
+  att_sceptical: "nastawienie sceptyczne",
   rs_round1: (p, lang) =>
     `Runda 1 z ${s(p.rounds)}: ${s(p.title)}. ${n(p, "n", { one: "{n} instrukcja", few: "{n} instrukcje", many: "{n} instrukcji", other: "{n} instrukcji" }, lang)} do uruchomienia (poniżej)`,
   rs_away: "; nieobecni w tej rundzie: {n} (obsłużone automatycznie)",
@@ -777,7 +834,8 @@ const pl: Record<McpKey, Msg> = {
   hint_sub_none: "Każda odpowiedź musi być obiektem JSON, o który prosi jej instrukcja, z jedną z dozwolonych akcji.",
   sub_done: (p, lang) => `Przyjęto ${n(p, "n", { one: "{n} odpowiedź", other: "{n} odpowiedzi" }, lang)}. Próba zakończona.`,
   hint_sub_done: "Udostępnij link, przeczytaj jeden lub dwa cytaty, a otwarte pytania zamień w mały prawdziwy test (whatif_plan_test).",
-  sub_partial: "Przyjęto: {n}; kolejnej próby wymaga: {k}, zanim runda {round} się zakończy:\n{errors}",
+  sub_partial: (p, lang) =>
+    `Przyjęto: ${s(p.n)}; ${n(p, "k", { one: "{n} odpowiedź trzeba", few: "{n} odpowiedzi trzeba", many: "{n} odpowiedzi trzeba", other: "{n} odpowiedzi trzeba" }, lang)} powtórzyć, zanim runda ${s(p.round)} się zakończy:\n${s(p.errors)}`,
   hint_sub_partial: "Uruchom ponownie tylko wymienione persony i wyślij ich odpowiedzi z nowym state.",
   sub_next: (p, lang) =>
     `Przyjęto ${n(p, "n", { one: "{n} odpowiedź", other: "{n} odpowiedzi" }, lang)}. Następna jest runda ${s(p.round)} z ${s(p.rounds)}${p.title ? `: ${s(p.title)}` : ""}. ${n(p, "k", { one: "{n} instrukcja", few: "{n} instrukcje", many: "{n} instrukcji", other: "{n} instrukcji" }, lang)} do uruchomienia (poniżej).`,
@@ -814,9 +872,9 @@ const pl: Record<McpKey, Msg> = {
   pt_checkins: "Punkty kontrolne:",
   pt_day: "Dzień {day}: {look}",
   pt_rule: "Reguła decyzji:",
-  pt_keep: "Zostawić",
-  pt_tweak: "Poprawić",
-  pt_stop: "Zakończyć",
+  pt_keep: cap(PL.keep),
+  pt_tweak: cap(PL.tweak),
+  pt_stop: cap(PL.stop),
   pt_cap: "Limit kosztów: {cap}",
   pt_after: "Po teście wywołaj whatif_log_result ze zmierzonymi wartościami i `state` tego wyniku.",
   hint_plan: "Ustal datę startu i kto co liczy, i poproś o powrót z liczbami.",
@@ -829,9 +887,9 @@ const pl: Record<McpKey, Msg> = {
   lr_closest: "najbliżej scenariusza „{name}”",
   lr_line: "{label}: {actual} ({closest}). Wynik w czasie testu: {net}.",
   lr_verdict: "Werdykt: {verdict}.",
-  verdict_keep: "ZOSTAWIĆ",
-  verdict_tweak: "POPRAWIĆ",
-  verdict_stop: "ZAKOŃCZYĆ",
+  verdict_keep: PL.keep.toLocaleUpperCase("pl-PL"),
+  verdict_tweak: PL.tweak.toLocaleUpperCase("pl-PL"),
+  verdict_stop: PL.stop.toLocaleUpperCase("pl-PL"),
   lr_teaches: "Czego to uczy:",
   hint_log: "Doceń, że najpierw był test, potem zapytaj, co następnym razem zmienić.",
 
@@ -842,11 +900,11 @@ const pl: Record<McpKey, Msg> = {
   err_bad_link_hint: "(Przekaż `state` z ostatniego wyniku What-IF dokładnie tak, jak przyszedł, albo jego report_url.)",
   err_no_rehearsal: "W tym state nie ma próby. Zacznij ją przez whatif_rehearsal_start i przekaż zwrócony state.",
 
-  at_demo: "Dane demo: to wymyślone liczby kawiarni demo.",
-  at_break_even: "Próg rentowności (break-even, ta jedna liczba do zapamiętania): {plain}",
+  at_demo: `${PL.demoData}: to wymyślone liczby kawiarni demo.`,
+  at_break_even: `${cap(PL.breakEven)} (ta jedna liczba do zapamiętania): {plain}`,
   at_three: "Trzy możliwe wyniki (obliczone z liczb właściciela i szacunków):",
   at_scenario: "{test} w czasie testu; {month} miesięcznie.",
-  at_worst: "Najgorszy przypadek: {plain}",
+  at_worst: `${cap(PL.worstCase)}: {plain}`,
   at_uncertainty: "Największa niepewność: {plain}",
   at_watch: "Uwaga:",
   at_facts: "Publiczne fakty użyte w obliczeniach: {list}.",
@@ -860,3 +918,47 @@ export const MCP_MESSAGES: Catalog<McpKey> = { en, de, es, pl };
 
 /** t(key, params, lang): the MCP framing sentence in that language (English per key as the fallback). */
 export const mcpT = makeT(MCP_MESSAGES);
+
+// ---------------------------------------------------------------------------
+// Closed beta: the message an owner sees without a valid invite code
+// ---------------------------------------------------------------------------
+
+/**
+ * German first, then English (the connection carries no language yet). It says what is
+ * wrong, that the connector link must end in ?code=YOUR-CODE, and where to ask for a code.
+ * It never contains the code that was sent.
+ */
+export function betaMessage(hadCode: boolean, contact = "", siteUrl = ""): string {
+  const mcp = `${siteUrl || "https://<site>"}/api/mcp`;
+  const de = [
+    "What-IF ist eine geschlossene Beta für Berliner Cafés.",
+    hadCode ? "Dieser Einladungscode ist nicht gültig." : "Für diese Verbindung fehlt der Einladungscode.",
+    `Ihr Connector-Link muss auf ?code=IHR-CODE enden: ${mcp}?code=IHR-CODE`,
+    contact ? `Einen Code bekommen Sie hier: ${contact}` : "Einen Code bekommen Sie von der Person, die Sie eingeladen hat.",
+  ];
+  const en = [
+    "What-IF is a closed beta for Berlin cafés.",
+    hadCode ? "This invite code is not valid." : "This connection has no invite code.",
+    `Your connector link must end in ?code=YOUR-CODE: ${mcp}?code=YOUR-CODE`,
+    contact ? `To ask for a code: ${contact}` : "Ask the person who invited you for a code.",
+  ];
+  return `${de.join(" ")}\n\n${en.join(" ")}`;
+}
+
+/** Added to the tool result for the model: how to pass the beta message on. */
+export function betaAssistantNote(siteUrl: string): string {
+  return `For the assistant: tell the owner this in their language, in two or three sentences. They fix it in their app's connector settings (the link ends in ?code= and their code), then reconnect; steps per app: ${siteUrl}/connect. Never ask for the code in the chat, and do not retry the tools until they have reconnected.`;
+}
+
+/** Added to the server instructions on a connection without a valid code. */
+export function betaInstructionsNote(): string {
+  return "CLOSED BETA: this connection has no valid invite code, so every What-IF tool returns the closed-beta message instead of a result. Relay that message in the owner's language; never ask for the code in the chat.";
+}
+
+/** The OAuth discovery answer when the request is fine without a sign-in (an open server, or a valid code). */
+export function noSignInMessage(siteUrl: string, closedBeta: boolean): string {
+  const mcp = `${siteUrl || "https://<site>"}/api/mcp`;
+  return closedBeta
+    ? `What-IF braucht keine Anmeldung (kein OAuth): Der Einladungscode steckt im Link, ${mcp}?code=IHR-CODE\n\nWhat-IF needs no sign-in (no OAuth): the invite code is part of the link, ${mcp}?code=YOUR-CODE`
+    : `What-IF braucht keine Anmeldung (kein OAuth). Verbinden Sie sich direkt mit ${mcp}\n\nWhat-IF needs no sign-in (no OAuth). Connect straight to ${mcp}`;
+}

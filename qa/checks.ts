@@ -28,7 +28,7 @@ import { pathToFileURL } from "node:url";
 import type { Analysis, ChangeExplanation, DecisionTemplate, InputCheck, RawInputs, TestPlan, TestResult } from "../src/engine/types.ts";
 import type { PersonaBrief, Reaction, ReactionMethod, Rehearsal, RehearsalSummary, SubmitOutcome } from "../src/sim/types.ts";
 import type { ShareState } from "../src/state.ts";
-import { EN_UI_PHRASES, englishHits, runUiCheck, UI_CHECKS, type UiResult } from "./ui-check.ts";
+import { DEFAULT_WHY_LABELS, englishHits, hasTerm, runUiCheck, signHits, TERM_ALTERNATES, UI_BUDGET_MS, UI_CHECKS, type TermWords, type UiOptions, type UiResult } from "./ui-check.ts";
 
 export interface Outcome {
   ok: boolean;
@@ -544,9 +544,9 @@ export async function demoReport(root: string): Promise<{ token: string; marker:
   return { token: main.token, marker, share: main.share, tokens, source: main.source };
 }
 
-/** Text labels for "Why this changed" in every language, from src/report/messages.ts when it has them. */
-async function whyLabels(root: string): Promise<string[]> {
-  const out = new Set(["Why this changed"]);
+/** Text labels for "Why this changed" in every language: the four known ones plus whatever src/report/messages.ts says now. */
+export async function whyLabels(root: string): Promise<string[]> {
+  const out = new Set(DEFAULT_WHY_LABELS);
   try {
     const m = await load<Record<string, unknown>>(root, "src/report/messages.ts");
     for (const v of Object.values(m)) {
@@ -562,6 +562,203 @@ async function whyLabels(root: string): Promise<string[]> {
     }
   } catch {
     /* English only */
+  }
+  return [...out];
+}
+
+/** Source id → the TERMS key of its chip word. */
+const CHIP_TERM: Record<string, "yourNumber" | "guess" | "calculated" | "imagined" | "demoData"> = { owner: "yourNumber", assumption: "guess", calculation: "calculated", imagined: "imagined", demo: "demoData" };
+
+interface TermsMod {
+  TERMS: Record<Lang, Record<string, string>>;
+}
+interface EngineMessagesMod {
+  ENGINE_MESSAGES?: Record<string, Record<string, unknown>>;
+  sourceLabel(s: string, lang?: Lang): string;
+}
+
+/** The TERMS words per language (src/i18n/terms.ts) with the engine's own chip words (sourceLabel), for the UI check. */
+async function termWords(root: string): Promise<{ terms?: Record<Lang, TermWords>; error?: string }> {
+  try {
+    const t = await load<TermsMod>(root, "src/i18n/terms.ts", ["TERMS"]);
+    const m = await load<EngineMessagesMod>(root, "src/engine/messages.ts", ["sourceLabel"]);
+    const out = {} as Record<Lang, TermWords>;
+    for (const l of LANGS) {
+      const w = t.TERMS[l];
+      if (!w) throw new Error(`TERMS has no ${l} block`);
+      const missing = ["breakEven", "imagined", "imaginedCustomers"].filter((k) => !w[k]?.trim());
+      if (missing.length) throw new Error(`TERMS.${l} has no ${missing.join(", ")}`);
+      out[l] = { breakEven: w.breakEven!, imagined: w.imagined!, imaginedCustomers: w.imaginedCustomers!, chips: Object.fromEntries(SOURCES.map((s) => [s, m.sourceLabel(s, l)])) };
+    }
+    return { terms: out };
+  } catch (e) {
+    return { error: msg(e).split("\n")[0] };
+  }
+}
+
+/** The rule-based caveat per language (src/sim/messages.ts CAVEATS), which a /try rehearsal must show. */
+async function ruleCaveats(root: string): Promise<Partial<Record<Lang, string>> | undefined> {
+  try {
+    const m = await load<{ CAVEATS?: Record<string, Partial<Record<Lang, string>>> }>(root, "src/sim/messages.ts", ["CAVEATS"]);
+    const c = m.CAVEATS?.["rule-based"];
+    return c && typeof c === "object" ? c : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether the site has a /r#demo-ai demo (the report page names that fragment). */
+function siteHasDemoAi(root: string): boolean {
+  return /["'`]demo-ai["'`]|#demo-ai\b|demo-ai\)/.test(readText(root, "site/src/report.ts") ?? "");
+}
+
+/** Everything the browser run needs; qa/run.ts and the standalone `node --import tsx qa/ui-check.ts` both use it. */
+export async function uiOptions(root: string, base: string, beta: { betaBase?: string; betaError?: string } = {}): Promise<UiOptions> {
+  const demo = await demoReport(root);
+  const terms = await termWords(root);
+  return {
+    root,
+    base,
+    token: demo.token,
+    tokens: demo.tokens,
+    lang: "de",
+    marker: demo.marker,
+    whyLabels: await whyLabels(root),
+    betaBase: beta.betaBase,
+    betaCode: BETA_CODE,
+    betaError: beta.betaError,
+    terms: terms.terms,
+    termsError: terms.error,
+    ruleCaveats: await ruleCaveats(root),
+    demoAi: siteHasDemoAi(root),
+    shots: join(root, "qa/reports/ui"),
+  };
+}
+
+// ---- every shipped demo, and a /try report, rendered statically per language ----
+
+type Variant = "demo" | "demo-price" | "demo-result" | "try";
+const VARIANTS: Variant[] = ["demo", "demo-price", "demo-result", "try"];
+interface VariantRender {
+  lang: Lang;
+  variant: Variant;
+  share: ShareState;
+  a: Analysis;
+  html: string;
+  /** Every string the analysis, the plan, the result and the rehearsal summary hold (the slider's text for every position included). */
+  strings: string[];
+}
+
+/** Every string value in a JSON-like object. */
+function allStrings(x: unknown, out: string[] = [], depth = 0): string[] {
+  if (depth > 10 || x === null || x === undefined) return out;
+  if (typeof x === "string") out.push(x);
+  else if (Array.isArray(x)) for (const v of x) allStrings(v, out, depth + 1);
+  else if (typeof x === "object") for (const v of Object.values(x as Record<string, unknown>)) allStrings(v, out, depth + 1);
+  return out;
+}
+
+/**
+ * The /try report the UI bot reaches: the lunch template's required fields with their example values (the
+ * placeholders the wizard shows and the bot types), Neukölln, made by "try", no rehearsal.
+ */
+function tryShare(e: EngineMod, lang: Lang): ShareState {
+  const t = typeof e.getTemplate === "function" ? e.getTemplate("lunch_offer") : e.TEMPLATES.lunch_offer;
+  const inputs: RawInputs = {};
+  for (const f of t?.fields ?? []) if (f.required && f.key !== "kiez") inputs[f.key] = f.example;
+  inputs.kiez = "Neukölln";
+  return { v: 1, template: "lunch_offer", inputs, lang, madeBy: "try", demo: false, currency: "EUR", question: t?.exampleQuestion ?? "" } as ShareState;
+}
+
+const variantMemo = new Map<string, Promise<VariantRender>>();
+/** One demo (as /r#demo, /r#demo-price, /r#demo-result open it) or the /try report, rebuilt the way the report page does and rendered. */
+function variantRender(root: string, lang: Lang, variant: Variant): Promise<VariantRender> {
+  const key = `${lang}:${variant}`;
+  let p = variantMemo.get(key);
+  if (!p) {
+    p = (async () => {
+      const e = await rawEngine(root, ["analyze", "planTest", "compareResult", "demoInputs", "DEMO_BUSINESS", "TEMPLATES"]);
+      const report = await reportMod(root);
+      let share: ShareState;
+      if (variant === "try") share = tryShare(e, lang);
+      else {
+        const d = await load<DemoMod>(root, "src/report/demo.ts", ["demoState"]);
+        share = await inLang(root, lang, () => d.demoState(variant === "demo-price" ? "price_change" : "lunch_offer", { lang, ...(variant === "demo-result" ? { result: true } : {}) }));
+      }
+      const a = await inLang(root, lang, () => e.analyze(share.template, share.inputs, { business: share.business, question: share.question, demo: share.demo, currency: share.currency, lang }));
+      const plan = await inLang(root, lang, () => e.planTest(a));
+      let summary: RehearsalSummary | undefined;
+      if (share.rehearsal) {
+        const sim = await simMod(root, [...SIM_EXPORTS]);
+        summary = await inLang(root, lang, () => sim.summarize(sim.rebuildRehearsal(a, share.rehearsal!)));
+      }
+      let result: TestResult | undefined;
+      if (share.observed && Object.keys(share.observed).length) result = await inLang(root, lang, () => e.compareResult(a, share.observed!));
+      const input = { analysis: a, plan, ...(summary ? { rehearsal: summary } : {}), ...(result ? { result } : {}), status: "final" as const, ...(share.madeBy ? { madeBy: share.madeBy } : {}) };
+      const html = await inLang(root, lang, () => report.renderReport(input));
+      return { lang, variant, share, a, html, strings: allStrings([a, plan, result, summary]) };
+    })();
+    variantMemo.set(key, p);
+  }
+  return p;
+}
+
+/** Visible text plus the accessible names (aria-label, title, alt, placeholder) of rendered HTML. */
+function ownerText(html: string): string {
+  const attrs = [...html.matchAll(/\b(?:aria-label|title|alt|placeholder)=["']([^"']+)["']/gi)].map((m) => decodeEntities(m[1] ?? "")).join("\n");
+  return `${visibleText(html)}\n${attrs}`;
+}
+
+// ---- VAT honesty: the 7% rate for milk drinks is a take-away rule ----
+
+const PCT = "[\\s\\u00a0\\u202f]?%";
+const VAT_SEVEN = new RegExp(`(?<![\\d.,])7(?:[.,]0+)?${PCT}`);
+const VAT_NINETEEN = new RegExp(`(?<![\\d.,])19(?:[.,]0+)?${PCT}`);
+const VAT_MILK: Record<Lang, RegExp> = {
+  en: new RegExp(`\\bmilk[- ]?(?:drinks?|based|beverages?)\\b|\\d+${PCT} (?:cow'?s )?milk\\b`, "i"),
+  de: new RegExp(`milch(?:misch)?getränk|\\d+${PCT} (?:kuh)?milch`, "iu"),
+  es: new RegExp(`bebidas? (?:lácteas?|con (?:al menos |como mínimo )?(?:un )?\\d+${PCT} de leche)|\\d+${PCT} de leche`, "iu"),
+  pl: new RegExp(`napoj\\p{L}* mleczn\\p{L}*|\\d+${PCT} mleka`, "iu"),
+};
+const VAT_TAKEAWAY: Record<Lang, RegExp> = {
+  en: /take[- ]?away|takeaway|\bto go\b|to take (?:out|away)|carry[- ]?out/i,
+  de: /zum mitnehmen|mitnahme|au(?:ß|ss)er[- ]?haus|(?<!\p{L})to[- ]go(?!\p{L})/iu,
+  es: /para llevar|a domicilio/iu,
+  pl: /na wynos/iu,
+};
+const VAT_EAT_IN: Record<Lang, RegExp> = {
+  en: /eat[- ]?in|drunk (?:in|at)|in the caf[eé]|on the premises|in-house|sit[- ]?in|at the table/i,
+  de: /im (?:café|cafe|haus|lokal|laden)(?!\p{L})|vor ort|getrunken|am tisch|an ort und stelle/iu,
+  es: /en el (?:local|café|cafe)|para tomar (?:allí|aquí|en el local)|en (?:la )?mesa|(?:consumid|tomad)[oa]s? en/iu,
+  pl: /na miejscu|w kawiarni|w lokalu|przy stoliku/iu,
+};
+const VAT_NOT = /(?<!\p{L})(?:not|no|never|nicht|kein\p{L}*|nie|nunca|ningun\p{L}*)(?!\p{L})/iu;
+
+/** The clauses of a text that give milk drinks 7%, and what is wrong with each (no take-away, or drunk in the café). */
+function milkVatProblems(text: string, lang: Lang): { clause: string; ok: boolean; why: string }[] {
+  const out: { clause: string; ok: boolean; why: string }[] = [];
+  for (const raw of text.split(/(?<=[.!?])\s+|;|\n+/)) {
+    const c = squash(raw);
+    if (!VAT_MILK[lang].test(c) || !VAT_SEVEN.test(c)) continue;
+    if (!VAT_TAKEAWAY[lang].test(c)) out.push({ clause: c, ok: false, why: "gives milk drinks 7% without saying it is only for take-away" });
+    else if (VAT_EAT_IN[lang].test(c) && !VAT_NINETEEN.test(c) && !VAT_NOT.test(c)) out.push({ clause: c, ok: false, why: "gives milk drinks drunk in the café 7% (they are 19%)" });
+    else out.push({ clause: c, ok: true, why: "" });
+  }
+  return out;
+}
+
+/** The texts of a catalog entry: the string, or a function's output for a few counts. */
+function catalogTexts(v: unknown, lang: Lang): string[] {
+  if (typeof v === "string") return [v];
+  if (typeof v !== "function") return [];
+  const out = new Set<string>();
+  for (const n of [1, 2, 5]) {
+    try {
+      const s = (v as (p: Record<string, unknown>, l: Lang) => unknown)({ n }, lang);
+      if (typeof s === "string") out.add(s);
+    } catch {
+      /* needs other parameters */
+    }
   }
   return [...out];
 }
@@ -988,15 +1185,20 @@ interface ProdBuild {
   zip: Record<string, Uint8Array> | null;
   out: string;
 }
-let prodMemo: Promise<ProdBuild> | null = null;
-/** `node scripts/build.mjs` with WHATIF_SITE_URL=https://example.vercel.app, in a scratch copy. */
-function prodBuild(root: string): Promise<ProdBuild> {
-  prodMemo ??= (async () => {
+const prodMemos = new Map<string, Promise<ProdBuild>>();
+/**
+ * `node scripts/build.mjs` with WHATIF_SITE_URL=https://example.vercel.app, in a scratch copy;
+ * contact "set" gives it WHATIF_BETA_CONTACT, "empty" leaves the contact empty (allowed: the site then hides the request button).
+ */
+function prodBuild(root: string, contact: "set" | "empty" = "set"): Promise<ProdBuild> {
+  let memo = prodMemos.get(contact);
+  if (memo) return memo;
+  memo = (async () => {
     if (!existsSync(join(root, "scripts/build.mjs"))) throw new Missing("scripts/build.mjs does not exist yet");
-    const dir = scratchCopy(root, "prod-build");
-    const r = proc(process.execPath, [join(dir, "scripts/build.mjs")], dir, 5 * 60_000, { WHATIF_SITE_URL: PROD_URL, WHATIF_BETA_CONTACT: BETA_CONTACT });
+    const dir = scratchCopy(root, contact === "set" ? "prod-build" : "prod-build-nocontact");
+    const r = proc(process.execPath, [join(dir, "scripts/build.mjs")], dir, 5 * 60_000, { WHATIF_SITE_URL: PROD_URL, WHATIF_BETA_CONTACT: contact === "set" ? BETA_CONTACT : "" });
     const zipPath = join(dir, ".vercel/output/static/what-if-skill.zip");
-    if (r.code !== 0) throw new Error(`the production-like build (WHATIF_SITE_URL=${PROD_URL}) failed: exit ${r.code}\n${tail(r.out, 800)}`);
+    if (r.code !== 0) throw new Error(`the production-like build (WHATIF_SITE_URL=${PROD_URL}, WHATIF_BETA_CONTACT ${contact === "set" ? "set" : "empty"}) failed: exit ${r.code}\n${tail(r.out, 800)}`);
     let zip: Record<string, Uint8Array> | null = null;
     if (existsSync(zipPath)) {
       const { unzipSync } = (await import("fflate")) as typeof import("fflate");
@@ -1004,7 +1206,8 @@ function prodBuild(root: string): Promise<ProdBuild> {
     }
     return { dir, zip, out: r.out };
   })();
-  return prodMemo;
+  prodMemos.set(contact, memo);
+  return memo;
 }
 
 async function unzipText(path: string): Promise<{ files: Record<string, string>; error?: string }> {
@@ -1121,10 +1324,8 @@ let uiMemo: Promise<UiResult[]> | null = null;
 function ui(root: string): Promise<UiResult[]> {
   uiMemo ??= (async () => {
     let base: string;
-    let demo: Awaited<ReturnType<typeof demoReport>>;
     try {
       base = (await devServer(root)).base;
-      demo = await demoReport(root);
     } catch (e) {
       return UI_CHECKS.map((c) => ({ id: c.id, ok: false, detail: `cannot open the site: ${msg(e).split("\n")[0]}` }));
     }
@@ -1135,7 +1336,19 @@ function ui(root: string): Promise<UiResult[]> {
     } catch (e) {
       betaError = `the beta dev server (WHATIF_BETA_CODES set) did not start: ${msg(e).split("\n")[0]}`;
     }
-    return runUiCheck({ root, base, token: demo.token, tokens: demo.tokens, lang: "de", marker: demo.marker, whyLabels: await whyLabels(root), betaBase, betaCode: BETA_CODE, betaError, shots: join(root, "qa/reports/ui") });
+    let opts: UiOptions;
+    try {
+      opts = await uiOptions(root, base, { betaBase, betaError });
+    } catch (e) {
+      return UI_CHECKS.map((c) => ({ id: c.id, ok: false, detail: `cannot build the demo report links: ${msg(e).split("\n")[0]}` }));
+    }
+    // One deadline for the whole browser run, so a hanging page fails every ui-* check once instead of each one waiting out its own timeout.
+    const hard = UI_BUDGET_MS + 120_000;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<UiResult[]>((resolveLate) => {
+      timer = setTimeout(() => resolveLate(UI_CHECKS.map((c) => ({ id: c.id, ok: false, detail: `the browser run did not finish within ${Math.round(hard / 1000)} s (a page may hang; run node --import tsx qa/ui-check.ts to see where)` }))), hard);
+    });
+    return Promise.race([runUiCheck(opts), late]).finally(() => clearTimeout(timer));
   })();
   return uiMemo;
 }
@@ -1608,6 +1821,50 @@ export const CHECKS: CheckDef[] = [
       return verdict(problems.slice(0, 10), `${facts.length} facts: ${facts.map((f) => `${f?.label ?? f?.id} (${f?.asOf})`).join("; ")}`);
     },
   },
+  {
+    id: "berlin-vat-takeaway",
+    component: "engine",
+    title: "VAT honesty: in every language the engine texts give the 7% milk-drink rate for take-away only, and no text (engine, analysis, report or site) says milk drinks drunk in the café are 7% (they are 19%)",
+    command: "node --import tsx qa/run.ts --no-loop --only engine",
+    run: async (root) => {
+      const m = await load<EngineMessagesMod>(root, "src/engine/messages.ts", ["ENGINE_MESSAGES"]);
+      const problems: string[] = [];
+      const ruleIn = new Set<Lang>();
+      let clauses = 0;
+      const scan = (where: string, lang: Lang, text: string, engineText: boolean) => {
+        for (const p of milkVatProblems(text, lang)) {
+          clauses++;
+          if (p.ok) {
+            if (engineText) ruleIn.add(lang);
+          } else problems.push(`${where} (${lang}) ${p.why}: "${p.clause.slice(0, 150)}"`);
+        }
+      };
+      for (const l of LANGS) for (const [k, v] of Object.entries(m.ENGINE_MESSAGES?.[l] ?? {})) for (const s of catalogTexts(v, l)) scan(`src/engine/messages${l === "en" ? "" : `.${l}`}.ts ${k}`, l, s, true);
+      // What the analyses say (facts, notes, questions), in case a sentence is built outside the catalog.
+      try {
+        const e = await rawEngine(root);
+        for (const l of LANGS)
+          for (const t of ["lunch_offer", "price_change"]) {
+            const raw: RawInputs = { ...e.demoInputs(t) };
+            delete raw.vat_rate;
+            for (const s of new Set(allStrings(e.analyze(t, raw, { demo: false, business: "Café QA", lang: l })))) scan(`analyze("${t}") without vat_rate`, l, s, false);
+          }
+      } catch (err) {
+        problems.push(`the analyses could not be read: ${msg(err).split("\n")[0]}`);
+      }
+      // The report's and the site's catalogs (the landing's facts box).
+      for (const [rel, name] of [["src/report/messages.ts", "REPORT_MESSAGES"], ["site/src/messages.ts", "SITE_MESSAGES"]] as const) {
+        try {
+          const c = (await load<Record<string, unknown>>(root, rel, [name]))[name] as CatalogLike;
+          for (const l of LANGS) for (const [k, v] of Object.entries(c[l] ?? {})) for (const s of catalogTexts(v, l)) scan(`${rel} ${k}`, l, s, false);
+        } catch (err) {
+          problems.push(`${rel}: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      for (const l of LANGS) if (!ruleIn.has(l)) problems.push(`${l}: no engine text states the take-away rule (milk drinks with at least 75% milk: 7% only to take away; drunk in the café: 19%)`);
+      return verdict([...new Set(problems)].slice(0, 10), `${clauses} milk-drink 7% clauses in the engine, analysis, report and site texts; every one says take-away, in ${[...ruleIn].join(", ")}`);
+    },
+  },
 
   // ==================== rehearsal ====================
   {
@@ -2032,6 +2289,48 @@ export const CHECKS: CheckDef[] = [
       return verdict(problems.slice(0, 10), `${entries.length} events in ${found.file}: ${entries.map(([id]) => id).join(", ")}`);
     },
   },
+  {
+    id: "sim-interview-unique",
+    component: "rehearsal",
+    title: "the shipped demos' interviews (/r#demo, /r#demo-price) give every imagined customer an answer of their own, in every language (no two persona answers the same once names are left out)",
+    command: "node --import tsx qa/run.ts --no-loop --only rehearsal",
+    run: async (root) => {
+      const problems: string[] = [];
+      const info: string[] = [];
+      for (const lang of LANGS)
+        for (const variant of ["demo", "demo-price"] as const) {
+          let v: VariantRender;
+          try {
+            v = await variantRender(root, lang, variant);
+          } catch (err) {
+            problems.push(`${lang} /r#${variant}: ${msg(err).split("\n")[0]}`);
+            continue;
+          }
+          const r = v.share.rehearsal;
+          if (!r) {
+            problems.push(`${lang} /r#${variant}: the shipped demo has no rehearsal`);
+            continue;
+          }
+          if (!r.interviews?.length) {
+            problems.push(`${lang} /r#${variant}: the shipped demo has no interview`);
+            continue;
+          }
+          for (const iv of r.interviews) {
+            const byText = new Map<string, string[]>();
+            const names = iv.answers.map((x) => x.name || x.personaId).filter(Boolean);
+            for (const ans of iv.answers) {
+              let t = ans.answer ?? "";
+              for (const n of names) t = t.split(n).join(" ");
+              const norm = t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+              byText.set(norm, [...(byText.get(norm) ?? []), ans.name || ans.personaId]);
+            }
+            for (const [t, who] of byText) if (who.length > 1) problems.push(`${lang} /r#${variant}: ${who.join(" and ")} give the same interview answer ("${t.slice(0, 80)}…")`);
+            info.push(`${lang} ${variant}: ${byText.size}/${iv.answers.length} distinct`);
+          }
+        }
+      return verdict(problems.slice(0, 10), info.join("; "));
+    },
+  },
 
   // ==================== mcp ====================
   {
@@ -2417,37 +2716,111 @@ export const CHECKS: CheckDef[] = [
   {
     id: "mcp-beta-codes",
     component: "mcp",
-    title: "closed beta: with WHATIF_BETA_CODES set, POST /api/mcp without a code is 401 (a German + English message), ?code=, x-whatif-code and Bearer work, GET ?code= says beta.valid; the code is never echoed",
-    command: "set WHATIF_BETA_CODES=test-code-123 && node scripts/dev.mjs --no-build  (then POST initialize to /api/mcp with and without ?code=)",
+    title: "closed beta (WHATIF_BETA_CODES set), no or a wrong code: initialize (instructions with \"CLOSED BETA\"), tools/list and prompts/list answer 200; every tools/call answers 200 with isError, the German message first (\"Für diese Verbindung fehlt der Einladungscode\" / \"Dieser Einladungscode ist nicht gültig\", ?code=IHR-CODE), then the English one (\"closed beta for Berlin\", ?code=YOUR-CODE), the contact and structuredContent.beta { required, valid: false, reason, connector_url, how_to_connect, contact }; a valid code via ?code=, x-whatif-code or Bearer gives real results; GET ?code= says beta.valid (+ message); the code is never echoed or logged",
+    command: "set WHATIF_BETA_CODES=test-code-123 && node scripts/dev.mjs --no-build  (then initialize, tools/list, prompts/list and tools/call on /api/mcp with and without ?code=)",
     timeoutMs: 200_000,
     run: async (root) => {
       const dev = await betaServer(root);
       const url = `${dev.base}/api/mcp`;
       const problems: string[] = [];
-      const init = (u: string, headers: Record<string, string> = {}, id = 60) => rpc(u, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "what-if-qa", version: "1.0.0" } }, id, headers);
-      const none = await init(url);
-      if (none.status !== 401) problems.push(`no code: HTTP ${none.status} (want 401)`);
-      const m = String(none.body?.error?.message ?? "");
-      if (!none.body?.error) problems.push(`no code: the 401 has no JSON-RPC error (${none.raw.slice(0, 100)})`);
-      else {
-        if (!/beta/i.test(m) || !/berlin/i.test(m)) problems.push(`no code: the message does not say it is a closed beta for Berlin cafés ("${m.slice(0, 120)}")`);
-        if (!/\b(der|die|das|und|ist|für|Sie)\b/.test(m) || !/\b(the|is|for|and|ask)\b/i.test(m)) problems.push(`no code: the message is not in German and English ("${m.slice(0, 120)}")`);
-        if (!m.includes(BETA_CONTACT)) problems.push(`no code: the message does not say how to ask for a code (WHATIF_BETA_CONTACT=${BETA_CONTACT} is not in it)`);
+      const raws: [string, string][] = [];
+      const INIT = { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "what-if-qa", version: "1.0.0" } };
+      const noAuth = (label: string, r: RpcReply) => {
+        if (r.status === 401) problems.push(`${label}: HTTP 401 (never 401: OAuth-capable hosts start a sign-in and drop the message)`);
+        const wa = r.headers.get("www-authenticate");
+        if (wa) problems.push(`${label}: WWW-Authenticate: ${wa.slice(0, 60)}`);
+      };
+      // 1. Without a code the connection itself works: the host lists tools and prompts, and the instructions say why tools will refuse.
+      const init = await rpc(url, "initialize", INIT, 60);
+      raws.push(["initialize without a code", init.raw]);
+      noAuth("initialize without a code", init);
+      if (init.status !== 200 || !init.body?.result?.serverInfo) problems.push(`no code: initialize gives HTTP ${init.status} ${init.raw.slice(0, 100)}`);
+      else if (!/CLOSED BETA/.test(String(init.body.result.instructions ?? ""))) problems.push(`no code: the initialize instructions do not end with the "CLOSED BETA: …" note ("…${String(init.body.result.instructions ?? "").slice(-90)}")`);
+      const pv = init.body?.result?.protocolVersion as string | undefined;
+      const headers: Record<string, string> = pv ? { "mcp-protocol-version": pv } : {};
+      for (const [method, field] of [["tools/list", "tools"], ["prompts/list", "prompts"]] as const) {
+        const r = await rpc(url, method, {}, 61, headers);
+        raws.push([`${method} without a code`, r.raw]);
+        noAuth(`${method} without a code`, r);
+        if (r.status !== 200 || !Array.isArray(r.body?.result?.[field]) || !r.body.result[field].length) problems.push(`no code: ${method} gives HTTP ${r.status} and no ${field} (${r.raw.slice(0, 80)})`);
       }
-      const wrong = await init(`${url}?code=wrong-code-999`, {}, 61);
-      if (wrong.status !== 401) problems.push(`a wrong code: HTTP ${wrong.status} (want 401)`);
+      // 2. Every tool call without a valid code: HTTP 200, isError, German then English, the contact, structuredContent.beta.
+      const calls = [
+        { name: "whatif_start", arguments: { question: "Was wäre, wenn ich einen Mittagstisch anbiete?" } },
+        { name: "whatif_run_scenarios", arguments: { template: "lunch_offer", demo: true } },
+      ];
+      let sample = "";
+      for (const [label, u, reason, de, wrong] of [
+        ["no code", url, "missing_code", /Für diese Verbindung fehlt der Einladungscode/i, ""],
+        ["a wrong code", `${url}?code=wrong-code-999`, "invalid_code", /Dieser Einladungscode ist nicht gültig/i, "wrong-code-999"],
+      ] as const) {
+        for (const [i, call] of calls.entries()) {
+          const where = `${label}, tools/call ${call.name}`;
+          const r = await rpc(u, "tools/call", call, 62 + i, headers);
+          raws.push([where, r.raw]);
+          noAuth(where, r);
+          if (r.body?.error) {
+            problems.push(`${where}: a JSON-RPC error ${r.body.error.code} (want result.isError true): "${r.body.error.message.slice(0, 90)}"`);
+            continue;
+          }
+          const res = r.body?.result;
+          if (r.status !== 200 || !res) {
+            problems.push(`${where}: HTTP ${r.status} ${r.raw.slice(0, 90)}`);
+            continue;
+          }
+          const text = String(res.content?.[0]?.text ?? "");
+          sample ||= text;
+          if (res.isError !== true) {
+            problems.push(`${where}: the tool ran (isError ${JSON.stringify(res.isError)}; "${squash(text).slice(0, 70)}"); without a valid code it must return isError with the beta message`);
+            continue;
+          }
+          const want: [RegExp, string][] = [
+            [de, `the German "${de.source}"`],
+            [/\?code=IHR-CODE/, "?code=IHR-CODE"],
+            [/closed beta for Berlin/i, "the English \"closed beta for Berlin\""],
+            [/\?code=YOUR-CODE/, "?code=YOUR-CODE"],
+          ];
+          const missing = want.filter(([re]) => !re.test(text)).map(([, w]) => w);
+          if (missing.length) problems.push(`${where}: content[0].text lacks ${missing.join(", ")} ("${squash(text).slice(0, 110)}")`);
+          const iDe = text.search(de), iEn = text.search(/closed beta for Berlin/i);
+          if (iDe >= 0 && iEn >= 0 && iDe > iEn) problems.push(`${where}: the English message comes before the German one`);
+          if (!text.includes(BETA_CONTACT)) problems.push(`${where}: the message does not give the contact (WHATIF_BETA_CONTACT=${BETA_CONTACT})`);
+          const b = res.structuredContent?.beta;
+          const bad = [
+            b?.required !== true && "required: true",
+            b?.valid !== false && "valid: false",
+            b?.reason !== reason && `reason: "${reason}"`,
+            !(typeof b?.connector_url === "string" && /\/api\/mcp\?code=YOUR-CODE$/.test(b.connector_url)) && "connector_url …/api/mcp?code=YOUR-CODE",
+            !(typeof b?.how_to_connect === "string" && /\/connect$/.test(b.how_to_connect)) && "how_to_connect …/connect",
+            b?.contact !== BETA_CONTACT && `contact "${BETA_CONTACT}"`,
+          ].filter(Boolean);
+          if (bad.length) problems.push(`${where}: structuredContent.beta ${JSON.stringify(b ?? null).slice(0, 120)} (want ${bad.join(", ")})`);
+          if (wrong && r.raw.includes(wrong)) problems.push(`${where}: the answer echoes the code that was sent`);
+        }
+      }
+      // 3. A valid code gives real results, however the host sends it.
       const ok: string[] = [];
       for (const [label, u, h] of [
         ["?code=", `${url}?code=${BETA_CODE}`, {}],
         ["x-whatif-code", url, { "x-whatif-code": BETA_CODE }],
         ["Bearer", url, { authorization: `Bearer ${BETA_CODE}` }],
       ] as const) {
-        const r = await init(u, h, 62);
-        if (r.status !== 200 || !r.body?.result?.serverInfo) problems.push(`code via ${label}: HTTP ${r.status} ${r.raw.slice(0, 100)}`);
-        else ok.push(label);
+        const i = await rpc(u, "initialize", INIT, 66, h);
+        if (i.status !== 200 || !i.body?.result?.serverInfo) problems.push(`code via ${label}: initialize gives HTTP ${i.status} ${i.raw.slice(0, 100)}`);
+        else if (/CLOSED BETA/.test(String(i.body.result.instructions ?? ""))) problems.push(`code via ${label}: the instructions still carry the "CLOSED BETA" note`);
+        let fine = true;
+        for (const [n, call] of calls.entries()) {
+          const r = await rpc(u, "tools/call", call, 67 + n, { ...headers, ...h });
+          raws.push([`tools/call ${call.name} with the code via ${label}`, r.raw]);
+          const res = r.body?.result;
+          if (r.status !== 200 || !res) problems.push(`code via ${label}: tools/call ${call.name} gives HTTP ${r.status} ${r.raw.slice(0, 100)}`);
+          else if (res.isError === true || res.structuredContent?.beta?.valid === false) problems.push(`code via ${label}: tools/call ${call.name} still returns the beta error ("${squash(toolText(res)).slice(0, 90)}")`);
+          else continue;
+          fine = false;
+        }
+        if (fine) ok.push(label);
       }
-      const tl = await rpc(`${url}?code=${BETA_CODE}`, "tools/list", {}, 63);
-      if (!(tl.body?.result?.tools?.length > 0)) problems.push(`tools/list with ?code=: HTTP ${tl.status}, no tools`);
+      // 4. GET lets the site check a code without storing it.
       const get = async (q: string) => {
         const res = await fetch(`${url}${q}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
         const raw = await res.text();
@@ -2461,11 +2834,115 @@ export const CHECKS: CheckDef[] = [
       };
       const gGood = await get(`?code=${BETA_CODE}`);
       const gBad = await get("?code=wrong-code-999");
+      const gNone = await get("");
+      raws.push(["GET ?code=", gGood.raw], ["GET ?code=<wrong>", gBad.raw], ["GET without a code", gNone.raw]);
       if (gGood.beta?.required !== true || gGood.beta?.valid !== true) problems.push(`GET ?code=<valid>: beta ${JSON.stringify(gGood.beta)} (want { required: true, valid: true })`);
-      if (gBad.beta?.valid !== false) problems.push(`GET ?code=<wrong>: beta ${JSON.stringify(gBad.beta)} (want valid: false)`);
-      const echoed = [["the 401", none.raw], ["GET ?code=", gGood.raw], ["the dev server log", dev.out.join("")]].filter(([, s]) => (s ?? "").includes(BETA_CODE)).map(([w]) => w);
-      if (echoed.length) problems.push(`the invite code is echoed or logged in ${echoed.join(", ")}`);
-      return verdict(problems, `401 without a code ("${m.slice(0, 70)}…"); accepted via ${ok.join(", ")}; GET reports beta.valid`);
+      for (const [label, g] of [["?code=<wrong>", gBad], ["without a code", gNone]] as const) {
+        if (g.beta?.required !== true || g.beta?.valid !== false) problems.push(`GET ${label}: beta ${JSON.stringify(g.beta).slice(0, 100)} (want { required: true, valid: false })`);
+        else if (typeof g.beta?.message !== "string" || !/einladungscode/i.test(g.beta.message)) problems.push(`GET ${label}: beta.message is missing or does not name the Einladungscode`);
+      }
+      if (gBad.raw.includes("wrong-code-999")) problems.push("GET ?code=<wrong>: the answer echoes the code that was sent");
+      // 5. The code never comes back: not in any answer, report link or the server log.
+      const echoed = [...raws, ["the dev server log", dev.out.join("")] as [string, string]].filter(([, s]) => (s ?? "").includes(BETA_CODE)).map(([w]) => w);
+      if (echoed.length) problems.push(`the invite code is echoed or logged in ${echoed.slice(0, 4).join(", ")}`);
+      return verdict([...new Set(problems)].slice(0, 12), `no code: initialize ("CLOSED BETA" note), tools/list and prompts/list answer 200; every tools/call is isError with "${squash(sample).slice(0, 60)}…" and structuredContent.beta; a valid code gives real results via ${ok.join(", ")}; GET reports beta.valid; the code is never echoed`);
+    },
+  },
+  {
+    id: "mcp-beta-oauth",
+    component: "mcp",
+    title: "closed beta: nothing on /api/mcp answers 401 or WWW-Authenticate; the OAuth paths (/.well-known/oauth-protected-resource[/api/mcp], /.well-known/oauth-authorization-server[/api/mcp], /.well-known/openid-configuration, /register, /authorize, /token, at the root and under /api/mcp/ and /mcp/) answer 404 JSON with the beta message and no WWW-Authenticate; an SDK client with an OAuth provider (as Claude Code and claude.ai use) connects without a code, lists the tools, starts no OAuth flow and gets the beta message from tools/call",
+    command: "set WHATIF_BETA_CODES=test-code-123 && node scripts/dev.mjs --no-build  (then GET /.well-known/oauth-protected-resource, POST /register, and connect @modelcontextprotocol/sdk's Client with an authProvider)",
+    timeoutMs: 200_000,
+    run: async (root) => {
+      const dev = await betaServer(root);
+      const url = `${dev.base}/api/mcp`;
+      const problems: string[] = [];
+      // 1. OAuth discovery and endpoints: a 404 in JSON that carries the beta message, with no WWW-Authenticate, so no host goes looking for a sign-in.
+      const endpoints = ["/register", "/authorize", "/token"];
+      const known = ["/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"];
+      const paths = [
+        ...known,
+        "/.well-known/oauth-protected-resource/api/mcp",
+        "/.well-known/oauth-authorization-server/api/mcp",
+        ...endpoints,
+        ...["/api/mcp", "/mcp"].flatMap((pre) => [...known, ...endpoints].map((p) => `${pre}${p}`)),
+      ];
+      const probes: [string, string][] = [...paths.map((p) => ["GET", p] as [string, string]), ...paths.filter((p) => /\/(register|token)$/.test(p)).map((p) => ["POST", p] as [string, string])];
+      for (const [method, p] of probes) {
+        try {
+          const res = await fetch(`${dev.base}${p}`, {
+            method,
+            headers: { accept: "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+            ...(method === "POST" ? { body: JSON.stringify({ client_name: "what-if-qa", redirect_uris: ["http://127.0.0.1:9/callback"] }) } : {}),
+            signal: AbortSignal.timeout(10_000),
+          });
+          const raw = await res.text();
+          const why: string[] = [];
+          if (res.status !== 404) why.push(`HTTP ${res.status} (want 404)`);
+          if (res.headers.get("www-authenticate")) why.push(`WWW-Authenticate: ${res.headers.get("www-authenticate")?.slice(0, 60)}`);
+          let json = true;
+          try {
+            JSON.parse(raw);
+          } catch {
+            json = false;
+          }
+          if (!json || !/json/i.test(res.headers.get("content-type") ?? "")) why.push(`not JSON (${res.headers.get("content-type") ?? "no content-type"}: "${raw.slice(0, 50)}")`);
+          else if (!/einladungscode/i.test(raw) || !/closed beta/i.test(raw)) why.push(`no beta message in the body ("${raw.slice(0, 70)}")`);
+          if (why.length) problems.push(`${method} ${p}: ${why.join(", ")}`);
+        } catch (err) {
+          problems.push(`${method} ${p}: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      // 2. No answer on /api/mcp itself starts OAuth: no 401, no WWW-Authenticate (without a code).
+      for (const [method, params] of [["initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "what-if-qa", version: "1.0.0" } }], ["tools/list", {}], ["tools/call", { name: "whatif_start", arguments: { question: "What if I run a lunch deal?" } }]] as const) {
+        const r = await rpc(url, method, params, 80);
+        if (r.status === 401 || r.headers.get("www-authenticate")) problems.push(`${method} without a code: HTTP ${r.status}${r.headers.get("www-authenticate") ? `, WWW-Authenticate: ${r.headers.get("www-authenticate")?.slice(0, 60)}` : ""} (a 401 makes OAuth-capable hosts start a sign-in and drop the message)`);
+      }
+      // 3. The SDK client hosts use, with an OAuth provider that records whether it was asked to sign in.
+      const asked: string[] = [];
+      let sdkInfo = "";
+      try {
+        const { Client } = (await import("@modelcontextprotocol/sdk/client/index.js")) as Json;
+        const { StreamableHTTPClientTransport } = (await import("@modelcontextprotocol/sdk/client/streamableHttp.js")) as Json;
+        const redirect = "http://127.0.0.1:9/callback";
+        const authProvider = {
+          get redirectUrl() {
+            return redirect;
+          },
+          get clientMetadata() {
+            return { client_name: "what-if-qa", redirect_uris: [redirect] };
+          },
+          clientInformation: () => {
+            asked.push("clientInformation");
+            return undefined;
+          },
+          saveClientInformation: () => void asked.push("saveClientInformation"),
+          tokens: () => undefined,
+          saveTokens: () => void asked.push("saveTokens"),
+          redirectToAuthorization: () => void asked.push("redirectToAuthorization"),
+          saveCodeVerifier: () => void asked.push("saveCodeVerifier"),
+          codeVerifier: () => "what-if-qa-verifier",
+        };
+        const client = new Client({ name: "what-if-qa", version: "1.0.0" });
+        const transport = new StreamableHTTPClientTransport(new URL(url), { authProvider });
+        const within = <T,>(p: Promise<T>, what: string) => Promise.race([p, sleep(20_000).then(() => Promise.reject(new Error(`${what} did not finish within 20 s`)))]);
+        try {
+          await within(client.connect(transport), "connect");
+          const tools = (await within(client.listTools(), "listTools")) as Json;
+          const res = (await within(client.callTool({ name: "whatif_start", arguments: { question: "Was wäre, wenn ich einen Mittagstisch anbiete?" } }), "callTool")) as Json;
+          const text = toolText(res);
+          if (res?.isError !== true) problems.push(`SDK client: callTool without a code ran the tool (want isError with the beta message)`);
+          else if (!/einladungscode/i.test(text)) problems.push(`SDK client: the tool error does not name the Einladungscode ("${squash(text).slice(0, 100)}")`);
+          sdkInfo = `SDK client: ${tools?.tools?.length ?? 0} tools, callTool → "${squash(text).slice(0, 60)}…"`;
+        } finally {
+          await client.close().catch(() => undefined);
+        }
+      } catch (err) {
+        problems.push(`SDK client with an OAuth provider, no code: ${(msg(err).split("\n")[0] ?? "").slice(0, 200)}`);
+      }
+      if (asked.length) problems.push(`SDK client: the server made the client start OAuth (${[...new Set(asked)].join(", ")})`);
+      return verdict([...new Set(problems)].slice(0, 12), `${probes.length} OAuth probes (${paths.length} paths) answer 404 JSON with the beta message; no 401 or WWW-Authenticate; ${sdkInfo}; no OAuth flow started`);
     },
   },
   {
@@ -2841,13 +3318,128 @@ export const CHECKS: CheckDef[] = [
       return verdict(hits.slice(0, 10), `${files.length} built files, no {{PLACEHOLDER}} left`);
     },
   },
+  {
+    id: "visual-no-double-signs",
+    component: "visual",
+    title: "no \"− −\", \"--€\" or \"+−\" in any rendered report: /r#demo, /r#demo-price, /r#demo-result and a /try report (the placeholder values), in de, en, es and pl, every slider position's text included",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: async (root) => {
+      const problems: string[] = [];
+      let n = 0;
+      for (const lang of LANGS)
+        for (const variant of VARIANTS) {
+          try {
+            const v = await variantRender(root, lang, variant);
+            n++;
+            const hits = [...new Set([...signHits(visibleText(v.html)), ...v.strings.flatMap((s) => signHits(s))])];
+            for (const h of hits.slice(0, 2)) problems.push(`${lang} ${variant === "try" ? "/try report" : `/r#${variant}`}: ${h}`);
+          } catch (err) {
+            problems.push(`${lang} ${variant}: ${msg(err).split("\n")[0]}`);
+          }
+        }
+      return verdict(problems.slice(0, 10), `${n} reports (4 views × 4 languages) and their analyses: no double signs`);
+    },
+  },
+  {
+    id: "terms-chip-words",
+    component: "visual",
+    title: "one word per source (src/i18n/terms.ts): in each language the engine's sourceLabel, TERMS, the report's src.* and the site's c.src_* chip words are the same, and every chip in the rendered demo report reads that word",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: async (root) => {
+      let terms: TermsMod;
+      let eng: EngineMessagesMod;
+      try {
+        terms = await load<TermsMod>(root, "src/i18n/terms.ts", ["TERMS"]);
+        eng = await load<EngineMessagesMod>(root, "src/engine/messages.ts", ["sourceLabel"]);
+      } catch (err) {
+        return { ok: false, detail: msg(err).split("\n")[0] ?? "" };
+      }
+      const problems: string[] = [];
+      const catalogs: [string, string, (s: string) => string][] = [
+        ["src/report/messages.ts", "REPORT_MESSAGES", (s) => `src.${s}`],
+        ["site/src/messages.ts", "SITE_MESSAGES", (s) => `c.src_${s}`],
+      ];
+      const loaded: [string, CatalogLike, (s: string) => string][] = [];
+      for (const [rel, name, key] of catalogs) {
+        try {
+          loaded.push([rel, (await load<Record<string, unknown>>(root, rel, [name]))[name] as CatalogLike, key]);
+        } catch (err) {
+          problems.push(`${rel}: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      let chips = 0;
+      for (const l of LANGS) {
+        for (const s of SOURCES) {
+          const want = eng.sourceLabel(s, l);
+          const term = terms.TERMS[l]?.[CHIP_TERM[s] ?? ""];
+          if (want !== term) problems.push(`${l} ${s}: the engine's sourceLabel says "${want}", TERMS.${l}.${CHIP_TERM[s]} says "${term}"`);
+          for (const [rel, c, key] of loaded) {
+            const k = key(s);
+            const v = c[l]?.[k] ?? c.en?.[k];
+            if (typeof v === "string" && v !== want) problems.push(`${l} ${s}: ${rel} ${k} says "${v}"${c[l]?.[k] === undefined && l !== "en" ? " (English fallback)" : ""}, the engine "${want}"`);
+          }
+        }
+        try {
+          const { html } = await variantRender(root, l, "demo");
+          const bad = new Set<string>();
+          for (const m of html.matchAll(/<span\b[^>]*class=["'][^"']*\bwi-chip--([a-z]+)\b[^"']*["'][^>]*>/gi)) {
+            const el = elementAt(html, m.index ?? 0).replace(/<span\b[^>]*class=["'][^"']*\bwi-sr\b[^"']*["'][^>]*>[\s\S]*?<\/span>/gi, "").replace(/<svg[\s\S]*?<\/svg>/gi, "");
+            const text = visibleText(el);
+            const src = m[1] ?? "";
+            if (!text || !SOURCES.includes(src)) continue;
+            chips++;
+            if (text !== eng.sourceLabel(src, l)) bad.add(`${l}: a "${src}" chip in the demo report says "${text}", the engine "${eng.sourceLabel(src, l)}"`);
+          }
+          problems.push(...bad);
+        } catch (err) {
+          problems.push(`${l}: the demo report did not render: ${msg(err).split("\n")[0]}`);
+        }
+      }
+      return verdict([...new Set(problems)].slice(0, 12), `5 chip words × 4 languages agree across the engine, TERMS, the report and the site; ${chips} chips in the demo reports read them`);
+    },
+  },
+  {
+    id: "terms-report-words",
+    component: "visual",
+    title: "one word per idea in the rendered reports (every demo and a /try report, in each language): the German ones never say \"Break-even\" (an explicit gloss \"auf Englisch: Break-even\" aside) or \"Erdacht\", no language uses a competing word, and the demo report uses the TERMS words for break-even and imagined",
+    command: "node --import tsx qa/run.ts --no-loop --only visual",
+    run: async (root) => {
+      const t = await termWords(root);
+      if (!t.terms) return { ok: false, detail: `TERMS could not be read: ${t.error}` };
+      const problems: string[] = [];
+      for (const l of LANGS) {
+        const w = t.terms[l];
+        for (const variant of VARIANTS) {
+          let v: VariantRender;
+          try {
+            v = await variantRender(root, l, variant);
+          } catch (err) {
+            problems.push(`${l} ${variant}: ${msg(err).split("\n")[0]}`);
+            continue;
+          }
+          const text = ownerText(v.html);
+          const where = variant === "try" ? "/try report" : `/r#${variant}`;
+          for (const a of TERM_ALTERNATES[l] ?? []) {
+            const m = a.re.exec(text);
+            if (m) problems.push(`${l} ${where}: "${a.word}" where TERMS says "${w[a.use]}" ("…${squash(text.slice(Math.max(0, m.index - 35), m.index + m[0].length + 35))}…")`);
+          }
+          if (variant === "demo") {
+            if (!hasTerm(text, w.breakEven)) problems.push(`${l} /r#demo never says the TERMS word for break-even, "${w.breakEven}"`);
+            if (!hasTerm(text, w.imagined) && !hasTerm(text, w.imaginedCustomers)) problems.push(`${l} /r#demo never says the TERMS word for imagined, "${w.imagined}" / "${w.imaginedCustomers}"`);
+          }
+        }
+      }
+      return verdict(problems.slice(0, 12), `4 views × 4 languages: TERMS words used, no "Break-even"/"Erdacht" in German, no competing words (${Object.entries(TERM_ALTERNATES).filter(([, x]) => x.length).map(([l, x]) => `${l}: ${x.map((y) => y.word).join(", ")}`).join("; ")})`);
+    },
+  },
   ...UI_CHECKS.map(
     (c): CheckDef => ({
       id: c.id,
       component: "visual",
       title: c.title,
       command: "node --import tsx qa/ui-check.ts",
-      timeoutMs: 300_000,
+      // The shared browser run has its own deadline (UI_BUDGET_MS + 2 min, see ui()); this only guards against that failing.
+      timeoutMs: UI_BUDGET_MS + 180_000,
       run: async (root) => (await ui(root)).find((x) => x.id === c.id) ?? { ok: false, detail: "did not run" },
     })
   ),
@@ -3022,6 +3614,40 @@ export const CHECKS: CheckDef[] = [
       if (!urls.some((u) => u.url.startsWith(`${PROD_URL}/api/mcp`))) problems.push(`no MCP URL uses the site URL the build was given (${PROD_URL})`);
       const hosts = [...new Set(urls.map((u) => u.url.replace(/[?#].*$/, "")))];
       return verdict([...new Set(problems)].slice(0, 10), `${urls.length} MCP URLs: ${hosts.join(", ")}${local.length ? ` (localhost also mentioned in ${local.join(", ")}, not as the MCP URL)` : ""}`);
+    },
+  },
+  {
+    id: "skill-zip-empty-contact",
+    component: "skill",
+    title: "with WHATIF_BETA_CONTACT empty (allowed), the built skill zip has no dangling contact text (\"Ask here: .\", \"To ask for one: .\", an empty link or mailto:) and no \"{{\"",
+    command: "set WHATIF_SITE_URL=https://example.vercel.app && set WHATIF_BETA_CONTACT= && npm run build  (qa builds it in node_modules/.cache/what-if-qa/prod-build-nocontact)",
+    timeoutMs: 360_000,
+    run: async (root) => {
+      const b = await prodBuild(root, "empty");
+      if (!b.zip) return { ok: false, detail: "the production-like build without a contact wrote no what-if-skill.zip" };
+      const { strFromU8 } = (await import("fflate")) as typeof import("fflate");
+      const DANGLING: [RegExp, string][] = [
+        [/\b(?:ask here|ask for (?:one|a code|an invite(?: code)?)|request (?:one|a code|an invite(?: code)?)|hier anfragen|fragen sie hier|pregunta aquí|zapytaj tutaj)\s*:[ \t]*(?:[.,;)]|$)/im, "a contact label with nothing after it"],
+        [/\b(?:contact|kontakt)\s*:[ \t]*[.,;)]/i, "a contact label with nothing after it"],
+        [/:[ \t]+[.,;](?=\s|$)/m, "a colon followed by nothing but a full stop"],
+        [/\[[^\]\n]*\]\(\s*\)/, "a link without a target"],
+        [/mailto:(?=[\s)"'>\]]|$)/m, "an empty mailto:"],
+        [/<\s*>/, "empty angle brackets"],
+      ];
+      const problems: string[] = [];
+      let files = 0;
+      for (const [n, d] of Object.entries(b.zip)) {
+        if (n.endsWith("/") || !(TEXT_FILE.test(n) || !extname(n))) continue;
+        files++;
+        const s = strFromU8(d);
+        const at = s.indexOf("{{");
+        if (at >= 0) problems.push(`${n}: a "{{" placeholder is left ("${squash(s.slice(Math.max(0, at - 20), at + 30))}")`);
+        for (const [re, what] of DANGLING) {
+          const m = re.exec(s);
+          if (m) problems.push(`${n}: ${what} ("${squash(s.slice(Math.max(0, m.index - 50), m.index + m[0].length + 30))}")`);
+        }
+      }
+      return verdict([...new Set(problems)].slice(0, 10), `${files} text files in the zip built without a contact: no dangling contact text, no "{{"`);
     },
   },
   {

@@ -6,7 +6,11 @@
  * Language: the link's `lang` wins (default: the page language); switching
  * (header switcher or the report's own) writes the new `lang` into the link.
  * Special fragments: #demo (lunch deal), #demo-price (flat white and the 2027
- * minimum wage), #demo-result (the lunch demo after the test).
+ * minimum wage), #demo-result (the lunch demo after the test), #demo-ai (the
+ * lunch demo whose rehearsal Claude played, src/report/demo-ai.json, when this
+ * build has it; the link stays #demo-ai so the saved run is replayed exactly).
+ * A report without a rehearsal (from /try) can play one here with the fixed
+ * rules (no AI): the report's step 5 calls onRehearse.
  * Also: "Log your result" (→ /try#log=<token>) and the check-in days as an .ics file.
  */
 import { analyze, compareResult, planTest } from "../../src/engine/index.ts";
@@ -14,18 +18,22 @@ import type { TestPlan, TestResult } from "../../src/engine/types.ts";
 import { LOCALE, setLang } from "../../src/i18n/index.ts";
 import type { Lang } from "../../src/i18n/index.ts";
 import { copyWithFeedback } from "../../src/report/connect.ts";
-import { DEMO_SEEDS, demoState } from "../../src/report/demo.ts";
+import { aiDemoIn, aiDemoLang, AI_DEMO_SAVED, DEMO_SEEDS, demoState, isAiDemo, loadAiDemo, ruleInterview } from "../../src/report/demo.ts";
 import { mountReport, printTestCard, reportStyles } from "../../src/report/index.ts";
-import type { ReportInput } from "../../src/report/index.ts";
-import { rebuildRehearsal, summarize } from "../../src/sim/index.ts";
+import type { MountOptions, ReportInput } from "../../src/report/index.ts";
+import { autoplayRehearsal, rebuildRehearsal, startRehearsal, summarize, toShareRehearsal } from "../../src/sim/index.ts";
 import type { RehearsalSummary } from "../../src/sim/types.ts";
 import { decodeState, encodeState } from "../../src/state.ts";
 import type { ShareState } from "../../src/state.ts";
 import { announce, onReady, pageLang, requestLang, syncLang, t, translate } from "./lib/page.ts";
 import { generatedQuestion } from "./lib/question.ts";
 
-let current: { state: ShareState; input: ReportInput; token: string } | null = null;
+const AI_HASH = "#demo-ai";
+
+let current: { state: ShareState; input: ReportInput; token: string; ai: boolean } | null = null;
 let lastHash = "";
+/** Whether this build has the Claude-played demo (src/report/demo-ai.json). */
+let aiAvailable = false;
 
 function injectStyles(): void {
   if (document.getElementById("wi-report-styles")) return;
@@ -35,15 +43,54 @@ function injectStyles(): void {
   document.head.appendChild(style);
 }
 
-function chrome(show: boolean, s?: ShareState): void {
+/** How a language is named inside a sentence of another language ("auf Deutsch", "po niemiecku"). */
+const LANG_IN: Record<Lang, Record<Lang, string>> = {
+  en: { de: "German", en: "English", es: "Spanish", pl: "Polish" },
+  de: { de: "Deutsch", en: "Englisch", es: "Spanisch", pl: "Polnisch" },
+  es: { de: "alemán", en: "inglés", es: "español", pl: "polaco" },
+  pl: { de: "po niemiecku", en: "po angielsku", es: "po hiszpańsku", pl: "po polsku" },
+};
+
+function savedDate(lang: Lang): string {
+  const d = new Date(`${AI_DEMO_SAVED}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? AI_DEMO_SAVED : d.toLocaleDateString(LOCALE[lang], { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The line under the demo bar on the AI-played demo: who played it, when, in which language, and what differed. */
+function aiNote(s: ShareState, reh: RehearsalSummary | undefined): string {
+  const lang = s.lang ?? pageLang();
+  const parts = [t("v.demo_ai_note", { date: savedDate(lang) }, lang)];
+  const source = aiSourceLang ?? "de";
+  if (source !== lang) parts.push(t("v.demo_ai_lang", { language: LANG_IN[lang][source] }, lang));
+  if (reh && reh.links.length === 0) parts.push(t("v.demo_ai_wom", {}, lang));
+  return parts.join(" ");
+}
+
+/** The language the saved AI run was written in (read once from the file). */
+let aiSourceLang: Lang | null = null;
+/** The saved AI run as loaded (each language is made from it). */
+let aiSaved: ShareState | null = null;
+
+function paintAiLinks(): void {
+  document.querySelectorAll<HTMLElement>('[data-demo-switch="demo-ai"]').forEach((a) => (a.hidden = !aiAvailable));
+}
+
+function chrome(show: boolean, s?: ShareState, reh?: RehearsalSummary): void {
   const bar = document.querySelector<HTMLElement>("[data-toolbar]");
   if (bar) bar.hidden = !show;
   const next = document.querySelector<HTMLElement>("[data-next]");
   if (next) next.hidden = !show;
   const demo = document.querySelector<HTMLElement>("[data-demo-bar]");
   if (demo) demo.hidden = !(show && s?.demo);
+  const note = document.querySelector<HTMLElement>("[data-demo-note]");
+  const ai = !!(show && s && isAiDemo(s));
+  if (note) {
+    note.hidden = !ai;
+    note.textContent = ai && s ? aiNote(s, reh) : "";
+  }
+  paintAiLinks();
   if (show && s?.demo) {
-    const which = s.observed ? "demo-result" : s.template === "price_change" ? "demo-price" : "demo";
+    const which = ai ? "demo-ai" : s.observed ? "demo-result" : s.template === "price_change" ? "demo-price" : "demo";
     document.querySelectorAll<HTMLAnchorElement>("[data-demo-switch]").forEach((a) => {
       if (a.dataset.demoSwitch === which) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
@@ -115,19 +162,76 @@ function buildInput(s: ShareState, lang: Lang): ReportInput {
   return { analysis, plan, rehearsal, result, status, ...(s.madeBy ? { madeBy: s.madeBy } : {}) };
 }
 
-function mount(main: HTMLElement, state: ShareState, token: string): void {
+/** A report the owner made (not a demo, not the AI coach's) with no rehearsal yet: the fixed rules can play one here. */
+function canRehearseHere(s: ShareState): boolean {
+  return !s.rehearsal && !s.demo && s.madeBy !== "coach";
+}
+
+function mount(main: HTMLElement, state: ShareState, token: string, ai = false): void {
   const lang = state.lang ?? pageLang();
   const input = buildInput(state, lang);
-  mountReport(main, input, { onLanguage: switchTo });
-  current = { state, input, token };
+  // onRehearse: the report's step 5 offers "play the rehearsal with simple rules (no AI)" when it is given.
+  const opts: MountOptions & { onRehearse?: () => void } = { onLanguage: switchTo };
+  if (canRehearseHere(state)) opts.onRehearse = rehearseHere;
+  mountReport(main, input, opts);
+  current = { state, input, token, ai };
   // One switcher is enough: the report's own (it re-renders the link), the header's only on error pages.
   document.body.classList.toggle("s-has-report-lang", !!main.querySelector("[data-wi-lang-nav]:not([hidden])"));
-  chrome(true, state);
+  chrome(true, state, input.rehearsal);
   wireNext(token);
   const q = input.analysis.question;
   document.title = `${q.length > 70 ? `${q.slice(0, 67)}…` : q} · What-IF`;
   // The page frame follows the report's language (without changing the visitor's saved choice).
   if (lang !== pageLang()) requestLang(lang, { persist: false });
+}
+
+/** Plays the rehearsal in this browser with the fixed rules (no AI), for the report's Kiez, and redraws the report. */
+function rehearseHere(): void {
+  const main = document.getElementById("report");
+  if (!main || !current || !canRehearseHere(current.state)) return;
+  const s = current.state;
+  const lang = s.lang ?? pageLang();
+  try {
+    setLang(lang);
+    // startRehearsal draws the imagined customers for the Kiez in the analysis inputs; madeBy stays as it is ("try").
+    const r = ruleInterview(autoplayRehearsal(startRehearsal(current.input.analysis)), lang);
+    const state: ShareState = { ...s, rehearsal: toShareRehearsal(r) };
+    const token = encodeState(state);
+    history.replaceState(null, "", `#${token}`);
+    lastHash = `#${token}`;
+    const y = window.scrollY;
+    mount(main, state, token);
+    window.scrollTo(0, y);
+    const step = main.querySelector<HTMLElement>('section[data-step="5"]');
+    step?.scrollIntoView({ block: "start", behavior: "auto" });
+    if (step) {
+      step.tabIndex = -1;
+      step.focus({ preventScroll: true });
+    }
+    announce(t("v.rehearsed", {}, lang));
+  } catch (e) {
+    console.warn("What-IF: the rule-based rehearsal could not be played here.", e);
+    announce(t("v.rehearse_failed", {}, lang));
+  }
+}
+
+async function renderAi(main: HTMLElement): Promise<void> {
+  const saved = await loadAiDemo();
+  if (location.hash !== AI_HASH) return; // the visitor moved on while it loaded
+  aiAvailable = !!saved;
+  if (!saved) {
+    showError(main, t("v.err_ai"));
+    return;
+  }
+  aiSourceLang = aiDemoLang(saved);
+  aiSaved = saved;
+  // The AI customers' words stay as they were written; the numbers and the rest follow the page language.
+  const state = aiDemoIn(saved, pageLang());
+  try {
+    mount(main, state, encodeState(state), true);
+  } catch (e) {
+    showError(main, e instanceof Error ? e.message : String(e));
+  }
 }
 
 function render(): void {
@@ -137,6 +241,10 @@ function render(): void {
   const hash = location.hash;
   if (hash === lastHash && main.querySelector("[data-wi-report]")) return;
   lastHash = hash;
+  if (hash === AI_HASH) {
+    void renderAi(main);
+    return;
+  }
   let state: ShareState | null;
   try {
     state = stateFromHash(hash);
@@ -181,6 +289,19 @@ function switchTo(lang: Lang): void {
     return;
   }
   const scrollY = window.scrollY;
+  if (current.ai) {
+    // The saved AI run keeps its short link (#demo-ai): it is replayed in the new language from the file.
+    const saved = aiSaved;
+    const state: ShareState = saved ? aiDemoIn(saved, lang) : { ...current.state, lang };
+    try {
+      mount(main, state, encodeState(state), true);
+      window.scrollTo(0, scrollY);
+      if (lang !== pageLang()) requestLang(lang);
+    } catch (e) {
+      showError(main, e instanceof Error ? e.message : String(e));
+    }
+    return;
+  }
   const from = current.state.lang ?? pageLang();
   let state: ShareState = { ...current.state, lang };
   if (isSiteDemo(state)) {
@@ -189,6 +310,10 @@ function switchTo(lang: Lang): void {
   } else if (state.question && state.question === generatedQuestion(state.template, state.inputs, from)) {
     // A question /try wrote (not the owner's own words) follows the language.
     state.question = generatedQuestion(state.template, state.inputs, lang) ?? state.question;
+  }
+  if (state.rehearsal && !state.demo && isRuleOnly(state)) {
+    // A rehearsal played here by the fixed rules: replay it in the new language (same seed, same story).
+    state = replayRuleRehearsal(state, lang);
   }
   try {
     const token = encodeState(state);
@@ -199,6 +324,30 @@ function switchTo(lang: Lang): void {
     if (lang !== pageLang()) requestLang(lang);
   } catch (e) {
     showError(main, e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** True when every reaction and interview answer in the link came from the fixed rules. */
+function isRuleOnly(s: ShareState): boolean {
+  const r = s.rehearsal;
+  return !!r && r.reactions.every((x) => x.method === "rule-based") && r.interviews.every((iv) => iv.answers.every((a) => a.method === "rule-based"));
+}
+
+/**
+ * A rule-based rehearsal played on this page, played again in `lang`: the same seed gives the
+ * same people and the same story in every language, so only the words change. Runs with owner
+ * events keep their words (an event's text cannot be re-played in another language).
+ */
+function replayRuleRehearsal(s: ShareState, lang: Lang): ShareState {
+  const r = s.rehearsal;
+  if (!r || r.events.length) return s;
+  try {
+    setLang(lang);
+    const a = analyze(s.template, s.inputs, { business: s.business, question: s.question, demo: s.demo, currency: s.currency, lang });
+    const played = autoplayRehearsal(startRehearsal(a, { seed: r.seed, personas: r.personas, rounds: r.rounds, ...(r.customerMix ? { customerMix: r.customerMix } : {}) }));
+    return { ...s, rehearsal: toShareRehearsal(r.interviews.length ? ruleInterview(played, lang) : played) };
+  } catch {
+    return s;
   }
 }
 
@@ -294,7 +443,11 @@ function downloadCalendar(): void {
 
 function init(): void {
   document.documentElement.classList.add("s-js");
-  syncLang((lang) => switchTo(lang));
+  syncLang((lang) => {
+    switchTo(lang);
+    // The demo bar's note is in the page language.
+    if (current) chrome(true, current.state, current.input.rehearsal);
+  });
   document.querySelector<HTMLButtonElement>("[data-copy-link]")?.addEventListener("click", (e) => {
     void copyWithFeedback(e.currentTarget as HTMLElement, location.href);
   });
@@ -302,6 +455,12 @@ function init(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-calendar]").forEach((b) => b.addEventListener("click", downloadCalendar));
   window.addEventListener("hashchange", render);
   render();
+  // The demo bar links to the AI-played demo only when this build has it.
+  void loadAiDemo().then((s) => {
+    aiAvailable = !!s;
+    if (s) aiSourceLang = aiDemoLang(s);
+    paintAiLinks();
+  });
 }
 
 onReady(init);

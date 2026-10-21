@@ -1,0 +1,498 @@
+{
+ "v": 1,
+ "template": "lunch_offer",
+ "inputs": {
+  "kiez": "Neukölln",
+  "weekday_customers": 140,
+  "avg_spend": 7.4,
+  "variable_cost_share": 0.32,
+  "monthly_fixed_costs": 16500,
+  "lunch_customers": 38,
+  "lunch_spend": 11.2,
+  "cash_buffer": 1500,
+  "offer_price": 9.9,
+  "offer_cost": 3.6,
+  "setup_cost": 180,
+  "extra_staff_hours_per_day": 1,
+  "staff_hourly_cost": 18,
+  "marketing_per_week": 25,
+  "test_days": 10,
+  "extra_low": 3,
+  "extra_likely": 8,
+  "extra_high": 15,
+  "switch_share": 0.3
+ },
+ "demo": true,
+ "business": "Café Lindenblatt (Demo-Café, Berlin-Neukölln)",
+ "question": "Was wäre, wenn ich unter der Woche ein Mittagsangebot mache, um mehr Gäste zu gewinnen?",
+ "currency": "EUR",
+ "lang": "de",
+ "madeBy": "demo",
+ "rehearsal": {
+  "seed": 36,
+  "personas": 6,
+  "rounds": 4,
+  "events": [
+   {
+    "beforeRound": 3,
+    "text": "Zwei Häuser weiter eröffnet ein neues Café mit Mittagstisch für 8,50 €."
+   }
+  ],
+  "reactions": [
+   {
+    "personaId": "p1",
+    "round": 1,
+    "action": "notices_offer",
+    "thought": "Die Tafel sehe ich im Vorbeigehen. 9,90 € liegt knapp unter meinen 10,80 €, aber ich denke an die aufgewärmte Quiche von damals. Ich schaue erstmal, ob das diesmal wirklich frisch ist.",
+    "questionForOwner": "Ist die Suppe frisch gekocht, und sind Nüsse in Suppe oder Sandwich? Gibt es das auch klein oder zum Teilen für Kinder?",
+    "diary": "Mo: Tafel vor Lindenblatt gesehen, 9,90 € für Suppe, Sandwich, Getränk; ich bin skeptisch wegen der alten Quiche.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p2",
+    "round": 1,
+    "action": "notices_offer",
+    "thought": "Ich komme eh fast täglich vorbei, da fällt mir die Tafel auf. 9,90 € ist weniger als meine üblichen 12 €. Aber ich bestelle sonst immer dasselbe, mal sehen, ob ich da wirklich wechsle.",
+    "questionForOwner": "Wechselt die Suppe täglich, und geht das schnell genug, wenn ich nur eine kurze Mittagspause habe?",
+    "diary": "Montag: Mittagsangebot für 9,90 € bei Lindenblatt gesehen, noch nichts bestellt, will erst wissen, wie schnell es geht.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p3",
+    "round": 1,
+    "action": "notices_offer",
+    "thought": "Den gesponserten Post auf Instagram habe ich gesehen: 9,90 € für Suppe, Sandwich und Getränk. Ich zahle sonst etwa 7,90 € für Suppe und Flat White. Zwei Euro mehr für ein Sandwich muss ich erst durchrechnen.",
+    "questionForOwner": "Ist ein Flat White als Getränk dabei, und kann ich das Sandwich weglassen und zahle dann weniger als 9,90 €?",
+    "diary": "Lindenblatt hat ein Mittagsangebot für 9,90 €, zwei Euro über meinem Üblichen; ich rechne nach, wenn die Rechnungen bezahlt sind.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p4",
+    "round": 1,
+    "action": "notices_offer",
+    "thought": "Ich komme von der Nachtschicht und sehe die Tafel im Vorbeigehen. Sandwich plus Tee kostet mich sonst 10,20 €, mit Suppe für 9,90 € wäre das sogar günstiger. Ich schaue mal, ob es sich lohnt.",
+    "questionForOwner": "Gilt bei dem Angebot das Sandwich des Tages, und kann ich statt Softdrink einen Pfefferminztee nehmen?",
+    "diary": "Montag: Tafel mit Mittagsangebot für 9,90 € gesehen, günstiger als mein Sandwich plus Tee, ich schaue mal rein.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p5",
+    "round": 1,
+    "action": "notices_offer",
+    "thought": "Die Tafel sehe ich im Vorbeigehen, und der Preis bleibt hängen. Suppe, Sandwich und Getränk für 9,90 € ist nett, aber ich gebe sonst etwa 7 € aus und die Mensa ist billiger. Ich ändere erstmal nichts.",
+    "questionForOwner": "Gibt es das Angebot auch ohne Getränk oder mit Studierendenausweis günstiger?",
+    "diary": "Lindenblatt hat jetzt ein Mittagsangebot für 9,90 €, mehr als mein Budget, die Mensa bleibt billiger.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p6",
+    "round": 1,
+    "action": "notices_offer",
+    "thought": "Die Tafel sehe ich auf dem Kita-Weg, und der Post kam auch auf Instagram. 9,90 € liegt knapp über meinem üblichen Preis, aber Suppe, Sandwich und Getränk klingt okay. Ich merke es mir, mehr nicht.",
+    "questionForOwner": "Geht das auch schnell oder zum Mitnehmen? Ich habe zwischen Kita-Bringen und Abholen oft nur eine halbe Stunde.",
+    "diary": "Café Lindenblatt hat ein Mittagsangebot für 9,90 €; ich habe es gesehen, aber noch nichts entschieden.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p2",
+    "round": 2,
+    "action": "tries_deal",
+    "thought": "Kurze Schlange, Suppe steht fertig im Topf, Sandwiches liegen unterm Glas, das sollte schnell gehen. Und 9,90 € liegt unter meinen üblichen 12 €. Dann muss ich nicht lange überlegen, ich probiere es.",
+    "questionForOwner": "Kann ich beim Mittagsangebot die Suppe gegen etwas anderes tauschen, falls ich mal keine Lust auf Suppe habe?",
+    "diary": "Dienstag: Mittagsangebot zum ersten Mal bestellt, 9,90 €. Mal sehen, ob es für meine kurze Pause schnell genug geht.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p3",
+    "round": 2,
+    "action": "usual_order",
+    "thought": "Die Linsensuppe sieht gut aus, aber 9,90 € sind zwei Euro mehr als sonst, und die Rechnungen sind noch nicht durch. Ich bleibe bei Suppe und Flat White wie immer.",
+    "questionForOwner": "Kann ich beim Angebot den Flat White als Getränk nehmen, oder kostet der extra?",
+    "diary": "Dienstag: Suppe und Flat White wie immer genommen, das 9,90-€-Angebot war mir noch zu teuer; schaue wieder, wenn Geld da ist.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p4",
+    "round": 2,
+    "action": "tries_deal",
+    "thought": "Ich bin sowieso hier, und das Angebot ist billiger als mein Sandwich mit Tee, mit Suppe obendrauf. Die Schlange ist kurz. Ich nehme es und schaue, ob es satt macht.",
+    "questionForOwner": "Kann ich beim Angebot das Sandwich des Tages und Pfefferminztee als Getränk nehmen?",
+    "diary": "Dienstag: Mittagsangebot für 9,90 € genommen, mit Suppe. Mal sehen, ob es satt macht und ob ich es wieder nehme.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p5",
+    "round": 2,
+    "action": "eats_elsewhere",
+    "thought": "Die Linsensuppe sieht gut aus, aber 9,90 € sind mehr als meine 7,20 €, und ich zähl eh schon Münzen. Mensa oder Döner am U-Bahnhof ist billiger, also gehe ich da hin.",
+    "questionForOwner": "Gibt es die Suppe auch einzeln, und was kostet sie dann?",
+    "diary": "Dienstag wieder vorbeigelaufen, Linsensuppe sah gut aus, aber 9,90 € sind zu viel; ich bin zur Mensa.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p6",
+    "round": 2,
+    "action": "tries_deal",
+    "thought": "Die Schlange ist kurz, das geht schnell, und 9,90 € liegt nur knapp über meinem Rahmen. Suppe und Sandwich spart mir den Weg zum Vietnamesen, bevor ich zur Kita muss. Ich probiere es einmal.",
+    "questionForOwner": "Kann ich das Angebot auch zum Mitnehmen bekommen, wenn ich es eilig habe?",
+    "diary": "Dienstag das Mittagsangebot genommen; ging schnell und liegt fast in meinem Rahmen, mal sehen, ob ich wiederkomme.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p1",
+    "round": 3,
+    "action": "eats_elsewhere",
+    "thought": "Voll ist es, das beruhigt etwas, aber die aufgewärmte Quiche habe ich nicht vergessen. Das neue Café zwei Häuser weiter hat 8,50 €, das schaue ich mir lieber an.",
+    "questionForOwner": "Sind in Suppe und Sandwich Nüsse drin, und gibt es eine kleine Portion fürs Kind?",
+    "diary": "Mi: Lindenblatt voll, aber ich bin zum neuen Café mit 8,50 €; erst klären, ob Nüsse drin sind und ob frisch gekocht wird.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p2",
+    "round": 3,
+    "action": "comes_back_for_deal",
+    "thought": "Das Angebot passt mit 9,90 € locker in mein Mittagsbudget, und ich bestelle gern dasselbe, solange es das gibt. Das neue Café für 8,50 € spare ich mir erstmal, die Differenz ist klein.",
+    "questionForOwner": "Bleibt die Suppe immer dieselbe, oder wechselt sie jede Woche? Und bleibt das Angebot dauerhaft auf der Tafel?",
+    "diary": "Mittwoch, zweite Woche: wieder das Mittagsangebot für 9,90 € bestellt, das neue Café für 8,50 € erstmal ignoriert.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p3",
+    "round": 3,
+    "action": "usual_order",
+    "thought": "Wieder Suppe und Flat White wie immer. 9,90 € sind mir zu viel, und selbst die 8,50 € vom neuen Café liegen über meinen 7,90 €. Ich sitze eh mit dem Laptop hier.",
+    "questionForOwner": "Gibt es das Angebot auch kleiner, zum Beispiel nur Suppe und Getränk für unter 8 €?",
+    "diary": "Zweite Woche, Mittwoch: wieder Suppe und Flat White; 9,90 € zu teuer, das neue Café mit 8,50 € noch nicht probiert.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p4",
+    "round": 3,
+    "action": "comes_back_for_deal",
+    "thought": "Das Angebot hat letzte Woche gepasst, und mit 9,90 € liege ich unter meinem üblichen Mittagspreis. Das neue Café mit 8,50 € sehe ich, aber hier kenne ich das Team. Ich nehme es wieder.",
+    "questionForOwner": "Bleibt das Angebot dauerhaft, und wechselt die Suppe jeden Tag?",
+    "diary": "Mittwoch: Mittagsangebot zum zweiten Mal genommen; das neue Café mit 8,50 € beobachte ich, bleibe aber erstmal hier.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p5",
+    "round": 3,
+    "action": "eats_elsewhere",
+    "thought": "Ich laufe wieder vorbei, aber 9,90 € sind für mich immer noch zu viel. Selbst das neue Café mit 8,50 € liegt über meinen 7,20 €. Also Mensa, die ist billiger und schnell.",
+    "questionForOwner": "Gibt es die Suppe auch einzeln oder einen Studentenpreis? Mehr als 7 € für Mittag zahle ich eigentlich nicht.",
+    "diary": "Mittwoch wieder an Lindenblatt vorbei, volle Tische, aber 9,90 € gehen nicht; ich esse weiter in der Mensa.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p6",
+    "round": 3,
+    "action": "comes_back_for_deal",
+    "thought": "Ging letzte Woche schnell und liegt fast in meinem Rahmen, und die Leute dort sind nett. Das neue Café für 8,50 € kenne ich nicht, und zum Ausprobieren fehlt mir gerade die Zeit.",
+    "questionForOwner": "Gibt es das Mittagsangebot auch mit einer kleinen Kinderportion oder einer Suppe zum Teilen?",
+    "diary": "Zweite Woche wieder das Mittagsangebot genommen; das neue Café für 8,50 € probiere ich erst, wenn ich mal Zeit habe.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p1",
+    "round": 4,
+    "action": "eats_elsewhere",
+    "thought": "Beim neuen Café zwei Häuser weiter kostet es 8,50 € statt 9,90 €. Der Zettel ändert nichts, und die aufgewärmte Quiche habe ich noch im Kopf. Ich bleibe da, wo es günstiger ist.",
+    "questionForOwner": "Steht auf der Tafel, ob Nüsse drin sind, und wird die Suppe frisch gekocht?",
+    "diary": "Fr: Zettel bei Lindenblatt gesehen, bin aber wieder zum Café mit 8,50 € gegangen.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p2",
+    "round": 4,
+    "action": "keeps_coming",
+    "thought": "Das Mittagsangebot passt in meine Pause und zu meinem Budget, ich bestelle sowieso immer dasselbe. Das neue Café für 8,50 € reizt mich nicht genug zum Wechseln.",
+    "questionForOwner": "Bleibt das Mittagsangebot nach dem Test auf der Karte? Ich bestelle immer dasselbe und will mich nicht umgewöhnen müssen.",
+    "diary": "Freitag, Ende des Tests: wieder das Mittagsangebot für 9,90 € genommen und gehofft, dass es bleibt.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p3",
+    "round": 4,
+    "action": "usual_order",
+    "thought": "Ich sitze sowieso hier und nehme Suppe und Flat White wie immer. 9,90 € sind mir weiter zu viel, der Zettel ändert daran nichts. Eine Rückmeldung schreibe ich nicht.",
+    "questionForOwner": "Gibt es Suppe plus Getränk auch einzeln als kleines Angebot, so um die 7 bis 8 €?",
+    "diary": "Freitag, Test vorbei: wieder Suppe und Flat White wie immer; 9,90 € bleibt mir zu teuer.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p4",
+    "round": 4,
+    "action": "keeps_coming",
+    "thought": "Das Angebot passt: Suppe, Sandwich und Getränk für 9,90 €, das macht satt und liegt im Rahmen. Die 8,50 € zwei Häuser weiter reizen mich nicht genug, ich kenne hier das Team.",
+    "questionForOwner": "Bleibt das Mittagsangebot nach dem Test, und bleibt der Preis bei 9,90 €?",
+    "diary": "Freitag: Angebot wieder genommen, hoffe, es bleibt; das neue Café mit 8,50 € reizt mich nicht.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p5",
+    "round": 4,
+    "action": "eats_elsewhere",
+    "thought": "Der Zettel hängt da, aber 9,90 € sind immer noch mehr als mein Budget, und das neue Café hat 8,50 €. Ich lese kurz und gehe in die Mensa wie jede Woche. Kein Grund, was zu schreiben.",
+    "questionForOwner": "Gibt es die Suppe auch einzeln, so für 4 bis 5 €, ohne Sandwich und Getränk?",
+    "diary": "Freitag Zettel gesehen, 9,90 € bleiben zu viel für mich, ich esse weiter in der Mensa.",
+    "method": "subagent"
+   },
+   {
+    "personaId": "p6",
+    "round": 4,
+    "action": "keeps_coming",
+    "thought": "Es geht schnell, ich kenne es und bin zwischen Kita-Bringen und Abholen sowieso in der Nähe. Das Café nebenan für 8,50 € probiere ich vielleicht mal, aber heute fehlt mir die Zeit dafür.",
+    "questionForOwner": "Bleibt das Angebot bei 9,90 €? Und gäbe es auch eine kleinere Portion für Kinder?",
+    "diary": "Freitag wieder das Mittagsangebot genommen; das Café nebenan für 8,50 € habe ich noch nicht probiert.",
+    "method": "subagent"
+   }
+  ],
+  "interviews": [
+   {
+    "question": "Was würde Sie nächste Woche wieder zum Mittagsangebot bringen – oder davon abhalten?",
+    "answers": [
+     {
+      "personaId": "p1",
+      "name": "Noor",
+      "answer": "Zurück käme ich, wenn auf der Tafel steht, dass frisch gekocht wird und was Nüsse enthält, und wenn man sich die Portion teilen oder eine kleine für die Kinder bekommen könnte. Beim Preis liegt nebenan 8,50 € vor 9,90 €. Und die alte Quiche steckt mir noch im Kopf.",
+      "method": "subagent"
+     },
+     {
+      "personaId": "p2",
+      "name": "Chiara",
+      "answer": "Ich komme wieder, solange es das Angebot gibt, es schnell geht und die Schlange kurz bleibt. Meine Pause ist kurz. Abhalten würde mich nur, wenn es teurer wird, wegfällt oder das Sandwich ständig aus ist. Bei 9,90 € bleibe ich.",
+      "method": "subagent"
+     },
+     {
+      "personaId": "p3",
+      "name": "Paweł",
+      "answer": "Der Preis. Ich zahle sonst 7,90 € für Suppe und Flat White, 9,90 € sind mir zu viel, das Sandwich ist mir die zwei Euro nicht wert. Bei etwa 8 € oder Suppe und Getränk zum Angebotspreis würde ich es probieren. Sonst bleibe ich beim Üblichen.",
+      "method": "subagent"
+     },
+     {
+      "personaId": "p4",
+      "name": "Murat",
+      "answer": "Wenn es bei 9,90 € bleibt und es weiter schnell geht, komme ich. Abhalten würde mich ein höherer Preis, eine lange Schlange, wenn ich müde von der Schicht bin, oder eine dünne Suppe. Das Team kenne ich, das zählt für mich.",
+      "method": "subagent"
+     },
+     {
+      "personaId": "p5",
+      "name": "Greta",
+      "answer": "Nur der Preis. Unter 7,20 € würde ich es probieren, so ab 7 oder 8 € mit Suppe und Getränk wäre ich dabei. Bei 9,90 € bleibe ich in der Mensa. Die Suppe sah gut aus, aber das Geld ist knapp. Einmal Probieren zählt für mich nicht, wenn der Preis gleich bleibt.",
+      "method": "subagent"
+     },
+     {
+      "personaId": "p6",
+      "name": "Jan",
+      "answer": "Wenn die Schlange kurz bleibt und es schnell geht, komme ich wieder, denn Zeit ist bei mir das Wichtigste. Abhalten würde mich ein höherer Preis als 9,90 € oder langes Warten. Das Café für 8,50 € kenne ich nicht, zum Ausprobieren fehlt mir die Zeit.",
+      "method": "subagent"
+     }
+    ]
+   }
+  ],
+  "cast": [
+   {
+    "id": "p1",
+    "name": "Noor",
+    "segment": "parent",
+    "segmentLabel": "Mutter mit kleinen Kindern",
+    "age": 35,
+    "routine": "Kommt nach dem Vormittagsspaziergang mit dem Kinderwagen vorbei; auswärts essen ist etwas Besonderes, meist etwas zum Teilen.",
+    "usualSpend": 10.8,
+    "priceSensitivity": "medium",
+    "relationship": "occasional",
+    "channels": [
+     "walks past",
+     "the board outside"
+    ],
+    "alternatives": "beim Bäcker an der Ecke oder Selbstgemachtes aus der Brotdose",
+    "quirk": "Fragt immer, ob Nüsse drin sind",
+    "represents": "Steht für: Eltern mit kleinen Kindern, die tagsüber vorbeikommen",
+    "attitude": "sceptical",
+    "activityLevel": 0.75,
+    "story": "Noor, 35, ist Krankenpflegerin mit weniger Stunden, solange das Jüngste in der Kita eingewöhnt wird. Sie kommt nach dem Vormittagsspaziergang mit dem Kinderwagen vorbei; auswärts essen ist etwas Besonderes, meist etwas zum Teilen. Sie zählt nicht jeden Cent, hat aber ein Gefühl dafür, was Mittagessen kosten darf, meist etwa 10,80 €. An anderen Tagen isst sie meist beim Bäcker an der Ecke oder Selbstgemachtes aus der Brotdose. Von Neuem erfährt sie meist im Vorbeigehen oder von der Tafel vor der Tür. Sie fragt immer, ob Nüsse drin sind. Was ihr von Café Lindenblatt in Erinnerung ist: ein „Tagesgericht“, das sehr nach aufgewärmter Quiche von gestern schmeckte.",
+    "gender": "f",
+    "traits": [
+     "pram"
+    ],
+    "altIds": [
+     "bakery",
+     "homemade"
+    ]
+   },
+   {
+    "id": "p2",
+    "name": "Chiara",
+    "segment": "office_worker",
+    "segmentLabel": "Büroangestellte",
+    "age": 43,
+    "routine": "Hat eine kurze Mittagspause und verbringt zu viel davon mit der Frage, wohin.",
+    "usualSpend": 12.2,
+    "priceSensitivity": "medium",
+    "relationship": "regular",
+    "channels": [
+     "a colleague or friend",
+     "Google Maps"
+    ],
+    "alternatives": "Selbstgemachtes aus der Brotdose oder beim Bäcker an der Ecke",
+    "quirk": "Bestellt immer dasselbe, bis es von der Karte verschwindet",
+    "represents": "Steht für: Büroleute im Umkreis von fünf Gehminuten, die an den meisten Werktagen Mittagessen kaufen",
+    "attitude": "fan",
+    "activityLevel": 0.88,
+    "story": "Chiara, 43, arbeitet im Kundenservice einer Leihrad-Firma in der Nähe. Sie hat eine kurze Mittagspause und verbringt zu viel davon mit der Frage, wohin. Sie zählt nicht jeden Cent, hat aber ein Gefühl dafür, was Mittagessen kosten darf, meist etwa 12,20 €. An anderen Tagen isst sie meist Selbstgemachtes aus der Brotdose oder beim Bäcker an der Ecke. Von Neuem erfährt sie meist von Kollegen und Freunden oder auf Google Maps. Sie bestellt immer dasselbe, bis es von der Karte verschwindet. Was ihr von Café Lindenblatt in Erinnerung ist: ein Geburtstag, an dem das Team ungefragt eine Kerze in ihr Stück Kuchen steckte.",
+    "gender": "f",
+    "traits": [
+     "hurry"
+    ],
+    "altIds": [
+     "homemade",
+     "bakery"
+    ]
+   },
+   {
+    "id": "p3",
+    "name": "Paweł",
+    "segment": "freelancer",
+    "segmentLabel": "Freiberufler",
+    "age": 33,
+    "routine": "Arbeitet zwei, drei Nachmittage pro Woche mit dem Laptop im Café; mittags gibt es oft eine Schale Suppe und einen langen Flat White.",
+    "usualSpend": 7.9,
+    "priceSensitivity": "high",
+    "relationship": "occasional",
+    "channels": [
+     "Instagram",
+     "the board outside",
+     "Google Maps"
+    ],
+    "alternatives": "einen Döner am U-Bahnhof oder beim Vietnamesen um die Ecke",
+    "quirk": "Plant das Geld Tag für Tag, je nachdem, wann Rechnungen bezahlt werden",
+    "represents": "Steht für: Selbstständige und Leute im Homeoffice, die das Café als Büro nutzen",
+    "attitude": "neutral",
+    "activityLevel": 0.87,
+    "story": "Paweł, 33, übersetzt Videospiele aus dem Polnischen ins Deutsche. Er arbeitet zwei, drei Nachmittage pro Woche mit dem Laptop im Café; mittags gibt es oft eine Schale Suppe und einen langen Flat White. Das Geld ist knapp, also achtet er auf jeden Preis; auswärts essen kostet meist etwa 7,90 €. An anderen Tagen isst er meist einen Döner am U-Bahnhof oder beim Vietnamesen um die Ecke. Von Neuem erfährt er meist auf Instagram, von der Tafel vor der Tür oder auf Google Maps. Er plant das Geld Tag für Tag, je nachdem, wann Rechnungen bezahlt werden. Was ihm von Café Lindenblatt in Erinnerung ist: eine gute Suppe an einem kalten Tag, auch wenn er nicht mehr weiß, welche.",
+    "gender": "m",
+    "altIds": [
+     "doener",
+     "vietnamese"
+    ]
+   },
+   {
+    "id": "p4",
+    "name": "Murat",
+    "segment": "regular",
+    "segmentLabel": "Stammgast",
+    "age": 47,
+    "routine": "Isst hier drei-, viermal die Woche zu Mittag, meist das Sandwich des Tages und einen Pfefferminztee.",
+    "usualSpend": 10.2,
+    "priceSensitivity": "medium",
+    "relationship": "regular",
+    "channels": [
+     "the staff",
+     "the board outside",
+     "walks past"
+    ],
+    "alternatives": "beim Bäcker an der Ecke oder Selbstgemachtes aus der Brotdose",
+    "quirk": "Kennt das Team mit Namen und weiß, wer wann frei hat",
+    "represents": "Steht für: treue Stammgäste, die fast jeden Tag kommen",
+    "attitude": "neutral",
+    "activityLevel": 0.93,
+    "story": "Murat, 47, ist Krankenpfleger in der Nachtschicht und kommt auf dem Heimweg vorbei. Er isst hier drei-, viermal die Woche zu Mittag, meist das Sandwich des Tages und einen Pfefferminztee. Er zählt nicht jeden Cent, hat aber ein Gefühl dafür, was Mittagessen kosten darf, meist etwa 10,20 €. An anderen Tagen isst er meist beim Bäcker an der Ecke oder Selbstgemachtes aus der Brotdose. Von Neuem erfährt er meist im Gespräch mit dem Team, von der Tafel vor der Tür oder im Vorbeigehen. Er kennt das Team mit Namen und weiß, wer wann frei hat. Was ihm von Café Lindenblatt in Erinnerung ist: einmal schnell bedient worden zu sein, als er es eilig hatte, was ihm auffiel, weil es nicht überall so ist.",
+    "gender": "m",
+    "altIds": [
+     "bakery",
+     "homemade"
+    ]
+   },
+   {
+    "id": "p5",
+    "name": "Greta",
+    "segment": "student",
+    "segmentLabel": "Studentin",
+    "age": 23,
+    "routine": "Kommt auf dem Weg zur U-Bahn am Café vorbei; isst vielleicht zweimal die Woche auswärts und kocht sonst große Töpfe Nudeln.",
+    "usualSpend": 7.2,
+    "priceSensitivity": "high",
+    "relationship": "new",
+    "channels": [
+     "Instagram",
+     "a colleague or friend",
+     "Google Maps"
+    ],
+    "alternatives": "in der Mensa oder einen Döner am U-Bahnhof",
+    "quirk": "Zählt an der Kasse Münzen ab",
+    "represents": "Steht für: Studierende und junge Leute mit wenig Geld, die ab und zu auswärts essen",
+    "attitude": "neutral",
+    "activityLevel": 0.83,
+    "story": "Greta, 23, studiert Soziologie und jobbt am Wochenende in einer Bar. Sie kommt auf dem Weg zur U-Bahn am Café vorbei; isst vielleicht zweimal die Woche auswärts und kocht sonst große Töpfe Nudeln. Das Geld ist knapp, also achtet sie auf jeden Preis; auswärts essen kostet meist etwa 7,20 €. An anderen Tagen isst sie meist in der Mensa oder einen Döner am U-Bahnhof. Von Neuem erfährt sie meist auf Instagram, von Kollegen und Freunden oder auf Google Maps. Sie zählt an der Kasse Münzen ab. Was ihr von Café Lindenblatt in Erinnerung ist: ein Foto der Theke auf Google Maps, mit Schlange davor.",
+    "gender": "f",
+    "altIds": [
+     "uni",
+     "doener"
+    ]
+   },
+   {
+    "id": "p6",
+    "name": "Jan",
+    "segment": "parent",
+    "segmentLabel": "Vater mit kleinen Kindern",
+    "age": 41,
+    "routine": "Isst ein-, zweimal die Woche zwischen Kita-Bringen und -Abholen auswärts, immer gegen die Uhr.",
+    "usualSpend": 9.3,
+    "priceSensitivity": "medium",
+    "relationship": "occasional",
+    "channels": [
+     "walks past",
+     "the house WhatsApp group",
+     "Instagram"
+    ],
+    "alternatives": "beim Bäcker an der Ecke oder beim Vietnamesen um die Ecke",
+    "quirk": "Bestellt für zwei und isst für einen",
+    "represents": "Steht für: Eltern mit kleinen Kindern, die tagsüber vorbeikommen",
+    "attitude": "fan",
+    "activityLevel": 0.82,
+    "story": "Jan, 41, ist Krankenpfleger mit weniger Stunden, solange das Jüngste in der Kita eingewöhnt wird. Er isst ein-, zweimal die Woche zwischen Kita-Bringen und -Abholen auswärts, immer gegen die Uhr. Er zählt nicht jeden Cent, hat aber ein Gefühl dafür, was Mittagessen kosten darf, meist etwa 9,30 €. An anderen Tagen isst er meist beim Bäcker an der Ecke oder beim Vietnamesen um die Ecke. Von Neuem erfährt er meist im Vorbeigehen, in der WhatsApp-Gruppe des Hauses oder auf Instagram. Er bestellt für zwei und isst für einen. Was ihm von Café Lindenblatt in Erinnerung ist: ein Geburtstag, an dem das Team ungefragt eine Kerze in sein Stück Kuchen steckte.",
+    "gender": "m",
+    "traits": [
+     "hurry"
+    ],
+    "altIds": [
+     "bakery",
+     "vietnamese"
+    ]
+   }
+  ],
+  "active": {
+   "1": [
+    "p1",
+    "p2",
+    "p3",
+    "p4",
+    "p5",
+    "p6"
+   ],
+   "2": [
+    "p2",
+    "p3",
+    "p4",
+    "p5",
+    "p6"
+   ],
+   "3": [
+    "p1",
+    "p2",
+    "p3",
+    "p4",
+    "p5",
+    "p6"
+   ],
+   "4": [
+    "p1",
+    "p2",
+    "p3",
+    "p4",
+    "p5",
+    "p6"
+   ]
+  }
+ }
+}

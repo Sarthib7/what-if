@@ -6,15 +6,26 @@
  * GET from a browser returns a small JSON description of the server.
  *
  * Closed beta: when WHATIF_BETA_CODES is set (comma-separated, each at least
- * 6 characters), every POST needs a valid invite code via `?code=`, the
- * `x-whatif-code` header or `Authorization: Bearer`. Unset = open. Codes are
- * compared in constant time and never logged or echoed. Report links stay open.
+ * 6 characters), a POST needs a valid invite code via `?code=`, the
+ * `x-whatif-code` header or `Authorization: Bearer` to get results. Unset = open.
+ * Codes are compared in constant time and never logged or echoed. Report links stay open.
+ *
+ * Without a valid code the server never answers 401: MCP clients treat a 401 as
+ * "start an OAuth sign-in" and the owner would never see why. Instead initialize,
+ * tools/list and prompts/list work as usual, and every tools/call returns
+ * `isError: true` with the German + English beta message, the contact and the
+ * `?code=YOUR-CODE` hint. The OAuth discovery paths (/.well-known/oauth-*,
+ * /register, /authorize, /token, at the site root and under /api/mcp) answer
+ * 404 JSON with the same message, and no response carries WWW-Authenticate.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { LANGS } from "../i18n/index.ts";
-import { createServer, SERVER_DESCRIPTION, TOOL_NAMES, VERSION } from "./tools.ts";
+import { betaMessage, noSignInMessage } from "./messages.ts";
+import { betaContact, createServer, SERVER_DESCRIPTION, TOOL_NAMES, VERSION } from "./tools.ts";
+
+export { betaMessage };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -184,30 +195,50 @@ export function codeIsValid(code: string, beta: Beta = betaConfig()): boolean {
   return ok === 1;
 }
 
-function betaContact(): string {
-  return (process.env.WHATIF_BETA_CONTACT ?? "").trim().slice(0, 300);
+// ---------------------------------------------------------------------------
+// OAuth discovery: What-IF has no sign-in, so these paths say so (404, never 401)
+// ---------------------------------------------------------------------------
+
+/**
+ * /.well-known/oauth-protected-resource (also with /api/mcp after it), /.well-known/oauth-authorization-server,
+ * /.well-known/openid-configuration, /register, /authorize, /token: at the site root, under /api/mcp or /mcp.
+ * scripts/build.mjs routes them here and marks them with ?__whatif_oauth=1 (in case the platform passes the rewritten path).
+ */
+const OAUTH_PATH =
+  /^\/(?:(?:api\/)?mcp\/)?(?:\.well-known\/(?:oauth-protected-resource|oauth-authorization-server|openid-configuration)(?:\/.*)?|register|authorize|token)\/?$/i;
+
+export function isOAuthPath(req: IncomingMessage): boolean {
+  try {
+    const u = new URL(req.url ?? "/", "http://x");
+    return OAUTH_PATH.test(u.pathname) || u.searchParams.has("__whatif_oauth");
+  } catch {
+    return false;
+  }
 }
 
-/** The 401 message, German first, then English. It never contains the code that was sent. */
-export function betaMessage(hadCode: boolean, contact = betaContact(), siteUrl = ""): string {
-  const url = `${siteUrl || "https://<site>"}/api/mcp?code=…`;
-  const de = [
-    "What-IF ist eine geschlossene Beta für Berliner Cafés.",
-    hadCode ? "Dieser Einladungscode ist nicht gültig." : "Für diese Verbindung fehlt der Einladungscode.",
-    `Nutzen Sie Ihren persönlichen Link mit Code (${url}).`,
-    contact ? `Einen Code bekommen Sie hier: ${contact}` : "",
-  ];
-  const en = [
-    "What-IF is a closed beta for Berlin cafés.",
-    hadCode ? "This invite code is not valid." : "This connection has no invite code.",
-    `Use your personal link with your code (${url}).`,
-    contact ? `To ask for a code: ${contact}` : "",
-  ];
-  return `${de.filter(Boolean).join(" ")}\n\n${en.filter(Boolean).join(" ")}`;
-}
-
-function info(siteUrl: string, beta: { required: boolean; valid: boolean }) {
+function oauthNotFound(req: IncomingMessage, res: ServerResponse, siteUrl: string, beta: Beta, method: string): void {
+  const code = codeFrom(req);
+  const ok = !beta.required || codeIsValid(code, beta);
   const contact = betaContact();
+  const message = ok ? noSignInMessage(siteUrl, beta.required) : betaMessage(code !== "", contact, siteUrl);
+  if (method === "HEAD") {
+    res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
+  sendJson(res, 404, {
+    error: "invalid_request",
+    error_description: message,
+    message,
+    mcp_url: `${siteUrl}/api/mcp`,
+    how_to_connect: `${siteUrl}/connect`,
+    beta: { required: beta.required, valid: ok, ...(contact ? { contact } : {}) },
+  });
+}
+
+function info(siteUrl: string, beta: { required: boolean; valid: boolean; hadCode: boolean }) {
+  const contact = betaContact();
+  const locked = beta.required && !beta.valid;
   return {
     name: "what-if",
     version: VERSION,
@@ -221,7 +252,13 @@ function info(siteUrl: string, beta: { required: boolean; valid: boolean }) {
     tools: [...TOOL_NAMES],
     prompts: ["what-if"],
     languages: [...LANGS],
-    beta: { required: beta.required, valid: beta.valid, ...(contact ? { contact } : {}) },
+    beta: {
+      required: beta.required,
+      valid: beta.valid,
+      ...(contact ? { contact } : {}),
+      // What every tool call on this link answers (the site and the QA bot read it; it never holds the code).
+      ...(locked ? { message: betaMessage(beta.hadCode, contact, siteUrl) } : {}),
+    },
   };
 }
 
@@ -238,6 +275,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const siteUrl = siteUrlFor(req);
   const beta = betaConfig();
 
+  // OAuth discovery and sign-in endpoints: none exist. 404 with the beta message, never 401.
+  if (isOAuthPath(req)) {
+    oauthNotFound(req, res, siteUrl, beta, method);
+    return;
+  }
+
   if (method === "GET" || method === "HEAD") {
     const accept = String(req.headers.accept ?? "").toLowerCase();
     if (accept.includes("text/event-stream")) {
@@ -252,7 +295,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return;
     }
     // The site checks a code here without storing anything: { beta: { required, valid } }.
-    sendJson(res, 200, info(siteUrl, { required: beta.required, valid: !beta.required || codeIsValid(codeFrom(req), beta) }));
+    const code = codeFrom(req);
+    sendJson(res, 200, info(siteUrl, { required: beta.required, valid: !beta.required || codeIsValid(code, beta), hadCode: code !== "" }));
     return;
   }
 
@@ -266,18 +310,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  if (beta.required) {
-    const code = codeFrom(req);
-    if (!codeIsValid(code, beta)) {
-      const contact = betaContact();
-      sendJson(res, 401, {
-        jsonrpc: "2.0",
-        error: { code: -32001, message: betaMessage(code !== "", contact, siteUrl), data: { beta: true, ...(contact ? { contact } : {}) } },
-        id: null,
-      });
-      return;
-    }
-  }
+  // Closed beta without a valid code: the session works, every tool call answers with the beta message.
+  const code = beta.required ? codeFrom(req) : "";
+  const locked = beta.required && !codeIsValid(code, beta);
 
   let body: unknown;
   try {
@@ -289,7 +324,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   forgiveHeaders(req);
-  const server = createServer(siteUrl);
+  const server = createServer(siteUrl, locked ? { locked: { hadCode: code !== "" } } : {});
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => {
     void transport.close().catch(() => undefined);

@@ -8,6 +8,10 @@
  * every page, a German report with no English UI left, a phone report under
  * 14 screens, a test card that prints on at most 2 pages, the /try wizard
  * done with the keyboard alone, and the invite-code gate on a beta server.
+ * Loop 3: the demo variants (/r#demo-result, /r#demo-price, /r#demo-ai when
+ * present) on a phone in every language, every /try screen on a phone, the
+ * rehearsal button of a /try report, one word per idea (TERMS) and no double
+ * signs ("− −", "--€", "+−") in any drawn report.
  *
  *   node --import tsx qa/ui-check.ts                         starts scripts/dev.mjs (and a beta server) on free ports
  *   node --import tsx qa/ui-check.ts --url http://localhost:3000   uses a server that is already running (no beta checks)
@@ -20,7 +24,7 @@
  * Playwright's own download is missing. QA_PLAYWRIGHT_MODULE points at a
  * playwright package folder elsewhere on disk.
  */
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -52,7 +56,84 @@ export const UI_CHECKS: { id: string; title: string }[] = [
   { id: "ui-try", title: "/try is served and shows its first question" },
   { id: "ui-try-keyboard", title: "/try can be completed with the keyboard alone (Tab, typing, Space, Enter) and ends on a drawn report" },
   { id: "ui-try-invite", title: "closed beta (WHATIF_BETA_CODES set): /try asks for the invite code, refuses a wrong one, accepts the right one and remembers it; /connect then shows the personal …/api/mcp?code= URL" },
+  { id: "ui-demo-variants", title: "/r#demo-result, /r#demo-price (and /r#demo-ai when the site has it) draw a report on a phone in de, en, es and pl without sideways scrolling (screenshots and texts for the judges)" },
+  { id: "ui-try-rehearsal", title: "/try on a phone: every screen is saved for the judges, the finished /try report offers a rehearsal button, and pressing it draws step 5 with the rule-based caveat" },
+  { id: "ui-terms", title: "one word per idea (src/i18n/terms.ts): German pages (landing, connect, every /try screen, the /try report, the demo reports) never show \"Break-even\" (an explicit gloss \"auf Englisch: Break-even\" aside) or \"Erdacht\"; each language's landing and report use the TERMS words for break-even and imagined; every chip reads the engine's sourceLabel" },
+  { id: "ui-report-signs", title: "no \"− −\", \"--€\" or \"+−\" in any report the browser drew (every demo, every language, the /try report, the slider moved), folded sections included" },
 ];
+
+const LANG_CODES = ["de", "en", "es", "pl"] as const;
+
+/** The browser run's time budget: the extra loop-3 parts are skipped (and fail as "not run") once it is used up. */
+export const UI_BUDGET_MS = 420_000;
+
+/** "Why this changed" in the four languages (src/report/messages.ts ex.why): the default when the caller passes none. */
+export const DEFAULT_WHY_LABELS = ["Why this changed", "Warum sich das geändert hat", "Por qué ha cambiado", "Dlaczego to się zmieniło"];
+
+/** The TERMS words (src/i18n/terms.ts) a language is held to, and the engine's chip words (sourceLabel). */
+export interface TermWords {
+  breakEven: string;
+  imagined: string;
+  imaginedCustomers: string;
+  /** source id (owner, assumption, calculation, imagined, demo) → the engine's sourceLabel(source, lang) */
+  chips: Record<string, string>;
+}
+
+/**
+ * Words that compete with a TERMS word for the same idea, per language. German owners never meet "Break-even"
+ * or "Erdacht"; the one exception is a gloss that names the English word as English ("auf Englisch: Break-even").
+ */
+export const TERM_ALTERNATES: Record<string, { re: RegExp; word: string; use: "breakEven" | "imagined" }[]> = {
+  en: [],
+  de: [
+    { re: /(?<!(?:auf englisch|englisch|engl\.)\s*:?\s*)break[-\s]?even/i, word: "Break-even", use: "breakEven" },
+    { re: /(?<!\p{L})erdacht/iu, word: "Erdacht", use: "imagined" },
+  ],
+  es: [
+    { re: /(?<!(?:en inglés|inglés|ingl\.)\s*:?\s*)break[-\s]?even/iu, word: "break-even", use: "breakEven" },
+    { re: /umbral de rentabilidad/iu, word: "umbral de rentabilidad", use: "breakEven" },
+    // "imaginario(s)" for the imagined customers (not for, say, the made-up demo café, which is demo data)
+    { re: /(?<!\p{L})(?:(?:clientes?|habituales|personas|vecinos|gente)\s+imaginari[oa]s?|imaginari[oa]s?\s+(?:clientes?|habituales|personas|vecinos))(?!\p{L})/iu, word: "clientes imaginarios", use: "imagined" },
+  ],
+  pl: [
+    { re: /(?<!(?:po angielsku|angielskie|ang\.)\s*:?\s*)break[-\s]?even/iu, word: "break-even", use: "breakEven" },
+    { re: /opłacalności/iu, word: "próg opłacalności", use: "breakEven" },
+    // "wymyśleni klienci", "wymyślonych stałych gości" for the imagined customers (not "wymyślona kawiarnia", the made-up demo café)
+    { re: /(?<!\p{L})wymyśl(?:on|en)\p{L}*\s+(?:stał\p{L}*\s+)?(?:klien|gość|gości|gośc|osob|ludz)\p{L}*/iu, word: "wymyśleni klienci", use: "imagined" },
+  ],
+};
+
+/** Stems of a TERMS word: each word of 5+ letters without its last 3 (so inflected forms match), at least 4 letters. */
+export function termStems(term: string): string[] {
+  const all = term.toLowerCase().normalize("NFC").split(/\s+/).filter(Boolean);
+  const long = all.filter((w) => w.length >= 5);
+  return (long.length ? long : all).map((w) => (w.length >= 5 ? w.slice(0, Math.max(4, w.length - 3)) : w));
+}
+
+/** Whether a text uses a TERMS word (any inflection). */
+export function hasTerm(text: string, term: string): boolean {
+  const t = text.toLowerCase().normalize("NFC");
+  return termStems(term).every((s) => t.includes(s));
+}
+
+const SP = "[\\s\\u00a0\\u202f]*";
+/** Sign mistakes a report must never print: "8 × 5,35 € − −10,03 €", "--€", "+−5". */
+export const SIGN_PATTERNS: { re: RegExp; what: string }[] = [
+  { re: new RegExp(`[−-]${SP}[−-]${SP}(?=[\\d\\p{Sc}])`, "gu"), what: "two minus signs" },
+  { re: new RegExp(`\\+${SP}[−-]${SP}(?=[\\d\\p{Sc}])`, "gu"), what: "a plus and a minus" },
+  { re: new RegExp(`[−-]${SP}\\+${SP}(?=[\\d\\p{Sc}])`, "gu"), what: "a minus and a plus" },
+];
+
+/** The sign mistakes in a text, each with a little context. */
+export function signHits(text: string): string[] {
+  const out: string[] = [];
+  for (const p of SIGN_PATTERNS)
+    for (const m of text.matchAll(p.re)) {
+      const i = m.index ?? 0;
+      out.push(`${p.what}: "…${text.slice(Math.max(0, i - 40), i + m[0].length + 12).replace(/\s+/g, " ").trim()}…"`);
+    }
+  return out;
+}
 
 export interface UiOptions {
   root: string;
@@ -73,6 +154,16 @@ export interface UiOptions {
   betaCode?: string;
   /** Why there is no beta server, when there is none. */
   betaError?: string;
+  /** TERMS words and the engine's chip words per language (src/i18n/terms.ts, src/engine/messages.ts sourceLabel). */
+  terms?: Partial<Record<string, TermWords>>;
+  /** Why there are no TERMS words, when there are none. */
+  termsError?: string;
+  /** The rule-based caveat per language (src/sim/messages.ts CAVEATS["rule-based"]): a /try rehearsal must show it in step 5. */
+  ruleCaveats?: Partial<Record<string, string>>;
+  /** The site has a /r#demo-ai demo (site/src/report.ts names it); then it must draw too. */
+  demoAi?: boolean;
+  /** Time budget for the whole browser run (default UI_BUDGET_MS); parts that would start after it fail as "not run". */
+  budgetMs?: number;
   /** Where screenshots and page text go. */
   shots: string;
   log?: (line: string) => void;
@@ -328,6 +419,82 @@ const HTML_LANG = `(() => { const r = document.querySelector('[data-wi-report]')
 
 const BODY_TEXT = `document.body ? document.body.innerText : ''`;
 
+const MAIN_TEXT = `(document.querySelector('main') || document.body || document.documentElement).innerText || ''`;
+
+/**
+ * Every word an owner can meet on the page: all text nodes (folded sections, chart labels and
+ * screen-reader text included, scripts and templates left out), the accessible names and the tab title.
+ */
+const OWNER_TEXT = `(() => {
+  const skip = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
+  const out = [document.title || ''];
+  if (!document.body) return out.join('\\n');
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: (n) => { for (let p = n.parentElement; p; p = p.parentElement) if (skip.has(p.tagName)) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; } });
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) { const t = (n.textContent || '').replace(/\\s+/g, ' ').trim(); if (t) out.push(t); }
+  for (const el of Array.from(document.querySelectorAll('[aria-label], [title], [alt], [placeholder]'))) for (const a of ['aria-label', 'title', 'alt', 'placeholder']) { const v = el.getAttribute(a); if (v && v.trim()) out.push(v.trim()); }
+  return out.join('\\n');
+})()`;
+
+/** The source chips on the page (report .wi-chip--x, site .s-chip--x): their source and their words (screen-reader prefix and icon left out). */
+const CHIPS = `(() => {
+  const out = [];
+  for (const el of Array.from(document.querySelectorAll('[class*="chip--"]'))) {
+    const cls = typeof el.className === 'string' ? el.className : (el.getAttribute('class') || '');
+    const m = /(?:^|\\s)(?:wi|s)-chip--(owner|assumption|calculation|imagined|demo)(?:\\s|$)/.exec(cls);
+    if (!m) continue;
+    const c = el.cloneNode(true);
+    for (const x of Array.from(c.querySelectorAll('.wi-sr, .sr-only, .s-sr, .visually-hidden, [aria-hidden="true"], svg'))) x.remove();
+    const text = (c.textContent || '').replace(/\\s+/g, ' ').trim();
+    if (text) out.push({ source: m[1], text });
+  }
+  return out;
+})()`;
+
+/** The report's visible text with every folded section opened (then closed again): what an owner can read by tapping. */
+const FULL_TEXT = `(() => {
+  const root = document.querySelector('[data-wi-report]') || document.body;
+  if (!root) return '';
+  const closed = Array.from(root.querySelectorAll('details:not([open])'));
+  for (const d of closed) d.open = true;
+  const t = root.innerText || '';
+  for (const d of closed) d.open = false;
+  return t;
+})()`;
+
+/** The words that name the rehearsal on a button, in the four languages. */
+const REHEARSE_WORDS = "probelauf|rehears|ensay|próba|próbę|prób";
+
+/** Finds the button in the report that starts a rehearsal (opening folded sections around it), marks it data-qa-rehearse. */
+const FIND_REHEARSE = `(() => {
+  const re = new RegExp(${JSON.stringify(REHEARSE_WORDS)}, 'iu');
+  const root = document.querySelector('[data-wi-report]') || document.body;
+  if (!root) return null;
+  for (const el of Array.from(root.querySelectorAll('button, [role=button], input[type=button], input[type=submit]'))) {
+    if (el.disabled || el.tagName === 'SUMMARY') continue;
+    const words = [el.innerText || el.textContent || '', el.getAttribute('aria-label') || '', el.value || ''].join(' ').replace(/\\s+/g, ' ').trim();
+    if (!re.test(words)) continue;
+    let folded = false;
+    for (let d = el.closest('details'); d; d = d.parentElement ? d.parentElement.closest('details') : null) if (!d.open) { d.open = true; folded = true; }
+    el.setAttribute('data-qa-rehearse', '1');
+    return { text: words.slice(0, 80), folded };
+  }
+  return null;
+})()`;
+
+const STEP5 = `(document.querySelector('section[data-step="5"]') || document.querySelector('[data-wi-report] [data-step="5"]:not(li)'))`;
+const STEP5_TEXT = `(() => { const s = ${STEP5}; return s ? (s.textContent || '').replace(/\\s+/g, ' ').trim() : ''; })()`;
+/** True once step 5 shows the rule-based caveat (its first clause), or at least says no AI played the customers. */
+const STEP5_HAS = (want: string) => `(() => {
+  const s = ${STEP5};
+  const t = s ? (s.textContent || '').replace(/\\s+/g, ' ').toLowerCase() : '';
+  return ${want ? `t.includes(${JSON.stringify(want.toLowerCase())})` : `/keine ki|no ai|ninguna ia|żadna ai|bez ai/.test(t)`};
+})()`;
+
+/** The first clause of a caveat (up to ";" or "."), whitespace squashed: what step 5 must contain. */
+function caveatPrefix(c: string | undefined): string {
+  return (c ?? "").replace(/\s+/g, " ").trim().split(/[;.]/)[0]?.trim().slice(0, 90) ?? "";
+}
+
 const LANDING_STEPS = `(() => {
   const items = Array.from(document.querySelectorAll('[data-mstep], .s-mstep')).filter((e) => e.getClientRects().length > 0);
   const uniq = items.filter((e, i) => !items.some((o, j) => j !== i && o.contains(e) && o !== e));
@@ -348,7 +515,8 @@ const SCREEN = `(() => {
   const alerts = Array.from(document.querySelectorAll('[role=alert], [aria-live=assertive], [aria-live=polite], .s-error, [data-error], [data-try-error]')).filter(vis).map((e) => (e.innerText || '').trim()).filter(Boolean);
   const code = fields.find((f) => /code|einladung|invite|invitaci|zaprosz/i.test([f.name, f.id, f.getAttribute('autocomplete'), f.getAttribute('placeholder'), f.getAttribute('aria-label'), f.labels && f.labels[0] ? f.labels[0].innerText : ''].join(' ')));
   if (code) code.setAttribute('data-qa-code', '1');
-  return { url: location.href, heads: heads.slice(0, 6), fields: fields.length, buttons: buttons.length, alerts: alerts.slice(0, 3), code: !!code,
+  const textFields = fields.filter((e) => (e.tagName === 'INPUT' && !['radio', 'checkbox', 'range', 'submit', 'button', 'reset', 'image'].includes((e.getAttribute('type') || 'text').toLowerCase())) || e.tagName === 'TEXTAREA').length;
+  return { url: location.href, heads: heads.slice(0, 6), fields: fields.length, textFields, buttons: buttons.length, alerts: alerts.slice(0, 3), code: !!code,
     sig: heads.join(' | ').slice(0, 400) + ' #' + fields.map((f) => f.name || f.id || f.type || f.tagName).join(',') };
 })()`;
 
@@ -383,7 +551,7 @@ const FOCUSED = `(() => {
     list: el.list ? Array.from(el.list.options).map((o) => o.value).filter(Boolean).slice(0, 3) : [],
     selectedIndex: tag === 'select' ? el.selectedIndex : -1, options: tag === 'select' ? el.options.length : 0, selectValue: tag === 'select' ? el.value : '',
     groupChecked, pressed: el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-selected') === 'true',
-    inputmode: el.getAttribute('inputmode') || '', min: el.getAttribute('min') || '',
+    inputmode: el.getAttribute('inputmode') || '', min: el.getAttribute('min') || '', required: !!el.required || el.getAttribute('aria-required') === 'true',
     submit: type === 'submit' || (tag === 'button' && (el.getAttribute('type') || 'submit') === 'submit' && !!el.form) };
 })()`;
 
@@ -404,6 +572,7 @@ interface Focused {
   groupChecked?: boolean;
   pressed?: boolean;
   inputmode?: string;
+  required?: boolean;
   min?: string;
   submit?: boolean;
 }
@@ -411,6 +580,8 @@ interface Screen {
   url: string;
   heads: string[];
   fields: number;
+  /** Text and number inputs on the screen (a question screen has one; a review screen with optional details has many). */
+  textFields?: number;
   buttons: number;
   alerts: string[];
   code: boolean;
@@ -492,7 +663,10 @@ function valueFor(f: Focused, code?: string): string {
  * picks the first choice (Space on a radio, ArrowDown on a select, Enter on a choice
  * button) and presses Enter on the "next" button, until the page moves to /r#….
  */
-async function driveWizard(page: PwPage, o: { code?: string; maxScreens?: number; isDone: (url: string) => boolean }): Promise<{ ok: boolean; screens: string[]; detail: string }> {
+async function driveWizard(
+  page: PwPage,
+  o: { code?: string; maxScreens?: number; isDone: (url: string) => boolean; /** Called on each screen before the driver acts (screenshots for the judges). */ onScreen?: (n: number, s: Screen) => Promise<void> },
+): Promise<{ ok: boolean; screens: string[]; detail: string }> {
   const screens: string[] = [];
   const screen = () => page.evaluate<Screen>(SCREEN);
   const changed = async (before: Screen, ms = 2500): Promise<boolean> => {
@@ -510,17 +684,20 @@ async function driveWizard(page: PwPage, o: { code?: string; maxScreens?: number
     if (o.isDone(page.url())) return { ok: true, screens, detail: `done after ${screens.length} screens` };
     const s = await screen();
     screens.push(s.heads.slice(0, 2).join(" / ") || "(no question text)");
+    if (o.onScreen) await o.onScreen(screens.length - 1, s).catch(() => undefined);
     const seenBefore = (visits.get(s.sig) ?? 0) + 1;
     visits.set(s.sig, seenBefore);
     if (seenBefore >= 3) return { ok: false, screens, detail: `the wizard keeps coming back to "${s.heads.slice(0, 2).join(" / ").slice(0, 100)}" (${screens.length} screens so far; see try-walkthrough.txt)` };
     let advanced = false;
     let choiceTried = false;
     const seen: string[] = [];
-    for (let k = 0; k < 40 && !advanced; k++) {
+    for (let k = 0; k < 60 && !advanced; k++) {
       const f = await page.evaluate<Focused>(FOCUSED);
       seen.push(`${f.kind}${f.text ? `:${f.text.slice(0, 20)}` : ""}`);
       let filled = false;
-      if (f.kind === "text" && !f.value) {
+      // Like an owner: answer the question on a one-question screen, and on a screen with many fields (a review with
+      // optional details) fill only the required ones and keep What-IF's stated defaults.
+      if (f.kind === "text" && !f.value && (f.required || (s.textFields ?? 1) <= 2)) {
         await page.keyboard.type(valueFor(f, o.code));
         filled = true;
       } else if (f.kind === "select" && (f.selectedIndex ?? 0) <= 0 && (f.options ?? 0) > 1 && !f.selectValue) {
@@ -567,7 +744,11 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
   };
   const all = (detail: string): UiResult[] => UI_CHECKS.map((c) => ({ id: c.id, ok: false, detail }));
   const mainLang = o.lang ?? "de";
-  const why = o.whyLabels?.length ? o.whyLabels : ["Why this changed"];
+  const why = o.whyLabels?.length ? o.whyLabels : DEFAULT_WHY_LABELS;
+  const t0 = Date.now();
+  const budget = o.budgetMs ?? UI_BUDGET_MS;
+  /** Null while there is time left; otherwise why a part was not run. */
+  const outOfTime = () => (Date.now() - t0 > budget ? `not run: the browser run had used its ${Math.round(budget / 1000)} s budget (${Math.round((Date.now() - t0) / 1000)} s so far; slow or hanging pages earlier in the run)` : null);
 
   const { chromium, error } = await loadChromium();
   if (!chromium) return all(error ?? INSTALL_HINT);
@@ -612,7 +793,7 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
       else await page.waitForFunction("!!document.querySelector('h1')", undefined, { timeout: 5000 }).catch(() => undefined);
       await page.waitForTimeout(300);
     };
-    const open = async (ctx: PwContext, p: { name: string; url: string }): Promise<PwPage | null> => {
+    const open = async (ctx: PwContext, p: { name: string; url: string }, settleAs = p.name): Promise<PwPage | null> => {
       const page = await ctx.newPage();
       watch(page, p.name);
       try {
@@ -622,8 +803,30 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
         await page.close();
         return null;
       }
-      await settle(page, p.name);
+      await settle(page, settleAs);
       return page;
+    };
+
+    // Every page the run reads, for the TERMS check, and every drawn report, for the sign check.
+    interface Seen {
+      page: string;
+      kind: string;
+      lang: string;
+      text: string;
+      chips: { source: string; text: string }[];
+    }
+    const seen: Seen[] = [];
+    const reports: { page: string; text: string }[] = [];
+    const captureErrors: string[] = [];
+    const capture = async (page: PwPage, name: string, kind: string, lang: string, report = false) => {
+      try {
+        const text = await page.evaluate<string>(OWNER_TEXT);
+        const chips = await page.evaluate<{ source: string; text: string }[]>(CHIPS);
+        seen.push({ page: name, kind, lang, text, chips });
+        if (report) reports.push({ page: name, text: await page.evaluate<string>(FULL_TEXT) });
+      } catch (e) {
+        captureErrors.push(`${name}: the page text could not be read (${(e as Error).message.split("\n")[0]})`);
+      }
     };
 
     // ---- desktop, light ----
@@ -663,6 +866,7 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
       if (p.name === "landing") methodSteps = c.steps;
       if (c.lowCount) lightLow.push(`${p.name} (light): ${c.lowCount} low, e.g. ${c.low.slice(0, 2).join(", ")}`);
       text(p.name, await page.evaluate<string>(BODY_TEXT));
+      await capture(page, p.name, p.name, mainLang, p.name === "report");
       await page.screenshot({ path: shot(`${p.name}-desktop`), fullPage: true });
 
       const switcher = await page.evaluate<Record<string, string>>(LANG_CONTROLS);
@@ -734,6 +938,7 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
           }
           const why1 = await page.evaluate<string | null>(WHY_TEXT(why));
           await page.screenshot({ path: shot("report-slider-moved"), fullPage: true });
+          reports.push({ page: "report (slider moved)", text: await page.evaluate<string>(FULL_TEXT).catch(() => "") });
           if (how.startsWith("arrow")) for (let i = 0; i < 6; i++) await page.keyboard.press(up ? "ArrowLeft" : "ArrowRight");
           else await page.evaluate(setSlider(up ? -6 : 6));
           await page.waitForTimeout(400);
@@ -845,11 +1050,78 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
         if (!page) continue;
         const body = await page.evaluate<string>(BODY_TEXT);
         text(name, body);
+        await capture(page, name, "report", l, true);
         await page.screenshot({ path: shot(`${name}-phone`), fullPage: true });
         const h = await page.evaluate<number>(HEIGHT);
         const leaks = l === "en" ? [] : englishHits(body);
         otherLangs.push(`${l}: ${h} px${leaks.length ? `, ${leaks.length} English phrases` : ""}`);
         await page.close();
+      }
+
+    // the landing, connect and /try pages in the other languages (texts for the judges and the TERMS check)
+    for (const l of LANG_CODES.filter((x) => x !== mainLang))
+      for (const p of pages.filter((x) => x.name !== "report")) {
+        const late = outOfTime();
+        if (late) {
+          if (!captureErrors.some((x) => x.startsWith("the other-language pages"))) captureErrors.push(`the other-language pages: ${late}`);
+          break;
+        }
+        const name = `${p.name}-${l}`;
+        const page = await open(phone, { name, url: `${p.url}${p.url.includes("?") ? "&" : "?"}lang=${l}` }, p.name);
+        if (!page) continue;
+        text(name, await page.evaluate<string>(BODY_TEXT));
+        await capture(page, name, p.name, l);
+        await page.close();
+      }
+
+    // ---- the demo variants on a phone, every language ----
+    const variantProblems: string[] = [];
+    const variantInfo: string[] = [];
+    const variants = [
+      { hash: "demo-result", name: "report-result" },
+      { hash: "demo-price", name: "report-price" },
+      ...(o.demoAi ? [{ hash: "demo-ai", name: "report-ai" }] : []),
+    ];
+    const lateVariants = outOfTime();
+    if (lateVariants) variantProblems.push(lateVariants);
+    else if (!reportPath) variantProblems.push("no report page (/r or /r.html)");
+    else
+      for (const v of variants) {
+        const drawnIn: string[] = [];
+        let firstFailed = false;
+        for (const l of LANG_CODES) {
+          if (firstFailed) break;
+          const name = l === mainLang ? v.name : `${v.name}-${l}`;
+          const page = await phone.newPage();
+          watch(page, name);
+          try {
+            await page.goto(`${o.base}${reportPath}?lang=${l}#${v.hash}`, { waitUntil: "load", timeout: 20_000 });
+            const drawn = await page.waitForFunction(REPORT_DRAWN, undefined, { timeout: 10_000 }).then(
+              () => true,
+              () => false,
+            );
+            await page.waitForTimeout(300);
+            const body = await page.evaluate<string>(BODY_TEXT);
+            text(name, body);
+            if (l === mainLang) await page.screenshot({ path: shot(`${v.name}-phone`), fullPage: true });
+            if (!drawn) {
+              variantProblems.push(`/r#${v.hash} (${l}) drew no report ("${body.replace(/\s+/g, " ").trim().slice(0, 90)}")${l === LANG_CODES[0] ? "; the other languages were not tried" : ""}`);
+              firstFailed = l === LANG_CODES[0];
+              continue;
+            }
+            const over = await page.evaluate<number>(OVERFLOW);
+            if (over > 1) variantProblems.push(`/r#${v.hash} (${l}) scrolls sideways at 390 px (+${over}px)`);
+            const lg = await page.evaluate<{ html: string; report: string }>(HTML_LANG);
+            if (!(lg.report || lg.html).toLowerCase().startsWith(l)) variantProblems.push(`/r?lang=${l}#${v.hash} drew the report in "${lg.report || lg.html}"`);
+            await capture(page, name, "variant", l, true);
+            drawnIn.push(l);
+          } catch (e) {
+            variantProblems.push(`/r#${v.hash} (${l}): ${(e as Error).message.split("\n")[0]}`);
+          } finally {
+            await page.close();
+          }
+        }
+        variantInfo.push(`${v.hash}: ${drawnIn.length ? drawnIn.join("/") : "none"}`);
       }
     await phone.close();
 
@@ -923,10 +1195,74 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
       await ctx.close();
     }
 
+    // ---- /try on a phone: every screen for the judges, then the report's rehearsal button ----
+    const tryReh: string[] = [];
+    let tryRehOk = "";
+    const lateTry = outOfTime();
+    if (!tryPath) tryReh.push("no /try page");
+    else if (lateTry) tryReh.push(lateTry);
+    else {
+      // No stale evidence: the screens, the report and its rehearsal come from this run or not at all.
+      for (const f of readdirSync(o.shots).filter((x) => /^try-phone-\d+\.png$|^try-(report|rehearsal)(-phone\.png|\.txt)$/.test(x))) rmSync(join(o.shots, f), { force: true });
+      const ctx = await browser.newContext({ viewport: PHONE });
+      const page = await ctx.newPage();
+      watch(page, "try (phone)");
+      const screenTexts: string[] = [];
+      try {
+        await page.goto(o.base + tryPath, { waitUntil: "load", timeout: 20_000 });
+        await settle(page, "try");
+        const run = await driveWizard(page, {
+          isDone: (u) => /\/r(\.html)?#./.test(u),
+          onScreen: async (n, s) => {
+            const id = String(n + 1).padStart(2, "0");
+            await page.screenshot({ path: shot(`try-phone-${id}`), fullPage: true });
+            screenTexts.push(`=== screen ${n + 1}: ${s.heads.slice(0, 2).join(" / ")} (try-phone-${id}.png)\n${await page.evaluate<string>(MAIN_TEXT)}`);
+            await capture(page, `try screen ${n + 1}`, "try-screen", mainLang);
+          },
+        });
+        text("try-phone", screenTexts.join("\n\n"));
+        if (!run.ok) tryReh.push(`the phone run of /try did not finish: ${run.detail}`);
+        else if (!(await page.waitForFunction(REPORT_DRAWN, undefined, { timeout: 10_000 }).then(() => true, () => false))) tryReh.push(`the phone run ended on ${page.url().replace(o.base, "").slice(0, 40)}… but no report was drawn`);
+        else {
+          await page.waitForTimeout(400);
+          await page.screenshot({ path: shot("try-report-phone"), fullPage: true });
+          text("try-report", await page.evaluate<string>(BODY_TEXT));
+          await capture(page, "try report", "try-report", mainLang, true);
+          const btn = await page.evaluate<{ text: string; folded: boolean } | null>(FIND_REHEARSE);
+          if (!btn) {
+            const step5 = await page.evaluate<string>(STEP5_TEXT);
+            tryReh.push(`the /try report offers no rehearsal: no button in the report whose words name it (${REHEARSE_WORDS.split("|").join(", ")}); step 5 says "${step5.slice(0, 160)}"`);
+          } else {
+            await page.locator("[data-qa-rehearse]").first().click({ timeout: 5000 });
+            const want = caveatPrefix(o.ruleCaveats?.[mainLang]);
+            const shown = await page.waitForFunction(STEP5_HAS(want), undefined, { timeout: 25_000 }).then(
+              () => true,
+              () => false,
+            );
+            await page.waitForTimeout(400);
+            await page.screenshot({ path: shot("try-rehearsal-phone"), fullPage: true });
+            text("try-rehearsal", await page.evaluate<string>(BODY_TEXT));
+            await capture(page, "try report (rehearsed)", "try-report", mainLang, true);
+            if (!shown) {
+              const step5 = await page.evaluate<string>(STEP5_TEXT);
+              tryReh.push(`after pressing "${btn.text}", step 5 does not show the rule-based caveat (${want ? `"${want.slice(0, 70)}…"` : "keine KI / no AI"}); step 5 now says "${step5.slice(0, 160)}"`);
+            }
+            tryRehOk = `${run.screens.length} screens on a phone (try-phone-01…${String(run.screens.length).padStart(2, "0")}.png); the report offers "${btn.text}"${btn.folded ? " (inside a folded section)" : ""}; pressing it drew step 5 with the rule-based caveat`;
+          }
+        }
+      } catch (e) {
+        if (screenTexts.length) text("try-phone", screenTexts.join("\n\n"));
+        tryReh.push(`the phone run of /try stopped: ${(e as Error).message.split("\n")[0]}`);
+      }
+      await ctx.close();
+    }
+
     // ---- the closed beta: /try and /connect on a server with WHATIF_BETA_CODES ----
     const invite: string[] = [];
     let inviteOk = "";
-    if (!o.betaBase || !o.betaCode) invite.push(o.betaError ?? "no beta server (run through qa/run.ts, which starts one with WHATIF_BETA_CODES set)");
+    const lateBeta = outOfTime();
+    if (lateBeta) invite.push(lateBeta);
+    else if (!o.betaBase || !o.betaCode) invite.push(o.betaError ?? "no beta server (run through qa/run.ts, which starts one with WHATIF_BETA_CODES set)");
     else if (!tryPath) invite.push("no /try page");
     else {
       const ctx = await browser.newContext({ viewport: PHONE });
@@ -938,6 +1274,7 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
         await page.waitForTimeout(300);
         const s0 = await page.evaluate<Screen>(SCREEN);
         await page.screenshot({ path: shot("try-beta-code"), fullPage: true });
+        await capture(page, "try code screen (beta)", "try-screen", mainLang);
         if (!s0.code) invite.push(`the beta /try does not ask for an invite code first (first screen: "${s0.heads.slice(0, 2).join(" / ").slice(0, 80)}"; mark the field with name/id/autocomplete/label "code")`);
         else {
           const codeGone = (ms: number) =>
@@ -952,6 +1289,7 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
           await page.keyboard.press("Enter");
           await page.waitForTimeout(1500);
           const s1 = await page.evaluate<Screen>(SCREEN);
+          await page.screenshot({ path: shot("try-beta-wrong-code"), fullPage: true }).catch(() => undefined);
           const said = s1.alerts.filter((a) => !s0.alerts.includes(a));
           if (!s1.code) invite.push("a wrong code was accepted (the code field went away)");
           else if (!said.length) invite.push("a wrong code shows no new message (use role=alert, role=status or aria-live)");
@@ -988,6 +1326,7 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
             await page.waitForTimeout(800);
             const body = await page.evaluate<string>(BODY_TEXT);
             text("connect-beta", body);
+            await capture(page, "connect (beta)", "connect", mainLang);
             await page.screenshot({ path: shot("connect-beta-phone"), fullPage: true });
             personal = new RegExp(`https?://[^\\s"'<>]+/api/mcp\\?code=${o.betaCode.replace(/[-]/g, "\\-")}`).exec(body)?.[0] ?? "";
             if (!personal) invite.push(`/connect (code remembered from /try) does not show the personal …/api/mcp?code=${o.betaCode} URL`);
@@ -999,6 +1338,59 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
       }
       await ctx.close();
     }
+
+    // ---- one word per idea (TERMS) and the engine's chip words ----
+    const termProblems: string[] = [];
+    let termOk = "";
+    if (!o.terms) termProblems.push(o.termsError ? `the TERMS words could not be read: ${o.termsError}` : "no TERMS words were given (qa/run.ts and qa/ui-check.ts read src/i18n/terms.ts)");
+    else {
+      const around = (t: string, i: number, n: number) => t.slice(Math.max(0, i - 35), i + n + 35).replace(/\s+/g, " ").trim();
+      const alternates = new Map<string, string[]>();
+      for (const s of seen)
+        for (const a of TERM_ALTERNATES[s.lang] ?? []) {
+          const m = a.re.exec(s.text);
+          if (!m) continue;
+          const key = `${s.lang}: "${a.word}" where TERMS says "${o.terms[s.lang]?.[a.use] ?? "?"}"`;
+          alternates.set(key, [...(alternates.get(key) ?? []), `${s.page} ("…${around(s.text, m.index, m[0].length)}…")`]);
+        }
+      for (const [k, where] of alternates) termProblems.push(`${k}, on ${where.slice(0, 2).join("; ")}${where.length > 2 ? ` (+${where.length - 2} pages)` : ""}`);
+      for (const l of LANG_CODES) {
+        const w = o.terms[l];
+        if (!w) {
+          termProblems.push(`TERMS has no ${l} words`);
+          continue;
+        }
+        for (const kind of ["landing", "report"]) {
+          const s = seen.find((x) => x.lang === l && x.kind === kind);
+          if (!s) {
+            termProblems.push(`${l}: the ${kind} page was not read`);
+            continue;
+          }
+          if (!hasTerm(s.text, w.breakEven)) termProblems.push(`${l}: the ${kind} page (${s.page}) never says the TERMS word for break-even, "${w.breakEven}"`);
+          if (!hasTerm(s.text, w.imagined) && !hasTerm(s.text, w.imaginedCustomers)) termProblems.push(`${l}: the ${kind} page (${s.page}) never says the TERMS word for imagined, "${w.imagined}" / "${w.imaginedCustomers}"`);
+        }
+      }
+      const chipBad = new Map<string, Set<string>>();
+      let chips = 0;
+      for (const s of seen)
+        for (const c of s.chips) {
+          const want = o.terms[s.lang]?.chips[c.source];
+          if (!want) continue;
+          chips++;
+          if (c.text === want.replace(/\s+/g, " ").trim()) continue;
+          const key = `${s.lang}: a "${c.source}" chip says "${c.text}", the engine's sourceLabel says "${want}"`;
+          chipBad.set(key, (chipBad.get(key) ?? new Set<string>()).add(s.page));
+        }
+      for (const [k, pagesWith] of chipBad) termProblems.push(`${k} (${[...pagesWith].slice(0, 3).join(", ")}${pagesWith.size > 3 ? ` +${pagesWith.size - 3}` : ""})`);
+      if (!chips) termProblems.push("no source chips were found on any page (.wi-chip--<source> / .s-chip--<source>)");
+      termProblems.push(...captureErrors);
+      const byLang = LANG_CODES.map((l) => `${l} ${seen.filter((s) => s.lang === l).length}`).join(", ");
+      termOk = `${seen.length} pages read (${byLang}); no "Break-even"/"Erdacht" in German and no competing words; the TERMS words on every landing and report; ${chips} chips match the engine's sourceLabel`;
+    }
+
+    // ---- double signs in any drawn report ----
+    const signs: string[] = [];
+    for (const r of reports) for (const h of signHits(r.text)) signs.push(`${r.page}: ${h}`);
 
     const pre = missingNote ? [missingNote] : [];
     if (methodSteps === 0 && landingSteps && (landingSteps as { count: number }).count) lightLow.push("the landing's method steps were not measured");
@@ -1018,6 +1410,10 @@ export async function runUiCheck(o: UiOptions): Promise<UiResult[]> {
     set("ui-try", tryPath ? tryFirst : ["no /try page (site/try.html)"], tryFirstOk || "ok");
     set("ui-try-keyboard", tryKeys, tryKeysOk || "ok");
     set("ui-try-invite", invite, inviteOk || "ok");
+    set("ui-demo-variants", variantProblems, `drawn on a phone: ${variantInfo.join("; ")}${o.demoAi ? "" : " (no /r#demo-ai in site/src/report.ts yet)"}; screenshots ${variants.map((v) => `${v.name}-phone.png`).join(", ")}`);
+    set("ui-try-rehearsal", tryReh, tryRehOk || "ok");
+    set("ui-terms", termProblems.slice(0, 12), termOk);
+    set("ui-report-signs", reports.length ? signs.slice(0, 10) : ["no drawn report was read"], `${reports.length} drawn reports read with every section opened (${reports.slice(0, 4).map((r) => r.page).join(", ")}${reports.length > 4 ? ", …" : ""}): no "− −", "--€" or "+−"`);
   } catch (e) {
     for (const c of UI_CHECKS) if (!results.has(c.id)) results.set(c.id, { ok: false, detail: `the UI run stopped: ${(e as Error).message.split("\n")[0]}` });
   } finally {
@@ -1044,8 +1440,8 @@ async function cli(): Promise<number> {
         betaError = `the beta dev server did not start: ${(e as Error).message.split("\n")[0]}`;
       }
     } else betaError = "--url given: no beta server is started (run without --url for ui-try-invite)";
-    const demo = await checks.demoReport(root);
-    const out = await runUiCheck({ root, base, token: demo.token, tokens: demo.tokens, lang: "de", marker: demo.marker, betaBase, betaCode: checks.BETA_CODE, betaError, shots: join(root, "qa/reports/ui"), log: console.log });
+    // The same options qa/run.ts passes: the shipped demo per language, "Why this changed" in all four languages, TERMS, the caveats.
+    const out = await runUiCheck({ ...(await checks.uiOptions(root, base, { betaBase, betaError })), log: console.log });
     const passed = out.filter((r) => r.ok).length;
     console.log(`\nUI check: ${passed}/${out.length} pass (screenshots in qa/reports/ui/)`);
     return passed === out.length ? 0 : 1;

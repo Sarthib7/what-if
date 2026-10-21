@@ -113,6 +113,8 @@ export function fmt(v: number | string, unit: Unit): string {
       return daysText(v);
     case "hours/day":
       return t("u.hoursPerDay", { n: num(v), count: v });
+    case "hours/week":
+      return t("u.hoursPerWeek", { n: num(v), count: v });
     default:
       return String(v);
   }
@@ -174,10 +176,29 @@ export function netWords(v: number): string {
   return t(s === "pos" ? "net.pos" : s === "neg" ? "net.neg" : "net.zero");
 }
 
+/**
+ * Sums written in words never show two signs in a row: "− −10,03 €" reads "+ 10,03 €", "+ −5 €" reads "− 5 €".
+ * (A negative amount to cover is money coming in.) Applied to every engine sentence the report shows.
+ */
+export function tidyMinus(text: string): string {
+  return String(text ?? "")
+    .replace(/[−-]\s*[−-]\s*(?=[\d€$£])/g, "+ ")
+    .replace(/\+\s*[−-]\s*(?=[\d€$£])/g, "− ");
+}
+
 /** The "Show the maths" disclosure. Works without JavaScript; the summary text flips when open. */
 export function mathsToggle(maths: string | undefined, label = t("maths.show")): string {
   if (!maths || !maths.trim()) return "";
-  return `<details class="wi-maths"><summary><span class="wi-when-closed">${esc(label)}</span><span class="wi-when-open">${esc(t("maths.hide"))}</span></summary><pre class="wi-maths-body">${esc(maths.trim())}</pre></details>`;
+  return `<details class="wi-maths"><summary><span class="wi-when-closed">${esc(label)}</span><span class="wi-when-open">${esc(t("maths.hide"))}</span></summary><pre class="wi-maths-body">${esc(tidyMinus(maths.trim()))}</pre></details>`;
+}
+
+/** "Noor and Greta", "Noor, Greta and Jan" in the report language. */
+export function listOf(items: string[]): string {
+  try {
+    return new Intl.ListFormat(LOCALE[getLang()], { type: "conjunction" }).format(items);
+  } catch {
+    return items.join(", ");
+  }
 }
 
 export type TermId = "breakEven" | "paysItsWay" | "payBack" | "worstCase" | "margin" | "assumption" | "scenario" | "simulation" | "aiModel";
@@ -199,7 +220,7 @@ export function hint(id: TermId): string {
 
 export function list(items: string[] | undefined, cls = "wi-list"): string {
   if (!items || items.length === 0) return "";
-  return `<ul class="${cls}">${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
+  return `<ul class="${cls}">${items.map((i) => `<li>${esc(tidyMinus(i))}</li>`).join("")}</ul>`;
 }
 
 /** First letter for an avatar (handles accents and empty names). */
@@ -260,5 +281,6 @@ export const ICONS = {
   brow: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M3 5.5l4 1.6M13 5.5l-4 1.6M4.5 11.5h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   bot: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><rect x="4" y="6.5" width="12" height="9" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 3.5v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="7.8" cy="11" r="1.2" fill="currentColor"/><circle cx="12.2" cy="11" r="1.2" fill="currentColor"/></svg>',
   pin: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><path d="M10 17.5s5.5-5.2 5.5-9.3a5.5 5.5 0 0 0-11 0c0 4.1 5.5 9.3 5.5 9.3z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="8.2" r="2" fill="currentColor"/></svg>',
+  play: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6.5 4.5v11l9-5.5z" fill="currentColor"/></svg>',
   out: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M6 3.5H3.5v9h9V10M9 3h4v4M13 3L7.5 8.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 } as const;

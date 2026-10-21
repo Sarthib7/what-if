@@ -232,9 +232,9 @@ function compareLunch(a: Analysis, v: Values, o: Record<string, number>, recorde
     ? t("res.lunch.ruleNone")
     : th.keepFrom === 0
       ? t("res.lunch.rule0")
-      : t("res.lunch.rule", { keep: num(th.keepFrom), tweak: num(th.tweakFrom) });
+      : t("res.lunch.rule", { n: th.keepFrom, keep: num(th.keepFrom), tweak: num(th.tweakFrom) });
   const beNow = am.beOngoingExact === null ? null : ceilUp(am.beOngoingExact);
-  const careful = verdict === "keep" && beNow !== null && extra < beNow - EPS ? t("res.lunch.careful", { sw: num(round(switchers, 1)), plan: num(m.switchers), extra: num(extraR), beNow: num(beNow) }) : "";
+  const careful = verdict === "keep" && beNow !== null && extra < beNow - EPS ? t("res.lunch.careful", { n: beNow, sw: num(round(switchers, 1)), plan: num(m.switchers), extra: num(extraR), beNow: num(beNow) }) : "";
   const verdictText = t(`res.lunch.${verdict}` as "res.lunch.keep");
   const lunchMove = extra >= 0 ? t("res.lunch.moveUp", { n: extraR }) : t("res.lunch.moveDown", { n: -extraR });
   const plain =
@@ -244,11 +244,11 @@ function compareLunch(a: Analysis, v: Values, o: Record<string, number>, recorde
 
   const likely = n(v, "extra_likely");
   const learned: string[] = [];
-  if (Math.abs(extra - likely) < 0.5) learned.push(t("res.lunch.learn.close", { likely: num(likely), real: num(extraR) }));
-  else learned.push(t("res.lunch.learn.off", { likely: num(likely), real: num(extraR), next: num(Math.max(0, extraR)) }));
+  if (Math.abs(extra - likely) < 0.5) learned.push(t("res.lunch.learn.close", { n: likely, real: num(extraR) }));
+  else learned.push(t("res.lunch.learn.off", { n: likely, real: num(extraR), next: num(Math.max(0, extraR)) }));
   if (baseline > 0) learned.push(t("res.lunch.learn.switch", { plan: pc(m.switchShare), real: pc(round(actualShare, 3)), sw: num(round(switchers, 1)), baseline: num(baseline) }));
-  if (beNow !== null && m.beOngoing !== null && beNow !== m.beOngoing) learned.push(t("res.lunch.learn.beNow", { beNow: num(beNow), bePlan: num(m.beOngoing) }));
-  if (Math.abs(baseline - m.lunchCustomers) >= 1) learned.push(t("res.lunch.learn.baseline", { est: num(m.lunchCustomers), count: num(baseline) }));
+  if (beNow !== null && m.beOngoing !== null && beNow !== m.beOngoing) learned.push(t("res.lunch.learn.beNow", { n: beNow, beNow: num(beNow), bePlan: num(m.beOngoing) }));
+  if (Math.abs(baseline - m.lunchCustomers) >= 1) learned.push(t("res.lunch.learn.baseline", { n: m.lunchCustomers, count: num(baseline) }));
   if (o.actual_setup_cost !== undefined && Math.abs(o.actual_setup_cost - m.setup) >= 0.5) learned.push(t("res.lunch.learn.setup", { real: eur(o.actual_setup_cost), plan: eur(m.setup) }));
   if (days < m.days) learned.push(t("res.learn.short", { real: t("n.weekdays", { n: days }), plan: num(m.days) }));
   if (red > during + EPS) learned.push(t("res.lunch.learn.tally", { red: num(red), during: num(during) }));
@@ -290,7 +290,7 @@ function comparePrice(a: Analysis, v: Values, o: Record<string, number>, recorde
   const learned: string[] = [];
   if (Math.abs(change - likely) < 0.01) learned.push(t("res.price.learn.close", { likely: signedPct(likely), real: signedPct(round(change, 3)) }));
   else learned.push(t("res.price.learn.off", { likely: signedPct(likely), real: signedPct(round(change, 3)), before: num(before), after: num(after), next: signedPct(round(change, 2)) }));
-  if (Math.abs(before - m.units) / Math.max(1, m.units) >= 0.05) learned.push(t("res.price.learn.baseline", { est: num(m.units), count: num(before) }));
+  if (Math.abs(before - m.units) / Math.max(1, m.units) >= 0.05) learned.push(t("res.price.learn.baseline", { n: m.units, count: num(before) }));
   if (days < m.days) learned.push(t("res.learn.short", { real: t("n.days", { n: days }), plan: num(m.days) }));
   learned.push(t("res.learn.habit"));
 

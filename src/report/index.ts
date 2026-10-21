@@ -49,6 +49,12 @@ ${closing(input)}
  * predict-then-check box and the language switcher. The switcher (DE · EN · ES · PL)
  * shows only when `onLanguage` is given (here or as `input.onLanguage`); it is called
  * with the picked language, and the page re-renders the same link in it.
+ *
+ * `onRehearse` (optional): when the report has no rehearsal, step 5 shows
+ * "Start a rehearsal with imagined customers (simple rules, no AI)". A click calls
+ * onRehearse() once; the page runs the rule-based rehearsal and calls mountReport
+ * again on the same root with `rehearsal` set (focus then moves to step 5).
+ * Without it, step 5 explains the rehearsal in words only.
  */
 export function mountReport(root: HTMLElement, input: ReportInput, opts: MountOptions = {}): void {
   wireReport(root, input, renderReport, opts);

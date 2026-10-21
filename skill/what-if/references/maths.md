@@ -19,8 +19,9 @@ Public facts used below (VAT, minimum wage) are listed with sources and dates in
 2. **Write each formula out** with the owner's numbers, one line per step. No mental shortcuts. If your host has a code or calculator tool, use it for the arithmetic and show the inputs.
 3. **Label every figure**: your number, a guess, calculated by hand, public fact (VAT, minimum wage).
 4. **Round** money to cents only at the end. Customers a day for break-even are always rounded **up** (you cannot serve 0.9 of a customer).
-5. **End with a test**: the keep / tweak / stop rule and the cost cap in "Planning the test by hand" below.
-6. Say once: "These were calculated by hand with What-IF's formulas. Connect What-IF ({{SITE_URL}}/connect) for the checked version and the visual report." No AI app with connectors? {{SITE_URL}}/try builds the same report in the browser.
+5. **End with a test**: the keep / tweak / stop rule and the cash stop line in "Planning the test by hand" below. They are the same rule the tools print on the test card, so a by-hand session and a tool session give the same card.
+6. **No rehearsal counts by hand.** The imagined-customer rehearsal needs the tools. Without them, offer at most a short role-play of two or three imagined customers, each labelled *imagined*, with no counts ("3 of 6 …"), nothing scaled up and nothing fed into the maths.
+7. Say once: "These were calculated by hand with What-IF's formulas. Connect What-IF ({{SITE_URL}}/connect) for the checked version and the visual report." No AI app with connectors? {{SITE_URL}}/try builds the same report in the browser.
 
 ### The questions: lunch offer
 
@@ -56,11 +57,12 @@ Public facts used below (VAT, minimum wage) are listed with sources and dates in
 | `new_price` | What new price are you considering? | The change you want to rehearse. | required |
 | `units_per_week` | Roughly how many do you sell in a week? The till's item report shows it. | The effect of a few cents depends on how many you sell. | ask for a rough number |
 | `unit_cost` | What do the ingredients and cup cost per item? | The rise goes straight to what each sale earns. | required |
-| `vat_rate` | Is it a drink (19%) or food (7%)? | Only the price without VAT is yours. | 0.19, a guess (coffee drinks; cake 7%; a milk drink with at least 75% milk may be 7%) |
+| `vat_rate` | Is it a drink (19%) or food (7%)? | Only the price without VAT is yours. | 0.19, a guess: every drink drunk in the café is 19%. 0.07 for cake and other food, and only for a milk drink with at least 75% milk sold **take-away** |
 | `volume_likely` | What do you think would really happen to sales? | The guess the test checks. | ask: "−2%? −5%? −10%?" |
 | `volume_low` | If customers really disliked it, how much would sales drop? | A range keeps the guess honest. | `volume_likely` − 0.08 (not below −100%) |
 | `volume_high` | And if nobody minded at all? | Shows the best case. | `volume_likely` + 0.04 (not above +5%) |
 | `test_days` | How many days would you try the new price before deciding? | Long enough for regulars to react. | 14 |
+| `minimum_wage_hours_per_week` | How many staff hours a week do you pay at the minimum wage? | The minimum wage goes from €13.90 to €14.60 on 1 Jan 2027; this puts that step next to the new price. | leave it out |
 
 **Sanity checks** (stop and ask if one fails): the deal's ingredients must cost less than its price without VAT; cautious ≤ likely ≤ optimistic; lunch customers cannot exceed customers for the whole day; for a price change, the new price must differ from the old one and, without VAT, be above the item's cost.
 
@@ -159,10 +161,19 @@ Going forward (setup already spent): €36.57 ÷ €5.35 = 6.84 → **7 a day**
 net_test(0) = (0 − €36.57) × 10 − €180 = −€545.70, about **−€546**, if nobody new comes and 30% of regulars switch (a guess). That is about 36% of the €1,500 the owner said they could spare.
 
 **Biggest uncertainty**
-The number of extra customers: from −€385 (cautious) to €257 (optimistic) over the test, a swing of €642. Moving the switching share from 0% to 60% (at 8 extra a day) moves the result from about €18 to about −€253, a swing of about €271. So the test should measure extra lunch customers first, and count switchers on the side.
+Each guess is moved across a range with the others at the likely guess (8 extra a day), and the swing in the test result is compared:
+
+| Guess | Range | Swing over the test |
+|---|---|---|
+| Extra lunch customers a day | 3 to 15 (cautious to optimistic): −€385 to €257 | **€642** |
+| What a lunch customer spends today | €9.52 to €12.88 (±15%) | €223.50 |
+| Ingredients per deal | €3.06 to €4.14 (±15%) | €209.50 |
+| Regulars who switch | 10% to 50% (the smaller of 10% and half the guess, up to the larger of 50% and 1.5 × the guess) | €180.90 |
+
+So the test should measure extra lunch customers first, and count switchers on the side.
 
 **What it teaches**
-- The likely guess (8) is **below** break-even (11), so over the test the expected result is a loss (−€118). Once the €180 setup is spent, the same 8 a day would add about €135 a month, because 8 is above the going-forward break-even of 7. Both are possibilities, not promises.
+- The likely guess (8) is **below** break-even (11), so over the test the expected result is a loss (−€118). Once the €180 setup is spent, the same 8 a day would add about €135 a month, because 8 is above the going-forward break-even of 7. That is why the test card keeps the deal from 7 a day. Both are possibilities, not promises.
 - VAT matters: of the €9.90 deal, €0.95 goes to the tax office before ingredients.
 - Switching regulars cost €13.57 a day, more than half the €23 for staff and promotion. A deal mostly used by people who were coming anyway can lose money.
 - The expected €135 a month is about 0.8% of the €16,500 monthly fixed costs: it puts the result in proportion; it is not a profit figure for the whole café.
@@ -173,8 +184,11 @@ Raise the deal price from €9.90 to €10.50, everything else the same:
 
 - m_offer = €10.50 ÷ 1.106 − €3.60 = €9.494 − €3.60 = €5.89 (54 cents more per deal; the other 6 cents of the 60 go to VAT)
 - switch_loss = 11.4 × (€6.54 − €5.89) = 11.4 × €0.65 = €7.41 a day (down from €13.57)
-- break-even = (€7.41 + €23.00 + €18) ÷ €5.89 = €48.41 ÷ €5.89 = 8.22 → **9 a day** (down from 11)
+- break-even = (€7.41 + €23.00 + €18.00) ÷ €5.89 = €48.41 ÷ €5.89 = 8.2 → **9 a day** (down from 11)
+- going forward = (€7.41 + €23.00) ÷ €5.89 = €30.41 ÷ €5.89 = 5.2 → **6 a day** (down from 7)
+- expected over the test = (8 × €5.89 − €30.41) × 10 − €180 = €16.71 × 10 − €180 = **−€12.90** (up from −€117.70); per month €16.71 × 21.7 = €362.61
 - worst case = (0 − €30.41) × 10 − €180 = −€484.10, about **−€484** (down from −€546)
+- the test card (see "Planning the test by hand"): keep from **6** extra a day (9 also pays back the test), tweak at **3 to 5**, stop below **3**; the cash stop line stays **€295 by day 5** (€410 for all 10 days), because the setup, staff and promotion did not change; switching regulars, counted separately, cost about €37 by day 5
 
 Mechanism, in words: each deal earns more, and regulars who switch give up less, so fewer new customers are needed. What the maths cannot know: whether €10.50 brings in as many people as €9.90. The guess of 8 stayed fixed; the test checks it.
 
@@ -222,7 +236,7 @@ In words:
 m_old = €3.90 ÷ 1.19 − €0.95 = €3.277 − €0.95 = 2.327 → **€2.33**
 m_new = €4.20 ÷ 1.19 − €0.95 = €3.529 − €0.95 = 2.579 → **€2.58**
 
-The price goes up 30 cents (about 7.7%). About 25 cents of that stays with the café (€0.30 ÷ 1.19), so what each sale earns goes up by about 11% (€0.25 on €2.33). That is why a small rise can matter.
+The price goes up 30 cents (about 7.7%). About 25 cents of that stays with the café (€0.30 ÷ 1.19), so what each sale earns goes up by 10.7% (€2.33 → €2.58). That is why a small rise can matter.
 
 **Break-even**
 break_even_v = €2.33 ÷ €2.58 − 1 = 0.9031 − 1 = **−9.7%**
@@ -236,20 +250,31 @@ In flat whites: 620 × 9.7% = 60.1, rounded down: you can sell **up to 60 fewer 
 | Scenario | Change in sales (a guess) | Flat whites a week | Earned a week | weekly_delta | Over the 14-day test | Per month |
 |---|---|---|---|---|---|---|
 | Cautious | −12% | 620 × 0.88 = 545.6 | 545.6 × €2.58 = €1,407.65 | **−€36.95** | −€73.90 | −€160 |
-| Expected | −4% | 620 × 0.96 = 595.2 | 595.2 × €2.58 = €1,535.62 | **€91.02** | €182.03 | €394 |
+| Expected | −4% | 620 × 0.96 = 595.2 | 595.2 × €2.58 = €1,535.62 | **€91.02** | €182.04 | €394 |
 | Optimistic | 0% | 620 | 620 × €2.58 = €1,599.60 | **€155.00** | €310.00 | €671 |
 
 **Move one assumption: −8% instead of −4%**
 weekly_delta(−0.08) = 620 × 0.92 × €2.58 − €1,444.60 = **€27.03 a week** (about €117 a month). Still above zero, because 8% is less than the 9.7% break-even.
 
 **The downside**
-A price change has no setup cost and can be reversed. Over the test, the cautious case loses about €74. If sales fell further than the break-even (more than about 10%), you would see it in the counts within the test and could change the price back.
+A price change has no setup cost and can be reversed. Over the test, the cautious case loses about €74. If sales fell further than the break-even (more than 9.7%, below 560 a week), you would see it in the counts within the test and could change the price back.
 
 **Biggest uncertainty**
-How customers react: from −€36.95 to €155.00 a week between the cautious and optimistic guesses, a spread of about €192 a week. The test measures it: count flat whites per week before and during.
+How customers react: from −€36.95 to €155.00 a week between the cautious and optimistic guesses, €383.90 over the 14-day test (−€73.90 to €310.00). The ingredients (€0.81 to €1.09, ±15%) move it by only €13.90. The test measures the reaction: count flat whites per week before and during.
+
+**The 2027 minimum-wage step (optional)**
+If the owner names `minimum_wage_hours_per_week`, the tool puts the wage step next to the price change:
+
+```
+wage_step_week = minimum_wage_hours_per_week × (€14.60 − €13.90)            = hours × €0.70 more in wages a week from 1 Jan 2027
+step_with_contributions = wage_step_week × (1 + 0.21)                       employer contributions: about 21%, a guess (Minijobs cost more)
+compare        weekly_delta(volume_likely) with step_with_contributions       does the new price cover the step, on this guess?
+```
+
+Illustration, by hand (not part of the demo café): if 60 hours a week are paid at the minimum wage (the owner's number), 60 × €0.70 = €42.00 more in wages a week from 1 Jan 2027, about €50.82 with roughly 21% employer contributions (a guess; check your payroll), against the expected €91.02 a week from the flat white at +30 cents. At +20 cents (€43.40 a week) the price would cover the wages but not the contributions: about €7.42 a week short. Quote the tool's figure when it has one. It is a comparison, never a recommendation to raise prices.
 
 **What it teaches**
-- The one number to remember: you could sell about 10% fewer flat whites (up to 60 a week) and still earn the same.
+- The one number to remember: you could sell up to 9.7% fewer flat whites (up to 60 a week) and still earn the same.
 - The likely guess (−4%) is well inside that limit.
 - Regulars notice prices: the test should run long enough (two weeks) for them to react.
 - A wage rise (the minimum wage goes to €14.60 on 1 Jan 2027) is a reason to rehearse this, never a reason by itself to raise prices.
@@ -258,67 +283,100 @@ How customers react: from −€36.95 to €155.00 a week between the cautious a
 
 ## Planning the test by hand
 
-This is the rule the tools use. Decide it **before** the test starts.
+This is the rule the tools print on the test card (`src/engine/decision.ts` and `experiment.ts`), and `whatif_log_result` applies exactly the same numbers afterwards. Decide it **before** the test starts.
 
 ### Lunch offer
 
+The rule is about the days **after** the test. The setup is spent either way, so **keep** starts at the going-forward break-even, not at the break-even that also pays back the setup.
+
 ```
-half          = ceil(break_even × 0.5)
-mid_day       = round(test_days / 2)                                         the halfway check-in
-spent_by_mid  = setup_cost + (daily_cost + switch_loss) × mid_day            if nobody new comes
-stop_line     = the smaller of spent_by_mid and cash_buffer × 0.5, rounded to the nearest €10
+keep_from     = break_even_ongoing = ceil( (switch_loss + daily_cost) / m_offer )      each day pays its way from here
+tweak_from    = ceil( 0.5 × (switch_loss + daily_cost) / m_offer ), at least 1,         half the UNROUNDED going-forward
+                and never above keep_from                                                break-even, rounded up
+pay_back_from = break_even                                                              the test also earns back its setup
+mid_day       = round(test_days / 2), at least 1                                        the halfway check-in
+cash_by_mid   = setup_cost + daily_cost × mid_day                                       cash out by then: the receipts envelope
+cash_all      = setup_cost + daily_cost × test_days                                     cash out if every test day runs
+switch_by_mid = switch_loss × mid_day                                                   lower takings from switching regulars,
+                                                                                        counted separately (never a receipt)
 ```
 
-- **Before:** count lunch customers (11:30–14:30) every weekday for a week, no deal yet; add a deal button on the till and a tally sheet with two columns, "new to lunch here" and "usually has lunch here".
-- **Check-ins:** day 3 (is the counting working?), `mid_day` (average extra customers against break-even, money spent against the stop line), the last day.
-- **Keep:** at least `break_even` extra lunch customers a day on average. (From `break_even_ongoing` a day it already pays its way going forward; the setup is spent either way.)
-- **Tweak:** from `half` to `break_even − 1` a day: change one thing (price, contents, no paid promotion) and run one more week.
-- **Stop:** fewer than `half` a day.
-- **Cost cap:** stop early once you have spent `stop_line` without reaching `half` extra a day. If nobody new comes and switching is as guessed, the whole test costs `−worst_case`.
+- **Before:** count lunch customers (11:30–14:30) every weekday for one normal week, no deal yet: that is the baseline. Add a deal button on the till and a tally sheet with two columns, "new to lunch here" and "usually has lunch here". Write the stop line at the top of the sheet: "on day `mid_day`, if I average fewer than `tweak_from` extra lunch customers a day, I stop".
+- **Check-ins:** day 3 (is the counting working? too early to judge), `mid_day` (average extra customers, count minus baseline, against `tweak_from` and `keep_from`; cash spent against `cash_by_mid`), the last day.
+- **Keep:** `keep_from` or more extra lunch customers a day on average. At `pay_back_from` or more, the test has also paid back its setup.
+- **Tweak:** from `tweak_from` to under `keep_from` a day: change one thing (a higher price, other contents, no paid promotion) and run one more week.
+- **Stop:** fewer than `tweak_from` a day.
+- **Cash stop line:** by the day-`mid_day` check-in the test has cost about `cash_by_mid` in cash (setup, staff, promotion: what the receipts show). If by then the average is under `tweak_from`, stop. All days: `cash_all`. Switching regulars are **not** in it: they lower takings by about `switch_by_mid` by `mid_day` on the guess; count them from the "usually has lunch here" column, strokes × (m_lunch_now − m_offer).
+- **Special cases.** `m_offer` ≤ 0: don't start; change the price or the contents. `keep_from` = 0 (switching regulars leave more than their usual lunch and nothing else costs): keep if lunchtime is at least as busy as the baseline, stop if it is quieter. `keep_from` above both 10 and 3 × `extra_high`, or above `weekday_customers`: don't start; change the price, the contents or the costs first.
 
-Demo café: break-even 11, so half = 6; mid_day = 5; spent_by_mid = €180 + €36.57 × 5 = €362.85; half the €1,500 buffer is €750, so the stop line is **about €360**. Keep at 11 or more a day (7 or more pays its way going forward), tweak at 6 to 10, stop below 6. Worst case about €546.
+**Demo café (€9.90):** keep_from = ceil(€36.57 ÷ €5.35) = ceil(6.84) = **7**; tweak_from = ceil(0.5 × 6.84) = ceil(3.42) = **4**; pay_back_from = **11**; mid_day = 5; cash_by_mid = €180 + €23.00 × 5 = **€295**; cash_all = €180 + €23.00 × 10 = **€410**; switch_by_mid = €13.57 × 5 = €67.85, **about €68**, strokes × €1.19. So: keep at 7 or more a day (11 or more also pays back the test), tweak at 4 to 6, stop below 4; on day 5, stop if under 4 a day. At 7 a day the deal earns about €19 a month (7 × €5.35 − €36.57 = €0.88 a day × 21.7). If nobody new comes, the whole test costs about €546 (the worst case: €410 cash plus €136 from switching).
+
+**At €10.50:** keep from 6, tweak at 3 to 5, stop below 3, 9 also pays back the test; the same €295 by day 5 and €410 in all; switching about €37 by day 5, strokes × €0.65.
 
 ### Price change
 
 ```
-keep_floor   = units_per_week × (1 + break_even_v)                           sales a week you can fall to
-tweak_floor  = units_per_week × (1 + 1.5 × break_even_v), rounded up
-mid_price    = (current_price + new_price) / 2, rounded to 5 cents
+price rise (break_even_v below 0)
+keep_from   = units_per_week − floor( units_per_week × −break_even_v )          the sales you can lose, rounded down
+tweak_from  = ceil( units_per_week × (1 + 1.5 × break_even_v) ), never above keep_from
+price cut (break_even_v above 0)
+keep_from   = units_per_week + ceil( units_per_week × break_even_v )            the extra sales you need, rounded up
+tweak_from  = ceil( units_per_week × (1 + 0.5 × break_even_v) ), never above keep_from
+mid_price   = (current_price + new_price) / 2, rounded to 5 cents
 ```
 
-- **Before:** count the item's sales for one normal week at the old price (the till's item report).
-- **Keep:** sales fall by no more than the break-even (at least `keep_floor` a week).
-- **Tweak:** they fall to between `tweak_floor` and `keep_floor`: try `mid_price` for another test.
-- **Stop:** fewer than `tweak_floor` a week: go back to the old price.
-- **Cost cap:** switch back early if sales are below `tweak_floor` in the first full week. At the cautious guess the whole test costs about `−weekly_delta(volume_low) × test_days ÷ 7`.
-- For a **price cut** (break_even_v above zero): keep if sales rise by at least break_even_v; tweak between half of that and break_even_v; stop below half.
+- **Before:** count the item's sales for one normal week at the old price (the till's item report): the baseline.
+- **Check-ins:** day 3 (is the new price on the till, the board and online?), day 7 (the first full week against the baseline), the last day.
+- **Keep:** at least `keep_from` a week: keep the new price.
+- **Tweak:** from `tweak_from` to under `keep_from` a week: try `mid_price` for another test.
+- **Stop:** fewer than `tweak_from` a week: go back to the old price.
+- **Cost cap:** switch back early if sales are below `tweak_from` in the first full week. At the cautious guess the whole test costs about `−weekly_delta(volume_low) × test_days ÷ 7`.
+- If break_even_v is −100% or less (the old price leaves nothing after VAT and ingredients): whatever happens to sales, keep a price above the old one.
 
-Demo flat white: keep at 560 a week or more (a drop of up to 9.7%), tweak at 530 to 559 (try €4.05), stop below 530. At the cautious guess the test costs about €74.
+**Demo flat white:** keep_from = 620 − floor(620 × 0.0969) = 620 − floor(60.1) = **560**; tweak_from = ceil(620 × (1 − 1.5 × 0.0969)) = ceil(529.9) = **530**; mid_price = (€3.90 + €4.20) ÷ 2 = **€4.05**. So: keep at 560 a week or more (a drop of up to 9.7%), try €4.05 at 530 to 559, go back to €3.90 below 530. At the cautious guess (−12%) the test costs about €74.
 
 ## Logging the result by hand
 
-Lunch offer, from the owner's counts:
+The verdict uses **the card's numbers** (keep_from and tweak_from from the plan); it never moves the goalposts. This is what `whatif_log_result` does (`src/engine/compare.ts`).
+
+### Lunch offer
 
 ```
-extra            = test_lunch_customers − baseline_lunch_customers
-switchers_seen   = min(baseline, max(0, redemptions_per_day − max(0, extra)))
-switch_share_seen = switchers_seen / baseline_lunch_customers
+extra              = test_lunch_customers − baseline_lunch_customers              measured extra a day
+switchers_seen     = min( baseline, max(0, redemptions_per_day − max(0, extra)) )  deals bought by regulars
+switch_share_seen  = switchers_seen / baseline_lunch_customers
+verdict            = keep if extra ≥ keep_from; tweak if extra ≥ tweak_from; otherwise stop     (the card's numbers)
 ```
 
-Redo the lunch formulas with `lunch_customers` = the baseline, `switch_share` = `switch_share_seen`, and the real setup cost and days. Verdict: keep if `extra` ≥ the new break-even (unrounded), tweak if ≥ half of it, otherwise stop. Then say what was learned: "your guess was 8 extra a day, the count says 5; next time start from 5", and the same for switching.
+Money: redo the lunch formulas with `lunch_customers` = the baseline, `switch_share` = `switch_share_seen`, `setup_cost` = `actual_setup_cost` and `test_days` = `days_run` (when given): net_test = net_day(extra) × days − setup. If lunch got quieter (extra below 0), net_day = net_day(0) + extra × m_lunch_now.
 
-Price change: `change = units_after_per_week ÷ units_before_per_week − 1`; compare it with `break_even_v` and apply the rule above.
+If the verdict is keep but more regulars switched than planned, redo `break_even_ongoing` with `switch_share_seen`; if `extra` is below it, say that the deal now needs that many a day.
+
+Then what was learned: the guess against the count ("your guess was 8 extra a day, the count says 6; next time start from 6"), the switching share against the guess, and a different baseline or setup cost if they came out differently.
+
+**Demo result** (the counts behind the "after the test" demo): baseline 38, 44 during the test, 14 deals a day, 10 days, €180 setup. extra = 44 − 38 = **6**; switchers_seen = min(38, 14 − 6) = 8, so 8 ÷ 38 = **21.1%** switched (the guess was 30%). Verdict: 6 is from 4 to under 7, so **tweak** and test one more week. Money: 38 × 21.1% = 8.0 switchers × €1.19 = €9.52 a day; net_day(6) = 6 × €5.35 − €9.52 − €23.00 = −€0.42; × 10 − €180 = **−€184.20**, about €184 down against −€118 expected.
+
+### Price change
+
+```
+change      = units_after_per_week ÷ units_before_per_week − 1
+keep_from, tweak_from: the formulas above with units_per_week = units_before_per_week (the measured baseline)
+verdict     = keep if units_after_per_week ≥ keep_from; tweak if ≥ tweak_from; otherwise go back to the old price
+net_test    = (units_after_per_week × m_new − units_before_per_week × m_old) × days_run ÷ 7
+```
+
+**Demo result:** 620 → 603 a week: change = −2.7%; keep_from 560, so **keep** the new price; (603 × €2.58 − 620 × €2.33) × 14 ÷ 7 = (€1,555.74 − €1,444.60) × 2 = **€222.28** against €182.04 expected. Learned: "you guessed −4%, it was −2.7%; next time start from −3%".
 
 ---
 
 ## Glossary for the maths
 
-- **VAT (Mehrwertsteuer)**: the tax inside the price customers pay. It goes to the tax office, so only `price ÷ (1 + VAT)` is the café's. In Berlin cafés: 7% on food, 19% on drinks (since 1 Jan 2026).
+- **VAT (Mehrwertsteuer)**: the tax inside the price customers pay. It goes to the tax office, so only `price ÷ (1 + VAT)` is the café's. In Berlin cafés: 7% on food (since 1 Jan 2026) and 19% on every drink drunk in the café; only a take-away milk drink with at least 75% milk is 7%.
 - **Margin (what each sale earns)**: price without VAT minus ingredients and packaging. It pays for rent, wages and you.
 - **Variable cost**: a cost that grows with each sale (beans, milk, cups).
 - **Fixed cost**: a cost that stays the same however busy you are (rent, insurance).
 - **Switching**: regulars moving from their usual, pricier lunch to the cheaper deal. Marketers call it cannibalisation.
-- **Break-even**: the point where the change pays for itself.
+- **Break-even**: the point where the change pays for itself. The lunch offer has two: the one that **pays back the test** (setup included, the headline: 11 in the demo) and the one from which the deal **pays its way** (setup already spent, the keep line on the test card: 7 in the demo).
 - **Worst case**: what the test costs if the main guess turns out to be zero, with the other guesses as they are.
 - **Scenario**: one possible outcome built from one set of guesses. Three scenarios show a range, not a forecast.
 - **Sensitivity**: how much the result moves when one guess moves.

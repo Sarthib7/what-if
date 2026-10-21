@@ -5,7 +5,7 @@
 **Rehearse a business decision before you spend money.**
 
 > **Live:** (after deploy: the site, the demo report and `https://<site>/api/mcp`).
-> **No deploy yet?** `npm ci && npm run dev` → open http://localhost:3000 → click **See it work**.
+> **No deploy yet?** `npm ci && npm run dev` → open http://localhost:3000 → click **Demo ansehen** (English: **See the demo**).
 
 What-IF helps independent café owners in Berlin try out a decision before it costs them anything. Say "what if…" (or "was wäre, wenn…", "¿y si…?", "co jeśli…") to the AI you already use. What-IF asks for a few of your own numbers, one at a time, and works out the break-even, the worst case and three possible outcomes with transparent maths. It can rehearse the idea with a handful of imagined customers from your Kiez, and it ends with a small, cheap test you could start on Monday. Every step opens as a visual report that teaches as it explains: what drives the result, which numbers are facts and which are guesses, and how to find out cheaply. The report, the questions and the coaching come in German (the default), English, Spanish or Polish.
 
@@ -16,7 +16,7 @@ Built for the hackathon theme **AI education for everyone**. The audience is sma
 ## The 60-second demo
 
 1. **Landing page** (`/`): what What-IF does, step by step, with the "Closed beta · Berlin" badge.
-2. **Demo report** (click **See it work**): Café Lindenblatt, a made-up café in Berlin-Neukölln, clearly labelled as demo data.
+2. **Demo report** (click **Demo ansehen**, in English **See the demo**): Café Lindenblatt, a made-up café in Berlin-Neukölln, clearly labelled as demo data.
    - Read **the one number to remember**: the extra lunch customers a day a 10-day lunch-deal test needs to pay for itself.
    - Drag the **break-even slider**. The sentence under it rewrites itself and explains why the result changed.
    - Tap **show the maths** on any figure: the formula with the café's numbers in it, prices net of VAT.
@@ -27,11 +27,22 @@ Built for the hackathon theme **AI education for everyone**. The audience is sma
 
 Then try it live in your AI app (below) and type *"Was wäre, wenn ich einen Mittagstisch anbiete?"* or *"What if I run a weekday lunch offer?"*
 
+## For judges
+
+The demo reports and every report link (`/r#…`) need no code: open the site and click **Demo ansehen** (English: **See the demo**), or go straight to one of the four demos:
+
+- `/r#demo`: the weekday lunch deal at Café Lindenblatt (demo data), all six steps.
+- `/r#demo-price`: a price change on one item, the flat white from €3.90 to €4.20.
+- `/r#demo-result`: the same lunch deal after the test, with made-up counts next to the three guesses.
+- `/r#demo-ai`: the lunch deal's rehearsal as played by Claude subagents, one per imagined customer, saved and labelled as an AI-played rehearsal.
+
+`/try` and the MCP connector need an invite code while the beta is closed; a judges' code comes with the hackathon submission and is never committed to this repo.
+
 ## Getting an invite
 
 What-IF is a closed beta for independent cafés in Berlin. Each café gets a personal invite code.
 
-- Ask the person who told you about What-IF, or use **Ask for an invite** on the site's Connect page (it shows the beta contact when one is set).
+- Ask the person who told you about What-IF, or use **Request an invite** (German: **Einladung anfragen**) on the site's Connect page (it shows the beta contact when one is set).
 - Your code goes into your AI app's connector address as `?code=YOUR-CODE`, and into `/try`. The site remembers it in your browser only.
 - Report links (`/r#…`) need no code. They carry their own numbers, so you can share them, for example with your Steuerberater.
 
@@ -43,7 +54,7 @@ Your personal MCP address (a remote MCP server over Streamable HTTP):
 https://<site>/api/mcp?code=YOUR-CODE
 ```
 
-The site's **Connect** page (`/connect`) builds it from your code, with copy buttons. Opening it in a browser shows a short info page that says whether the code is valid. Without a valid code, the server answers HTTP 401 with a message that What-IF is a closed beta for Berlin cafés and how to ask for a code.
+The site's **Connect** page (`/connect`) builds it from your code, with copy buttons. Opening it in a browser shows a JSON info page: `"valid": true` means the code works. Without a valid code the server still connects and lists its tools, but every tool call answers with a tool error that says, in German and English, that What-IF is a closed beta for Berlin cafés and how to ask for a code; the sign-in paths answer 404 and nothing answers 401, so AI apps don't start a sign-in. If your app asks you to sign in or says unauthorised, the link is missing your invite code: use `https://<site>/api/mcp?code=YOUR-CODE`.
 
 | App | How |
 |---|---|
@@ -57,7 +68,7 @@ The site's **Connect** page (`/connect`) builds it from your code, with copy but
 **The skill** adds the full coaching workflow where skills exist. Download `what-if-skill.zip` from the site, then:
 
 - Claude.ai / Desktop / Cowork: Settings → Capabilities → Skills → **Upload skill** (don't unzip it).
-- Claude Code: unzip it into `~/.claude/skills/` so you get `~/.claude/skills/what-if/SKILL.md`. On Windows: `Expand-Archive what-if-skill.zip -DestinationPath "$HOME\.claude\skills"`.
+- Claude Code: unzip it into `~/.claude/skills/` so you get `~/.claude/skills/what-if/SKILL.md`. On Windows: `Expand-Archive what-if-skill.zip -DestinationPath "$HOME\.claude\skills" -Force`.
 
 **No skills in your app** (ChatGPT, Cursor, VS Code…)? Paste the starter prompt from the Connect page, in German, English, Spanish or Polish, or pick the server's `what-if` prompt if your app lists MCP prompts. **No AI app at all?** Use `/try`.
 
@@ -190,10 +201,10 @@ npm run qa                        # a counted loop: scores every part 1–10; pa
    | Variable | What it does | Example |
    |---|---|---|
    | `WHATIF_BETA_CODES` | the invite codes, comma-separated, each at least 6 characters (case does not matter). **Unset = open**, for local dev and tests. | `BERLIN-CAFE-01,LINDEN-2026` |
-   | `WHATIF_BETA_CONTACT` | where owners ask for a code: an email or a URL. Shown in the 401 message, on the site and in the skill; empty hides the "ask for an invite" button. | `beta@example.com` |
+   | `WHATIF_BETA_CONTACT` | where owners ask for a code: an email or a URL. Shown in the closed-beta tool error, on the site and in the skill; empty hides the "ask for an invite" button. | `beta@example.com` |
    | `WHATIF_SITE_URL` | the public address used in report links, the skill zip and the Connect page. Unset: a Vercel build uses `https://$VERCEL_PROJECT_PRODUCTION_URL`, the MCP function uses each request's host, local builds use `http://localhost:3000`. | `https://whatif.example.com` |
 
-3. Check it: open `https://<site>/api/mcp?code=<one of your codes>` in a browser. The info page should say the code is valid.
+3. Check it: open `https://<site>/api/mcp?code=<one of your codes>` in a browser. The JSON info page should say `"valid": true`.
 4. Give each café its own code and its personal address `https://<site>/api/mcp?code=<code>`. Never commit real codes.
 
 ## Credits

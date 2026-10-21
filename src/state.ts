@@ -1,7 +1,7 @@
 import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 import type { RawInputs, TemplateId } from "./engine/types.ts";
 import type { Lang } from "./i18n/index.ts";
-import type { Reaction, Rehearsal, SegmentId } from "./sim/types.ts";
+import type { Persona, Reaction, Rehearsal, SegmentId } from "./sim/types.ts";
 
 /**
  * Everything needed to redraw an analysis (and its rehearsal) in the browser.
@@ -31,6 +31,10 @@ export interface ShareState {
     interviews: Rehearsal["interviews"];
     /** Set only when the rehearsal was started with a custom customer mix, so a rebuild picks the same people. */
     customerMix?: Partial<Record<SegmentId, number>>;
+    /** The exact imagined customers, saved whenever an AI played them, so the link survives changes to persona generation. */
+    cast?: Persona[];
+    /** Who was around in each round, saved with the cast. */
+    active?: Record<number, string[]>;
   };
   observed?: Record<string, number>;
 }
@@ -84,7 +88,7 @@ export const STATE_LIMITS = {
   events: 5,
   eventChars: 300,
   reactionChars: 800,
-  interviews: 5,
+  interviews: 10,
   answers: 12,
 } as const;
 
@@ -99,6 +103,19 @@ function inflateCapped(bytes: Uint8Array): Uint8Array {
 }
 
 const clip = (v: unknown, max: number): string | undefined => (typeof v === "string" ? v.slice(0, max) : undefined);
+
+/** A saved persona from a link: every text capped, numbers finite, unknown fields kept only if small. */
+function sanitisePersona(p: Persona): Persona {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(p).slice(0, 30)) {
+    if (k.length > 40) continue;
+    if (typeof v === "string") out[k] = v.slice(0, k === "story" ? 1500 : 300);
+    else if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === "boolean") out[k] = v;
+    else if (Array.isArray(v)) out[k] = v.slice(0, 12).filter((x) => typeof x === "string").map((x: string) => x.slice(0, 120));
+  }
+  return out as unknown as Persona;
+}
 
 function sanitise(s: Partial<ShareState>): ShareState {
   const inputs: RawInputs = {};
@@ -161,6 +178,18 @@ function sanitise(s: Partial<ShareState>): ShareState {
         })),
       })),
     };
+    if (Array.isArray(r.cast)) {
+      const cast = r.cast.slice(0, 12).filter((p): p is Persona => !!p && typeof p === "object" && typeof p.id === "string").map(sanitisePersona);
+      if (cast.length) out.rehearsal.cast = cast;
+    }
+    if (r.active && typeof r.active === "object") {
+      const active: Record<number, string[]> = {};
+      for (const [k, v] of Object.entries(r.active).slice(0, 5)) {
+        const n = Math.trunc(Number(k));
+        if (Number.isFinite(n) && Array.isArray(v)) active[n] = v.slice(0, 12).filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 8));
+      }
+      out.rehearsal.active = active;
+    }
     if (r.customerMix && typeof r.customerMix === "object") {
       const mix: Partial<Record<SegmentId, number>> = {};
       for (const [k, v] of Object.entries(r.customerMix).slice(0, 8)) if (typeof v === "number" && Number.isFinite(v)) mix[k as SegmentId] = v;

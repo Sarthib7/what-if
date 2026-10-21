@@ -450,12 +450,12 @@ details.wi-scns-more { background: transparent; border-style: dashed; }
 .wi-tl-who { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .wi-tl-who > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wi-timeline td { padding: 0; vertical-align: top; height: 1px; }
-.wi-cell { font: inherit; display: flex; align-items: center; justify-content: center; text-align: center; width: 100%; height: 100%; min-height: 44px; padding: 6px 4px; border-radius: 8px; font-size: 12px; line-height: 1.2; font-weight: 600; border: 1px solid transparent; color: var(--wi-ink); background: var(--wi-surface-2); overflow-wrap: anywhere; hyphens: auto; }
+.wi-cell { font: inherit; display: flex; align-items: center; justify-content: center; text-align: center; width: 100%; height: 100%; min-height: 44px; padding: 6px 4px; border-radius: 8px; font-size: 12px; line-height: 1.2; font-weight: 600; border: 1px solid transparent; color: var(--wi-ink); background: var(--wi-surface-2); overflow-wrap: break-word; word-break: normal; hyphens: auto; -webkit-hyphens: auto; }
 button.wi-cell { cursor: pointer; }
 button.wi-cell:hover { border-color: var(--wi-ink-2); }
 .wi-cell.is-pos { background: var(--wi-pos-wash); border-color: color-mix(in srgb, var(--wi-pos) 40%, transparent); }
 .wi-cell.is-neutral { background: var(--wi-surface-3); }
-.wi-cell.is-away { background: transparent; border: 1.5px dashed var(--wi-line-2); color: var(--wi-muted); font-weight: 500; opacity: 0.62; }
+.wi-cell.is-away { background: transparent; border: 1.5px dashed var(--wi-line-2); color: var(--wi-muted); font-weight: 500; }
 .wi-cell.is-elsewhere { background: color-mix(in srgb, var(--wi-elsewhere) 13%, var(--wi-surface)); border: 1.5px solid color-mix(in srgb, var(--wi-elsewhere) 70%, transparent); flex-direction: column; gap: 1px; }
 .wi-cell-ico { font-size: 13px; line-height: 1; color: var(--wi-elsewhere); font-weight: 800; }
 .wi-cell.is-future { background: transparent; color: var(--wi-muted); border: 1px solid var(--wi-line); }
@@ -814,8 +814,10 @@ details.wi-people[open] > summary { margin-bottom: var(--wi-s3); }
 @media (max-width: 480px) {
   .wi-card, .wi-caveat, .wi-testcard { padding: var(--wi-s3); }
   .wi-breakeven { padding: var(--wi-s4) var(--wi-s3); }
-  /* Phones: a little less air between steps keeps the whole lesson within ~13 screens. */
-  .wi-step { padding-top: var(--wi-s4); }
+  /* Phones: a little less air between steps and cards keeps the whole lesson within ~13 screens. */
+  .wi-step { padding-top: var(--wi-s3); }
+  .wi-card, .wi-callout, details.wi-more, .wi-scns { margin-bottom: 10px; }
+  .wi-sub { margin-bottom: 12px; }
   .wi-step-head { margin-bottom: var(--wi-s2); }
   .wi-scn-net-v { font-size: 30px; }
   .wi-timeline thead th:first-child { width: 22%; }
@@ -824,6 +826,73 @@ details.wi-people[open] > summary { margin-bottom: var(--wi-s3); }
 }
 @media (prefers-reduced-motion: reduce) {
   .wi-report *, .wi-report *::before, .wi-report *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ---- Berlin beta, loop 3 ---- */
+/* who did what: the list one tap away on a phone, what the AI did always in view */
+.wi-who-d > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 40px; }
+.wi-who-d > summary::-webkit-details-marker { display: none; }
+.wi-who-d > summary::before { content: ""; flex: none; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s ease; }
+.wi-who-d[open] > summary::before { transform: rotate(45deg); }
+.wi-who-d > summary .wi-h3 { margin: 0 !important; }
+.wi-who-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.wi-who-d[open] .wi-who-chips { display: none; }
+.wi-who-d[open] > summary { margin-bottom: 8px; }
+.wi-who-ai-line { display: flex; gap: 8px; align-items: flex-start; font-size: 15px; line-height: 1.5; margin: 8px 0 0 !important; padding-top: 8px; border-top: 1px solid var(--wi-line); }
+.wi-who-ai-line .wi-who-ai { flex: none; margin-top: 1px; }
+/* a worst case with no loss: calm, never the red alarm */
+.wi-callout--ok { background: var(--wi-surface-2); border-color: var(--wi-line-2); scroll-margin-top: 96px; }
+.wi-callout--ok > svg { color: var(--wi-pos); }
+.wi-ref--worst-ok { stroke: var(--wi-ink-2); stroke-dasharray: 5 4; }
+.wi-ref-label--ok { fill: var(--wi-ink-2); }
+/* step 1: the second number, and what was filled in */
+.wi-tile-on { flex-basis: 100%; font-weight: 600; }
+.wi-filled-warn p:last-child { margin-bottom: 0 !important; }
+.wi-kv-filled { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--wi-line-2); }
+.wi-kv-sub { font-size: 13px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--wi-muted); margin: 0 !important; }
+details.wi-filled-more > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.wi-kv-filled .wi-kv dd .wi-chip { margin-left: 2px; }
+/* step 3: the minimum-wage rise against what the price brings */
+.wi-wage-plain { font-size: 15px; }
+/* step 4: the two numbers under the slider chart */
+.wi-ex-two { font-size: 14px; color: var(--wi-ink-2); margin: 6px 0 0 !important; }
+/* step 5: start a rehearsal; how far it spread, in view */
+.wi-reh-start { margin-top: 12px; }
+.wi-reh-start .wi-btn { white-space: normal; text-align: left; }
+.wi-reh-start .wi-btn[disabled] { opacity: 0.75; cursor: progress; }
+.wi-reh-start-msg { margin: 8px 0 0 !important; color: var(--wi-neg-ink); }
+.wi-reh-start-msg:empty { display: none; }
+.wi-spread { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--wi-line); }
+.wi-spread .wi-sub-head .wi-h3 { font-size: 17px; }
+.wi-spread .wi-funnel { gap: 6px; }
+.wi-spread .wi-funnel li { grid-template-columns: minmax(0, 1fr) auto auto; gap: 2px 10px; }
+.wi-spread .wi-funnel-label { grid-column: auto; font-size: 14.5px; line-height: 1.3; }
+.wi-spread .wi-dots i { width: 12px; height: 12px; }
+.wi-spread .wi-dots { gap: 4px; flex-wrap: nowrap; }
+.wi-funnel-note { margin: 4px 0 0 !important; }
+details.wi-views[open] > summary { border-bottom: 1px solid var(--wi-line); }
+.wi-answer-av { display: inline-flex; flex: none; }
+.wi-answer-av .wi-avatar + .wi-avatar { margin-left: -8px; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--seg) 60%, transparent), 0 0 0 2px var(--wi-surface); }
+/* step 6: two numbers on the card, the tally (paper only), practice questions */
+.wi-tc-two { font-size: 14px; font-weight: 600; color: var(--wi-ink-2); margin: 0 0 8px !important; }
+.wi-tally-wrap { display: none; }
+.wi-sc-list { list-style: none; padding: 0 !important; display: grid; gap: 14px; }
+.wi-sc-text { font-weight: 600; margin-bottom: 6px !important; }
+.wi-sc-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.wi-sc-opt { min-height: 40px; padding: 6px 14px; }
+.wi-sc-opt.is-right { background: var(--wi-pos-wash); border-color: var(--wi-pos); }
+.wi-sc-opt.is-wrong { background: var(--wi-warn-wash); border-color: var(--wi-warn); }
+.wi-sc-out { font-size: 15px; margin: 6px 0 0 !important; }
+.wi-sc-out:empty { display: none; }
+.wi-sc-out.is-right { color: var(--wi-pos-ink); }
+@media (max-width: 639px) {
+  /* the plan text and the keep box already name both numbers; the one-line summary is for wider screens and paper */
+  .wi-tc-two { display: none; }
+  /* the business is in the report's eyebrow just above */
+  .wi-ask-biz { display: none; }
+  .wi-who { padding: 12px 14px; }
+  .wi-who-ai-line { font-size: 14.5px; }
+  .wi-spread .wi-funnel-label { font-size: 14px; }
 }
 
 /* print: the whole report on paper, or only the test card */
@@ -839,20 +908,45 @@ details.wi-people[open] > summary { margin-bottom: var(--wi-s3); }
   /* only the test card: a detached copy at the top of <body>; everything else leaves the layout (one page, not fifteen) */
   html.wi-print-card body > *:not(.wi-print-clone) { display: none !important; }
   html.wi-print-card .wi-print-clone { display: block !important; max-width: none; padding: 0; margin: 0; }
-  html.wi-print-card .wi-print-clone .wi-testcard { margin: 0; border: 1.5pt solid #000; box-shadow: none; padding: 10pt 12pt; font-size: 8.6pt; line-height: 1.32; }
+  /* the card on one A4 page, every word at 10 pt or more, with a blank daily tally to fill in at the till */
+  html.wi-print-card .wi-print-clone .wi-testcard { margin: 0; border: 1.25pt solid #000; box-shadow: none; padding: 5pt 8pt; font-size: 10pt; line-height: 1.15; }
   html.wi-print-card .wi-print-clone .wi-testcard * { break-inside: auto; }
+  html.wi-print-card .wi-print-clone .wi-testcard .wi-eyebrow, html.wi-print-card .wi-print-clone .wi-tc-days-badge, html.wi-print-card .wi-print-clone .wi-tc-day { font-size: 10pt; }
   html.wi-print-card .wi-print-clone .wi-tc-title { font-size: 13pt; }
-  html.wi-print-card .wi-print-clone .wi-tc-plain, html.wi-print-card .wi-print-clone .wi-tc-cap, html.wi-print-card .wi-print-clone .wi-checklist li, html.wi-print-card .wi-print-clone .wi-tc-measure li, html.wi-print-card .wi-print-clone .wi-tc-days li, html.wi-print-card .wi-print-clone .wi-rule-item p, html.wi-print-card .wi-print-clone .wi-tc-measure span { font-size: 8.6pt; }
-  html.wi-print-card .wi-print-clone .wi-h4 { font-size: 9.2pt; margin-bottom: 3pt !important; }
+  html.wi-print-card .wi-print-clone .wi-tc-head .wi-eyebrow { margin-bottom: 0 !important; }
+  html.wi-print-card .wi-print-clone .wi-tc-cap, html.wi-print-card .wi-print-clone .wi-tc-two, html.wi-print-card .wi-print-clone .wi-checklist li, html.wi-print-card .wi-print-clone .wi-tc-measure li, html.wi-print-card .wi-print-clone .wi-tc-days li, html.wi-print-card .wi-print-clone .wi-rule-item p, html.wi-print-card .wi-print-clone .wi-rule-item strong, html.wi-print-card .wi-print-clone .wi-tc-measure span { font-size: 10pt; line-height: 1.15; }
+  /* the plan's summary repeats the rule and the lists below it: on paper the card keeps the lists */
+  html.wi-print-card .wi-print-clone .wi-tc-plain { display: none; }
+  html.wi-print-card .wi-print-clone .wi-h4 { font-size: 10.5pt; margin-bottom: 1.5pt !important; }
   html.wi-print-card .wi-print-clone .wi-tc-actions { display: none !important; }
-  html.wi-print-card .wi-print-clone .wi-tc-grid { gap: 4pt 14pt; grid-template-columns: 1fr 1fr; margin: 6pt 0; }
-  html.wi-print-card .wi-print-clone .wi-checklist { gap: 3pt; }
-  html.wi-print-card .wi-print-clone .wi-tc-measure, html.wi-print-card .wi-print-clone .wi-tc-days { gap: 3pt; }
-  html.wi-print-card .wi-print-clone .wi-rule { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6pt; }
-  html.wi-print-card .wi-print-clone .wi-rule-item { padding: 5pt 7pt; }
-  html.wi-print-card .wi-print-clone .wi-tc-cap { padding: 5pt 8pt; margin: 6pt 0 0 !important; }
-  html.wi-print-card .wi-print-clone p { margin-bottom: 4pt !important; }
-  @page { margin: 10mm; }
+  html.wi-print-card .wi-print-clone .wi-tc-head { margin-bottom: 1pt; }
+  html.wi-print-card .wi-print-clone .wi-tc-grid { gap: 1pt 10pt; grid-template-columns: 1fr 1fr; margin: 1pt 0; }
+  html.wi-print-card .wi-print-clone .wi-tc-block { margin-bottom: 2pt; }
+  html.wi-print-card .wi-print-clone .wi-checklist { gap: 0.5pt; }
+  html.wi-print-card .wi-print-clone .wi-checklist li { padding-left: 13pt; }
+  html.wi-print-card .wi-print-clone .wi-checklist li::before { width: 8pt; height: 8pt; top: 2pt; border-radius: 2pt; border-width: 1pt; }
+  html.wi-print-card .wi-print-clone .wi-tc-measure, html.wi-print-card .wi-print-clone .wi-tc-days { gap: 0.5pt; }
+  html.wi-print-card .wi-print-clone .wi-tc-measure li { padding-left: 6pt; border-left-width: 2pt; }
+  html.wi-print-card .wi-print-clone .wi-tc-days li { grid-template-columns: 36pt 1fr; gap: 4pt; }
+  /* keep / tweak / stop as three full-width rows: the word, then its line */
+  html.wi-print-card .wi-print-clone .wi-rule { grid-template-columns: 1fr; gap: 2pt; }
+  html.wi-print-card .wi-print-clone .wi-rule-item { padding: 2.5pt 6pt; gap: 5pt; align-items: baseline; }
+  html.wi-print-card .wi-print-clone .wi-rule-item svg { width: 10pt; height: 10pt; align-self: center; }
+  html.wi-print-card .wi-print-clone .wi-rule-item strong { display: inline; margin-right: 4pt; }
+  html.wi-print-card .wi-print-clone .wi-tc-two { margin: 0 0 2pt !important; }
+  html.wi-print-card .wi-print-clone .wi-tc-cap { padding: 2.5pt 6pt; margin: 2pt 0 0 !important; }
+  html.wi-print-card .wi-print-clone p { margin-bottom: 2pt !important; }
+  .wi-tally-wrap { display: grid !important; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 8pt; break-inside: avoid; margin-top: 4pt; }
+  .wi-tally-wrap > .wi-h4 { grid-row: 1; grid-column: 1; }
+  .wi-tally-wrap > .wi-tally { grid-column: 1 / -1; }
+  .wi-tally { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10pt; margin: 0 0 2pt; }
+  .wi-tally th, .wi-tally td { border: 0.75pt solid #000; padding: 1.5pt 3pt; text-align: center; font-weight: 600; line-height: 1.15; }
+  .wi-tally th:first-child { width: 30%; text-align: left; }
+  .wi-tally thead th { background: #f0ede7; }
+  .wi-tally tbody td { height: 20pt; }
+  .wi-tally .wi-tally-avg { background: #f7f5f1; }
+  .wi-tally-base { grid-row: 1; grid-column: 2; font-size: 10pt; margin: 0 !important; }
+  @page { margin: 8mm; }
   .wi-lang, .wi-predict, .wi-hint > summary { display: none !important; }
 }
 `;

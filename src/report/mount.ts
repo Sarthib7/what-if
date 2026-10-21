@@ -2,8 +2,9 @@
  * Client behaviour for the report: charts redrawn at their real width, the
  * break-even slider (keyboard, drag on the chart), the predict-then-check box,
  * the language switcher, "show all the maths", rehearsal tabs, timeline cells,
- * hover-to-peek "why" notes, the step header's "you are here", and printing
- * the test card on its own.
+ * hover-to-peek "why" notes, the step header's "you are here", printing the
+ * test card on its own, starting a rule-based rehearsal (onRehearse) and the
+ * two practice questions on the decision rule.
  *
  * No globals at import time, so the module is safe to import in Node tests.
  */
@@ -14,14 +15,24 @@ import { t } from "./messages.ts";
 import type { ReportInput } from "./model.ts";
 import { STEPS, testDays, useReport } from "./model.ts";
 import { networkChart, uptakeChart } from "./rehearsal.ts";
-import { predictFeedback, readout, resultBars, resultLine, scenarioChart, sensChart, uncertaintyChart } from "./sections.ts";
+import { hideThresholds, predictFeedback, readout, resultBars, resultLine, scenarioChart, sensChart, uncertaintyChart, wageChart } from "./sections.ts";
 
 type Cleanup = () => void;
 const mounted = new WeakMap<HTMLElement, Cleanup>();
+/** Set when the owner started a rehearsal from step 5: the next render of that root moves focus to the rehearsal. */
+const focusRehearsal = new WeakSet<HTMLElement>();
 
 export interface MountOptions {
   /** Called with the language the owner picked in the report header (DE · EN · ES · PL). */
   onLanguage?: (lang: Lang) => void;
+  /**
+   * Shown as the step-5 button "Start a rehearsal with imagined customers (simple rules, no AI)" when the report has
+   * no rehearsal. Called once per click, with no arguments; the page runs the rule-based rehearsal and mounts the
+   * report again (same root) with `input.rehearsal` set. The button shows "Rehearsing…" and stays disabled until then;
+   * if the callback throws (or its promise rejects), it comes back with a short "could not start" message.
+   * After the re-render, focus moves to the step-5 heading.
+   */
+  onRehearse?: () => void | Promise<unknown>;
 }
 
 /**
@@ -116,12 +127,15 @@ export function wireReport(root: HTMLElement, input: ReportInput, render: (input
   /* ---------- responsive charts ---------- */
   let sensIndex = Number(root.querySelector<HTMLInputElement>("#wi-slider")?.value ?? 0);
   const reh = input.rehearsal;
+  // Until the owner guesses (or taps "just show me"), the break-even numbers stay out of view everywhere in step 4.
+  let covered = !!root.querySelector("[data-wi-predict]") && !predictions.has(a.id);
   const renderers: Record<string, (w: number) => string> = {
     scenarios: (w) => scenarioChart(input, w),
     uncertainty: (w) => uncertaintyChart(input, w),
-    sens: (w) => sensChart(a, w, sensIndex),
+    sens: (w) => sensChart(a, w, sensIndex, "netTest", !covered),
     result: (w) => resultLine(input, w),
     "result-net": (w) => resultBars(input, w),
+    wage: (w) => wageChart(a, w),
   };
   if (reh) {
     renderers.uptake = (w) => uptakeChart(reh, input, w);
@@ -164,16 +178,22 @@ export function wireReport(root: HTMLElement, input: ReportInput, render: (input
   const whyEl = root.querySelector<HTMLElement>("[data-wi-why]");
   const diffEl = root.querySelector<HTMLElement>("[data-wi-diff]");
   const sensBox = root.querySelector<HTMLElement>('[data-wi-chart="sens"]');
+  /** "Why this changed", without the break-even numbers while they are still covered. */
+  const showWhy = (why: string) => {
+    if (!whyEl) return;
+    const text = covered ? inLang(() => hideThresholds(why, a)) : why;
+    if (whyEl.textContent !== text) whyEl.textContent = text;
+    whyEl.hidden = !text;
+  };
   const setIndex = (i: number) => {
     if (!slider || points.length === 0) return;
     const next = Math.max(0, Math.min(points.length - 1, i));
-    const changed = next !== sensIndex;
     sensIndex = next;
     slider.value = String(next);
     const r = inLang(() => readout(a, next, days));
     slider.setAttribute("aria-valuetext", r.valueText);
     if (readoutEl) readoutEl.innerHTML = r.html; // built from escaped strings in sections.ts
-    if (whyEl && (changed || whyEl.textContent !== r.why)) whyEl.textContent = r.why;
+    showWhy(r.why);
     if (diffEl && diffEl.textContent !== r.diff) diffEl.textContent = r.diff;
     if (sensBox) drawBox(sensBox, true);
   };
@@ -217,18 +237,25 @@ export function wireReport(root: HTMLElement, input: ReportInput, render: (input
   const values = Array.from(root.querySelectorAll<HTMLElement>("[data-wi-be-value]"));
   const beMore = root.querySelector<HTMLElement>("[data-wi-be-more]");
   const beHead = root.querySelector<HTMLElement>("[data-wi-be-head]");
+  const reveals = Array.from(root.querySelectorAll<HTMLElement>("[data-wi-be-reveal]"));
   if (predict) {
     const field = predict.querySelector<HTMLInputElement>("#wi-predict-in");
     const out = root.querySelector<HTMLElement>("[data-wi-predict-out]");
     const checkBtn = predict.querySelector<HTMLButtonElement>("[data-wi-predict-check]");
     const skipBtn = predict.querySelector<HTMLButtonElement>("[data-wi-predict-skip]");
-    // Until the owner guesses (or skips), the break-even card asks the question instead of showing the answer.
+    // Until the owner guesses (or skips), the break-even card asks the question instead of showing the answer,
+    // and the slider chart's markers, its caption, "Worth knowing" and the thresholds in "Why this changed" wait too.
     const cover = (on: boolean) => {
+      const was = covered;
+      covered = on;
       covers.forEach((c) => (c.hidden = !on));
       values.forEach((v) => (v.hidden = on));
+      reveals.forEach((r) => (r.hidden = on));
       if (beMore) beMore.hidden = on;
       if (beHead) beHead.hidden = on;
       predict.hidden = !on;
+      showWhy(inLang(() => readout(a, sensIndex, days)).why);
+      if (sensBox && was !== on) drawBox(sensBox, true);
     };
     const reveal = (guess: number | null, announce: boolean) => {
       predictions.set(a.id, { guess });
@@ -364,6 +391,72 @@ export function wireReport(root: HTMLElement, input: ReportInput, render: (input
 
   /* ---------- print the test card ---------- */
   root.querySelectorAll<HTMLButtonElement>("[data-wi-print]").forEach((b) => b.addEventListener("click", () => printTestCard()));
+
+  /* ---------- step 5: start a rule-based rehearsal (only when the page can run one) ---------- */
+  const rehWrap = root.querySelector<HTMLElement>("[data-wi-rehearse-wrap]");
+  const rehBtn = root.querySelector<HTMLButtonElement>("[data-wi-rehearse]");
+  const onRehearse = opts.onRehearse;
+  if (rehWrap && rehBtn && onRehearse && !reh) {
+    rehWrap.hidden = false;
+    const label = rehBtn.querySelector<HTMLElement>("[data-wi-rehearse-label]");
+    const msg = root.querySelector<HTMLElement>("[data-wi-rehearse-msg]");
+    const fail = (e: unknown) => {
+      console.warn("What-IF: the rehearsal could not start.", e);
+      focusRehearsal.delete(root);
+      if (!rehBtn.isConnected) return;
+      rehBtn.disabled = false;
+      rehBtn.removeAttribute("aria-busy");
+      if (label) label.textContent = inLang(() => t("reh.start"));
+      if (msg) msg.textContent = inLang(() => t("reh.startFailed"));
+    };
+    rehBtn.addEventListener("click", () => {
+      if (rehBtn.disabled) return;
+      rehBtn.disabled = true;
+      rehBtn.setAttribute("aria-busy", "true");
+      if (label) label.textContent = inLang(() => t("reh.starting"));
+      if (msg) msg.textContent = "";
+      focusRehearsal.add(root);
+      // Let "Rehearsing…" paint before the rules run (they are synchronous and quick, but not free on an old phone).
+      setTimeout(() => {
+        try {
+          const ret = onRehearse();
+          if (ret && typeof (ret as Promise<unknown>).then === "function") (ret as Promise<unknown>).catch(fail);
+        } catch (e) {
+          fail(e);
+        }
+      }, 30);
+    });
+  }
+  if (reh && focusRehearsal.has(root)) {
+    focusRehearsal.delete(root);
+    const h = root.querySelector<HTMLElement>("#wi-step-5-h");
+    if (h) {
+      h.tabIndex = -1;
+      h.focus({ preventScroll: true });
+      h.closest("section")?.scrollIntoView({ block: "start" });
+    }
+  }
+
+  /* ---------- step 6: try the decision rule once (page memory only) ---------- */
+  root.querySelectorAll<HTMLElement>(".wi-sc-q").forEach((q) => {
+    const out = q.querySelector<HTMLElement>(".wi-sc-out");
+    const opts2 = Array.from(q.querySelectorAll<HTMLButtonElement>("button[data-wi-sc]"));
+    opts2.forEach((b) =>
+      b.addEventListener("click", () => {
+        const right = b.dataset.wiSc === q.dataset.answer;
+        opts2.forEach((x) => {
+          x.setAttribute("aria-pressed", String(x === b));
+          x.classList.toggle("is-right", x === b && right);
+          x.classList.toggle("is-wrong", x === b && !right);
+        });
+        if (out) {
+          out.textContent = (right ? q.dataset.right : q.dataset.wrong) ?? "";
+          out.classList.toggle("is-right", right);
+          out.classList.toggle("is-wrong", !right);
+        }
+      }),
+    );
+  });
 
   /* ---------- step header: you are here ---------- */
   const now = root.querySelector<HTMLElement>("[data-wi-now]");

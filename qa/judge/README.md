@@ -25,7 +25,7 @@ Component ids: `engine`, `rehearsal`, `mcp`, `visual`, `skill`, `product`, `docs
 - `score` must be a number from 1 to 10. A file without a valid score, or with broken JSON, is ignored and named in the report's warnings.
 - `improvements` may also be called `issues`. Items may be strings or objects (objects are shown as JSON).
 - Extra fields (for example Selin's `understood`, `confused`, `wouldTry`, and in loop 2 `germanFirst`, `englishLeft` and `betaFlow`) are allowed. The bot ignores them, but they stay in the file for the next loop's judges.
-- From loop 2 on, every file also has `loop1`: one entry per improvement of the previous verdict, `{ "improvement", "status": "fixed | partly | not fixed | no longer applies", "evidence" }` (`../judges.md` §2 and §9). The report shows the counts per judge and warns about files without it.
+- From loop 2 on, every file also follows up its previous verdict: one entry per improvement of that verdict, `{ "improvement", "status": "fixed | partly | not fixed | no longer applies", "evidence" }` (`../judges.md` §2 and §9). The field is named after the previous loop: `loop1` in loop 2, **`loop2` in loop 3** (`rubric.json` `version` 3). The report shows the counts per judge and warns about files without it.
 
 ## How the score is used
 

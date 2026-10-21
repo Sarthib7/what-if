@@ -1,0 +1,2750 @@
+[
+  {
+    "at": "2026-10-17T13:50:13.503Z",
+    "kind": "list_tools",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "server": {
+      "name": "what-if",
+      "title": "What-IF",
+      "version": "0.2.0",
+      "websiteUrl": "https://rev-bloom-duke-researchers.trycloudflare.com"
+    },
+    "tools": [
+      "whatif_start",
+      "whatif_check_inputs",
+      "whatif_run_scenarios",
+      "whatif_what_changed",
+      "whatif_rehearsal_start",
+      "whatif_rehearsal_submit",
+      "whatif_rehearsal_event",
+      "whatif_rehearsal_autoplay",
+      "whatif_rehearsal_interview",
+      "whatif_plan_test",
+      "whatif_log_result"
+    ],
+    "ms": 427
+  },
+  {
+    "at": "2026-10-17T13:50:24.813Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_start",
+    "arguments": {
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "business": "Café Morgenrot, Kreuzberg",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Decision template: Price change on one item (price_change). Compares a new price with the current one: what each sale leaves after VAT and ingredients, how many sales you could lose before you are worse off, and what different customer reactions would mean per week and per month.\n\nNumbers to ask for, one at a time (6 needed):\n1. Which item are you thinking of repricing? [item] (why: One item at a time keeps the effect easy to see and to measure.)\n2. What does it cost today? [current_price] (why: The starting point for the comparison.)\n3. What new price are you considering? [new_price] (why: The change you want to rehearse.)\n4. Roughly how many do you sell in a week? Your till's item report shows it. [units_per_week] (why: The effect of a few cents depends on how many you sell.)\n5. What do the ingredients and cup cost per item? For a flat white: coffee, milk, cup and lid. [unit_cost] (why: A price rise goes straight to what each sale earns, so this tells you how much margin you gain.)\n6. What do you think would really happen to sales? Small rises often lose a few percent. [volume_likely] (why: This is the guess the test will check.)\nOptional (a labelled guess is used if the owner does not know): Your Kiez (neighbourhood in Berlin) [kiez]; VAT on this item [vat_rate]; Change in sales: cautious guess [volume_low]; Change in sales: optimistic guess [volume_high]; Length of the test (days) [test_days]; Staff hours a week paid at or near the minimum wage [minimum_wage_hours_per_week].\nKiez (optional, shapes the imagined customers): Neukölln, Kreuzberg, Friedrichshain, Prenzlauer Berg, Mitte, Wedding, Moabit, Schöneberg, Charlottenburg, Friedenau, Pankow, Lichtenberg, Treptow, Tempelhof, Steglitz, Köpenick, Spandau, Weißensee, or other.\n\nStart by asking: \"Which item are you thinking of repricing?\"\nOr show how it works first with the demo café (Café Lindenblatt (demo café, Berlin-Neukölln), made-up numbers labelled as demo data): call whatif_run_scenarios with demo: true.\nBerlin events the owner can add to a rehearsal later (imagined, not facts): BVG strike: no U-Bahn, trams or buses for a day, so many people work from home.; It rains all week.; Heatwave: 32 °C all week.; Roadworks (a Baustelle) outside: the pavement is half closed for a week.; Berlin school holidays start: many families and students are away.; A new café opens two doors down with an €8.50 lunch.; A big Kiez street festival from Friday to Sunday: the street is full of people.; The Christmas market opens on the square round the corner..\n\nOpen the visual report (demo café, made-up numbers): https://rev-bloom-duke-researchers.trycloudflare.com/r#VZHPTsMwDMZfJfIJpKzq_iGWCxKckBBXjlHXuWvUxClpsjKmXXgbJM68wN6EJ8HdtEm7xT_7s_PZO9iAGkuI6FpbRAQFbTAl6rIuaI0gwVCbYgdqB43BT86_YmoOv9bSkGQdo4qloq85YlamEJCiPvYBNc0WEgj7czzLJhISmdjpFoPuERtQd5P8BHXpuwgqzxZzCRtvk0NtfQ9qlGdjFp6RadBujzSfXWht1jVrBzdd1Ktiy98ec9oZMi453RdrLvIpXI3O9xKWqTOEHdfDU1EdvsWLoRXSkn1FcbNC50U5cCkeMVhDo8sSbtnxe-J5xhOr32rehKnEswiF6VC4LQvbNpWlIS-q4J34-_qZZvNcRH963ueC8CMK5ynWD9xuGAcqhoQSLF-B2yLB_h8\nCoaching: Ask one question at a time and say why it matters; share the demo report if the owner wants to see where this is going."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "kind": "decision",
+        "template": "price_change",
+        "title": "Price change on one item",
+        "summary": "Compares a new price with the current one: what each sale leaves after VAT and ingredients, how many sales you could lose before you are worse off, and what different customer reactions would mean per week and per month.",
+        "fit": "good",
+        "example_question": "What if I raise the price of a flat white by 30 cents?",
+        "ask_first": [
+          {
+            "key": "item",
+            "label": "Item",
+            "unit": "text",
+            "kind": "choice",
+            "required": true,
+            "ask": "Which item are you thinking of repricing?",
+            "why": "One item at a time keeps the effect easy to see and to measure.",
+            "example": "flat white"
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "unit": "EUR",
+            "kind": "fact",
+            "required": true,
+            "ask": "What does it cost today?",
+            "why": "The starting point for the comparison.",
+            "example": 3.9
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "unit": "EUR",
+            "kind": "choice",
+            "required": true,
+            "ask": "What new price are you considering?",
+            "why": "The change you want to rehearse.",
+            "example": 4.2
+          },
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "unit": "units/week",
+            "kind": "fact",
+            "required": true,
+            "ask": "Roughly how many do you sell in a week? Your till's item report shows it.",
+            "why": "The effect of a few cents depends on how many you sell.",
+            "example": 620
+          },
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "unit": "EUR",
+            "kind": "fact",
+            "required": true,
+            "ask": "What do the ingredients and cup cost per item? For a flat white: coffee, milk, cup and lid.",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain.",
+            "example": 0.95
+          },
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "unit": "share",
+            "kind": "assumption",
+            "required": true,
+            "ask": "What do you think would really happen to sales? Small rises often lose a few percent.",
+            "why": "This is the guess the test will check.",
+            "example": -0.04
+          }
+        ],
+        "optional_fields": [
+          {
+            "key": "kiez",
+            "label": "Your Kiez (neighbourhood in Berlin)",
+            "unit": "text",
+            "kind": "fact",
+            "required": false,
+            "ask": "Which Kiez is your café in?",
+            "why": "The imagined customers in the rehearsal come from your Kiez. It does not change the money sums.",
+            "example": "Neukölln"
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "unit": "share",
+            "kind": "fact",
+            "required": false,
+            "ask": "Which VAT rate is on this item? Food is 7%. Drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%. If you are a Kleinunternehmer and charge no VAT, enter 0.",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "example": 0.19,
+            "fallback": 0.19
+          },
+          {
+            "key": "volume_low",
+            "label": "Change in sales: cautious guess",
+            "unit": "share",
+            "kind": "assumption",
+            "required": false,
+            "ask": "If customers really disliked it, how much would sales drop? For example −10%.",
+            "why": "Price changes lose some sales. A range keeps the guess honest.",
+            "example": -0.12
+          },
+          {
+            "key": "volume_high",
+            "label": "Change in sales: optimistic guess",
+            "unit": "share",
+            "kind": "assumption",
+            "required": false,
+            "ask": "And if nobody minded at all?",
+            "why": "Shows the best case.",
+            "example": 0
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "unit": "days",
+            "kind": "choice",
+            "required": false,
+            "ask": "How many days would you try the new price before deciding? Two weeks is usual.",
+            "why": "Long enough for regulars to react, short enough to change back.",
+            "example": 14,
+            "fallback": 14
+          },
+          {
+            "key": "minimum_wage_hours_per_week",
+            "label": "Staff hours a week paid at or near the minimum wage",
+            "unit": "hours/week",
+            "kind": "fact",
+            "required": false,
+            "ask": "How many staff hours a week do you pay at or near the minimum wage (€13.90 an hour)? Your rota or payroll shows it. Leave it out if this price change has nothing to do with wages.",
+            "why": "From 1 January 2027 the minimum wage rises to €14.60, so each of these hours costs €0.70 more. What-IF sets that against what the new price brings, so you see whether the price covers the rise.",
+            "example": 60
+          }
+        ],
+        "next_question": {
+          "key": "item",
+          "ask": "Which item are you thinking of repricing?",
+          "why": "One item at a time keeps the effect easy to see and to measure."
+        },
+        "demo": {
+          "business": "Café Lindenblatt (demo café, Berlin-Neukölln)",
+          "inputs": {
+            "kiez": "Neukölln",
+            "item": "flat white",
+            "current_price": 3.9,
+            "new_price": 4.2,
+            "units_per_week": 620,
+            "unit_cost": 0.95,
+            "volume_low": -0.12,
+            "volume_likely": -0.04,
+            "volume_high": 0,
+            "test_days": 14,
+            "minimum_wage_hours_per_week": 60
+          }
+        },
+        "other_templates": [
+          {
+            "id": "lunch_offer",
+            "title": "Weekday lunch offer",
+            "example_question": "What if I run a weekday lunch offer to bring in more customers?"
+          }
+        ],
+        "kieze": [
+          "Neukölln",
+          "Kreuzberg",
+          "Friedrichshain",
+          "Prenzlauer Berg",
+          "Mitte",
+          "Wedding",
+          "Moabit",
+          "Schöneberg",
+          "Charlottenburg",
+          "Friedenau",
+          "Pankow",
+          "Lichtenberg",
+          "Treptow",
+          "Tempelhof",
+          "Steglitz",
+          "Köpenick",
+          "Spandau",
+          "Weißensee"
+        ],
+        "berlin_events": [
+          {
+            "id": "bvg_strike",
+            "text": "BVG strike: no U-Bahn, trams or buses for a day, so many people work from home."
+          },
+          {
+            "id": "rain_week",
+            "text": "It rains all week."
+          },
+          {
+            "id": "heatwave",
+            "text": "Heatwave: 32 °C all week."
+          },
+          {
+            "id": "baustelle",
+            "text": "Roadworks (a Baustelle) outside: the pavement is half closed for a week."
+          },
+          {
+            "id": "school_holidays",
+            "text": "Berlin school holidays start: many families and students are away."
+          },
+          {
+            "id": "rival_lunch",
+            "text": "A new café opens two doors down with an €8.50 lunch."
+          },
+          {
+            "id": "street_festival",
+            "text": "A big Kiez street festival from Friday to Sunday: the street is full of people."
+          },
+          {
+            "id": "christmas_market",
+            "text": "The Christmas market opens on the square round the corner."
+          }
+        ],
+        "coaching": [
+          "Reflect the question back in one sentence and say What-IF will compare a cautious, an expected and an optimistic outcome; it does not predict the future.",
+          "Ask for the numbers ONE at a time, in the order given, saying why each matters. Accept rough answers; 'I don't know' is fine for optional ones (a labelled guess is used).",
+          "After each answer call whatif_check_inputs; it returns the next question. When ready, call whatif_run_scenarios and share the report link.",
+          "Explain break-even and the worst case in plain words, then offer: rehearse with imagined customers (whatif_rehearsal_start), try another number (whatif_what_changed), or plan a small test (whatif_plan_test). Pass them the `state` from the last result.",
+          "Every figure has a source tag, the same as on the report: \"Your number\", \"A guess\", \"Calculated\", \"Imagined\" or \"Demo data\". Keep them apart when you talk."
+        ],
+        "tools_next": [
+          "whatif_check_inputs",
+          "whatif_run_scenarios"
+        ],
+        "report_url": "https://rev-bloom-duke-researchers.trycloudflare.com/r#VZHPTsMwDMZfJfIJpKzq_iGWCxKckBBXjlHXuWvUxClpsjKmXXgbJM68wN6EJ8HdtEm7xT_7s_PZO9iAGkuI6FpbRAQFbTAl6rIuaI0gwVCbYgdqB43BT86_YmoOv9bSkGQdo4qloq85YlamEJCiPvYBNc0WEgj7czzLJhISmdjpFoPuERtQd5P8BHXpuwgqzxZzCRtvk0NtfQ9qlGdjFp6RadBujzSfXWht1jVrBzdd1Ktiy98ec9oZMi453RdrLvIpXI3O9xKWqTOEHdfDU1EdvsWLoRXSkn1FcbNC50U5cCkeMVhDo8sSbtnxe-J5xhOr32rehKnEswiF6VC4LQvbNpWlIS-q4J34-_qZZvNcRH963ueC8CMK5ynWD9xuGAcqhoQSLF-B2yLB_h8"
+      }
+    },
+    "error": null,
+    "ms": 405
+  },
+  {
+    "at": "2026-10-17T13:50:43.374Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_check_inputs",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8
+      },
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Not ready yet: 3 missing, 0 to fix.\nNext question: \"Roughly how many do you sell in a week? Your till's item report shows it.\" [units_per_week] (why: The effect of a few cents depends on how many you sell.)\nStill missing after that: Ingredients and packaging per item; Change in sales: your likely guess.\n2 optional values will use a labelled guess unless the owner knows better (see resolved).\n\nCoaching: Ask only the next question, in the owner's words, and say why it matters."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "template": "price_change",
+        "ready": false,
+        "missing": [
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "ask": "Roughly how many do you sell in a week? Your till's item report shows it.",
+            "why": "The effect of a few cents depends on how many you sell."
+          },
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "ask": "What do the ingredients and cup cost per item? For a flat white: coffee, milk, cup and lid.",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+          },
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "ask": "What do you think would really happen to sales? Small rises often lose a few percent.",
+            "why": "This is the guess the test will check."
+          }
+        ],
+        "problems": [],
+        "resolved": [
+          {
+            "key": "item",
+            "label": "Item",
+            "value": "cappuccino",
+            "unit": "text",
+            "source": "owner",
+            "kind": "choice",
+            "why": "One item at a time keeps the effect easy to see and to measure."
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "value": 3.5,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The starting point for the comparison."
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "value": 3.8,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "choice",
+            "why": "The change you want to rehearse."
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "value": 0.19,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "fact",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+            "filledBy": "fallback"
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "value": 14,
+            "unit": "days",
+            "source": "assumption",
+            "kind": "choice",
+            "why": "Long enough for regulars to react, short enough to change back.",
+            "note": "You did not say, so What-IF used 14 days. Change it if you know better.",
+            "filledBy": "fallback"
+          }
+        ],
+        "next_question": {
+          "key": "units_per_week",
+          "ask": "Roughly how many do you sell in a week? Your till's item report shows it.",
+          "why": "The effect of a few cents depends on how many you sell."
+        },
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "report_url": null
+      }
+    },
+    "error": null,
+    "ms": 419
+  },
+  {
+    "at": "2026-10-17T13:50:49.468Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_check_inputs",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450
+      },
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Not ready yet: 2 missing, 0 to fix.\nNext question: \"What do the ingredients and cup cost per item? For a flat white: coffee, milk, cup and lid.\" [unit_cost] (why: A price rise goes straight to what each sale earns, so this tells you how much margin you gain.)\nStill missing after that: Change in sales: your likely guess.\n2 optional values will use a labelled guess unless the owner knows better (see resolved).\n\nCoaching: Ask only the next question, in the owner's words, and say why it matters."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "template": "price_change",
+        "ready": false,
+        "missing": [
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "ask": "What do the ingredients and cup cost per item? For a flat white: coffee, milk, cup and lid.",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+          },
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "ask": "What do you think would really happen to sales? Small rises often lose a few percent.",
+            "why": "This is the guess the test will check."
+          }
+        ],
+        "problems": [],
+        "resolved": [
+          {
+            "key": "item",
+            "label": "Item",
+            "value": "cappuccino",
+            "unit": "text",
+            "source": "owner",
+            "kind": "choice",
+            "why": "One item at a time keeps the effect easy to see and to measure."
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "value": 3.5,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The starting point for the comparison."
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "value": 3.8,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "choice",
+            "why": "The change you want to rehearse."
+          },
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "value": 450,
+            "unit": "units/week",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The effect of a few cents depends on how many you sell."
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "value": 0.19,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "fact",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+            "filledBy": "fallback"
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "value": 14,
+            "unit": "days",
+            "source": "assumption",
+            "kind": "choice",
+            "why": "Long enough for regulars to react, short enough to change back.",
+            "note": "You did not say, so What-IF used 14 days. Change it if you know better.",
+            "filledBy": "fallback"
+          }
+        ],
+        "next_question": {
+          "key": "unit_cost",
+          "ask": "What do the ingredients and cup cost per item? For a flat white: coffee, milk, cup and lid.",
+          "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+        },
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "report_url": null
+      }
+    },
+    "error": null,
+    "ms": 274
+  },
+  {
+    "at": "2026-10-17T13:50:55.115Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_check_inputs",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85
+      },
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Not ready yet: 1 missing, 0 to fix.\nNext question: \"What do you think would really happen to sales? Small rises often lose a few percent.\" [volume_likely] (why: This is the guess the test will check.)\n2 optional values will use a labelled guess unless the owner knows better (see resolved).\n\nCoaching: Ask only the next question, in the owner's words, and say why it matters."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "template": "price_change",
+        "ready": false,
+        "missing": [
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "ask": "What do you think would really happen to sales? Small rises often lose a few percent.",
+            "why": "This is the guess the test will check."
+          }
+        ],
+        "problems": [],
+        "resolved": [
+          {
+            "key": "item",
+            "label": "Item",
+            "value": "cappuccino",
+            "unit": "text",
+            "source": "owner",
+            "kind": "choice",
+            "why": "One item at a time keeps the effect easy to see and to measure."
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "value": 3.5,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The starting point for the comparison."
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "value": 3.8,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "choice",
+            "why": "The change you want to rehearse."
+          },
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "value": 450,
+            "unit": "units/week",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The effect of a few cents depends on how many you sell."
+          },
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "value": 0.85,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "value": 0.19,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "fact",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+            "filledBy": "fallback"
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "value": 14,
+            "unit": "days",
+            "source": "assumption",
+            "kind": "choice",
+            "why": "Long enough for regulars to react, short enough to change back.",
+            "note": "You did not say, so What-IF used 14 days. Change it if you know better.",
+            "filledBy": "fallback"
+          }
+        ],
+        "next_question": {
+          "key": "volume_likely",
+          "ask": "What do you think would really happen to sales? Small rises often lose a few percent.",
+          "why": "This is the guess the test will check."
+        },
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "report_url": null
+      }
+    },
+    "error": null,
+    "ms": 284
+  },
+  {
+    "at": "2026-10-17T13:51:01.666Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_check_inputs",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85,
+        "volume_likely": -0.05
+      },
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Ready: every number for \"Price change on one item\" is in (10 values).\nGuesses What-IF filled in (tell the owner; they can correct them):\n- VAT on this item: You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.\n- Change in sales: cautious guess: Cautious guess set to −13% (8 points below your likely guess) because you gave one number.\n- Change in sales: optimistic guess: Optimistic guess set to −1%, a little above your likely guess, because you gave one number.\n- Length of the test (days): You did not say, so What-IF used 14 days. Change it if you know better.\nNext step: call whatif_run_scenarios with `state` = this result's state (or with the same template and inputs).\n\nOpen the visual report: https://rev-bloom-duke-researchers.trycloudflare.com/r#RU9BTgMxDPyK5fOyCoKVVrkgceMFHKMouGzUxAmJ01JVvfAeXsVLsNpDb2OPxzNzxgPaxwmFck1eCC3WFgO5sHn-JJwwch3S0Z4x6pHywdc6QohclA2jNWJxVxHap3mZkOl4n9cJB0fprlJzR6I92ufF3JYulC5ozbyq6lDSyORS3FM6oX0ws1kuE34N6hILq_H75gXiDt6g-dgJ8gnuWWDXSoa_n1-NYEDKDa4GmL4FcmHZXjRv0lb6ilhx9h_0qlYYig8bXv4B\nCoaching: Read the filled-in guesses back to the owner before running the scenarios."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "template": "price_change",
+        "ready": true,
+        "missing": [],
+        "problems": [],
+        "resolved": [
+          {
+            "key": "item",
+            "label": "Item",
+            "value": "cappuccino",
+            "unit": "text",
+            "source": "owner",
+            "kind": "choice",
+            "why": "One item at a time keeps the effect easy to see and to measure."
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "value": 3.5,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The starting point for the comparison."
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "value": 3.8,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "choice",
+            "why": "The change you want to rehearse."
+          },
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "value": 450,
+            "unit": "units/week",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The effect of a few cents depends on how many you sell."
+          },
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "value": 0.85,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "value": 0.19,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "fact",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+            "filledBy": "fallback"
+          },
+          {
+            "key": "volume_low",
+            "label": "Change in sales: cautious guess",
+            "value": -0.13,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "Price changes lose some sales. A range keeps the guess honest.",
+            "note": "Cautious guess set to −13% (8 points below your likely guess) because you gave one number.",
+            "filledBy": "derived"
+          },
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "value": -0.05,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "This is the guess the test will check."
+          },
+          {
+            "key": "volume_high",
+            "label": "Change in sales: optimistic guess",
+            "value": -0.01,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "Shows the best case.",
+            "note": "Optimistic guess set to −1%, a little above your likely guess, because you gave one number.",
+            "filledBy": "derived"
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "value": 14,
+            "unit": "days",
+            "source": "assumption",
+            "kind": "choice",
+            "why": "Long enough for regulars to react, short enough to change back.",
+            "note": "You did not say, so What-IF used 14 days. Change it if you know better.",
+            "filledBy": "fallback"
+          }
+        ],
+        "next_question": null,
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "state": "RU9BTgMxDPyK5fOyCoKVVrkgceMFHKMouGzUxAmJ01JVvfAeXsVLsNpDb2OPxzNzxgPaxwmFck1eCC3WFgO5sHn-JJwwch3S0Z4x6pHywdc6QohclA2jNWJxVxHap3mZkOl4n9cJB0fprlJzR6I92ufF3JYulC5ozbyq6lDSyORS3FM6oX0ws1kuE34N6hILq_H75gXiDt6g-dgJ8gnuWWDXSoa_n1-NYEDKDa4GmL4FcmHZXjRv0lb6ilhx9h_0qlYYig8bXv4B",
+        "report_url": "https://rev-bloom-duke-researchers.trycloudflare.com/r#RU9BTgMxDPyK5fOyCoKVVrkgceMFHKMouGzUxAmJ01JVvfAeXsVLsNpDb2OPxzNzxgPaxwmFck1eCC3WFgO5sHn-JJwwch3S0Z4x6pHywdc6QohclA2jNWJxVxHap3mZkOl4n9cJB0fprlJzR6I92ufF3JYulC5ozbyq6lDSyORS3FM6oX0ws1kuE34N6hILq_H75gXiDt6g-dgJ8gnuWWDXSoa_n1-NYEDKDa4GmL4FcmHZXjRv0lb6ilhx9h_0qlYYig8bXv4B"
+      }
+    },
+    "error": null,
+    "ms": 480
+  },
+  {
+    "at": "2026-10-17T13:51:26.270Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_check_inputs",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85,
+        "volume_likely": -0.05,
+        "volume_low": -0.12,
+        "volume_high": 0,
+        "test_days": 14
+      },
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Ready: every number for \"Price change on one item\" is in (10 values).\nGuesses What-IF filled in (tell the owner; they can correct them):\n- VAT on this item: You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.\nNext step: call whatif_run_scenarios with `state` = this result's state (or with the same template and inputs).\n\nOpen the visual report: https://rev-bloom-duke-researchers.trycloudflare.com/r#TZBNTgMxDEavEnk9jDLQSqNskNhxApZRlLpN1PyROB1GVTech1NxEkwrUXbOcz7r2Wc4gZoGIIwlGEJQUKq3qK0z6YAwgE-lUwN1Bs-fuG9NKd1anzJ3ba8VE-lrCNTTuB0g4XJ_zwP05KnpglUviEdQm628QW1zI1BynDl1yqFH1MEfMaygHuQo_9G8XNH0-IecPzjO_qo30juzsuO0uQzw3hn4nFj1zRkSfi9eRTW-oYiruNuLfc1RfH9-sbQUlG_lLEXCDxIxJ3LPvGHgO_AoTFxHs8MXlgObjXVw-QE\nCoaching: Read the filled-in guesses back to the owner before running the scenarios."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "template": "price_change",
+        "ready": true,
+        "missing": [],
+        "problems": [],
+        "resolved": [
+          {
+            "key": "item",
+            "label": "Item",
+            "value": "cappuccino",
+            "unit": "text",
+            "source": "owner",
+            "kind": "choice",
+            "why": "One item at a time keeps the effect easy to see and to measure."
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "value": 3.5,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The starting point for the comparison."
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "value": 3.8,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "choice",
+            "why": "The change you want to rehearse."
+          },
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "value": 450,
+            "unit": "units/week",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The effect of a few cents depends on how many you sell."
+          },
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "value": 0.85,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "value": 0.19,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "fact",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+            "filledBy": "fallback"
+          },
+          {
+            "key": "volume_low",
+            "label": "Change in sales: cautious guess",
+            "value": -0.12,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "Price changes lose some sales. A range keeps the guess honest."
+          },
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "value": -0.05,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "This is the guess the test will check."
+          },
+          {
+            "key": "volume_high",
+            "label": "Change in sales: optimistic guess",
+            "value": 0,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "Shows the best case."
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "value": 14,
+            "unit": "days",
+            "source": "owner",
+            "kind": "choice",
+            "why": "Long enough for regulars to react, short enough to change back."
+          }
+        ],
+        "next_question": null,
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "state": "TZBNTgMxDEavEnk9jDLQSqNskNhxApZRlLpN1PyROB1GVTech1NxEkwrUXbOcz7r2Wc4gZoGIIwlGEJQUKq3qK0z6YAwgE-lUwN1Bs-fuG9NKd1anzJ3ba8VE-lrCNTTuB0g4XJ_zwP05KnpglUviEdQm628QW1zI1BynDl1yqFH1MEfMaygHuQo_9G8XNH0-IecPzjO_qo30juzsuO0uQzw3hn4nFj1zRkSfi9eRTW-oYiruNuLfc1RfH9-sbQUlG_lLEXCDxIxJ3LPvGHgO_AoTFxHs8MXlgObjXVw-QE",
+        "report_url": "https://rev-bloom-duke-researchers.trycloudflare.com/r#TZBNTgMxDEavEnk9jDLQSqNskNhxApZRlLpN1PyROB1GVTech1NxEkwrUXbOcz7r2Wc4gZoGIIwlGEJQUKq3qK0z6YAwgE-lUwN1Bs-fuG9NKd1anzJ3ba8VE-lrCNTTuB0g4XJ_zwP05KnpglUviEdQm628QW1zI1BynDl1yqFH1MEfMaygHuQo_9G8XNH0-IecPzjO_qo30juzsuO0uQzw3hn4nFj1zRkSfi9eRTW-oYiruNuLfc1RfH9-sbQUlG_lLEXCDxIxJ3LPvGHgO_AoTFxHs8MXlgObjXVw-QE"
+      }
+    },
+    "error": null,
+    "ms": 423
+  },
+  {
+    "at": "2026-10-17T13:51:33.297Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_check_inputs",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85,
+        "volume_likely": -0.05,
+        "volume_low": -0.12,
+        "volume_high": 0,
+        "test_days": 14,
+        "kiez": "Kreuzberg"
+      },
+      "business": "Café Morgenrot, Kreuzberg",
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Ready: every number for \"Price change on one item\" is in (11 values).\nGuesses What-IF filled in (tell the owner; they can correct them):\n- VAT on this item: You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.\nNext step: call whatif_run_scenarios with `state` = this result's state (or with the same template and inputs).\n\nOpen the visual report: https://rev-bloom-duke-researchers.trycloudflare.com/r#TVDLTsMwEPwVa8-mSqCVIl-Q4IQQZ46W624SK_EDPxrSqhf-Bom_4E_4EpZWIr3tzs6MZvYIexA1h4w2jCojCAjRaJS6V65D4GBcKDmBOIIhEt21CqFobZynqy4xosvyLAJxt9pwcDgte8OhOJOTDBjlhDiAWG-qCyi1TxlEtWpItfdjsShHM-A4g7ipVtUV6qczVN_-Q73petL-RU9Z7tRMGes1h8HggVI-RyyHLcYOThy2JRmHiRjwqNrvT_biY4cu-szZQuTwVsjLeEe8115lZlr2xKIyCZmd2VKctdFb9vPxRX0rlv1lbCrm8D0z613u78lupBeSFTqardrhA_UC7ZXu4fQL\nCoaching: Read the filled-in guesses back to the owner before running the scenarios."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "template": "price_change",
+        "ready": true,
+        "missing": [],
+        "problems": [],
+        "resolved": [
+          {
+            "key": "kiez",
+            "label": "Your Kiez (neighbourhood in Berlin)",
+            "value": "Kreuzberg",
+            "unit": "text",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The imagined customers in the rehearsal come from your Kiez. It does not change the money sums."
+          },
+          {
+            "key": "item",
+            "label": "Item",
+            "value": "cappuccino",
+            "unit": "text",
+            "source": "owner",
+            "kind": "choice",
+            "why": "One item at a time keeps the effect easy to see and to measure."
+          },
+          {
+            "key": "current_price",
+            "label": "Current price (what customers pay)",
+            "value": 3.5,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The starting point for the comparison."
+          },
+          {
+            "key": "new_price",
+            "label": "New price (what customers would pay)",
+            "value": 3.8,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "choice",
+            "why": "The change you want to rehearse."
+          },
+          {
+            "key": "units_per_week",
+            "label": "Sales per week now",
+            "value": 450,
+            "unit": "units/week",
+            "source": "owner",
+            "kind": "fact",
+            "why": "The effect of a few cents depends on how many you sell."
+          },
+          {
+            "key": "unit_cost",
+            "label": "Ingredients and packaging per item",
+            "value": 0.85,
+            "unit": "EUR",
+            "source": "owner",
+            "kind": "fact",
+            "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+          },
+          {
+            "key": "vat_rate",
+            "label": "VAT on this item",
+            "value": 0.19,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "fact",
+            "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+            "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+            "filledBy": "fallback"
+          },
+          {
+            "key": "volume_low",
+            "label": "Change in sales: cautious guess",
+            "value": -0.12,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "Price changes lose some sales. A range keeps the guess honest."
+          },
+          {
+            "key": "volume_likely",
+            "label": "Change in sales: your likely guess",
+            "value": -0.05,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "This is the guess the test will check."
+          },
+          {
+            "key": "volume_high",
+            "label": "Change in sales: optimistic guess",
+            "value": 0,
+            "unit": "share",
+            "source": "assumption",
+            "kind": "assumption",
+            "why": "Shows the best case."
+          },
+          {
+            "key": "test_days",
+            "label": "Length of the test (days)",
+            "value": 14,
+            "unit": "days",
+            "source": "owner",
+            "kind": "choice",
+            "why": "Long enough for regulars to react, short enough to change back."
+          }
+        ],
+        "next_question": null,
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "state": "TVDLTsMwEPwVa8-mSqCVIl-Q4IQQZ46W624SK_EDPxrSqhf-Bom_4E_4EpZWIr3tzs6MZvYIexA1h4w2jCojCAjRaJS6V65D4GBcKDmBOIIhEt21CqFobZynqy4xosvyLAJxt9pwcDgte8OhOJOTDBjlhDiAWG-qCyi1TxlEtWpItfdjsShHM-A4g7ipVtUV6qczVN_-Q73petL-RU9Z7tRMGes1h8HggVI-RyyHLcYOThy2JRmHiRjwqNrvT_biY4cu-szZQuTwVsjLeEe8115lZlr2xKIyCZmd2VKctdFb9vPxRX0rlv1lbCrm8D0z613u78lupBeSFTqardrhA_UC7ZXu4fQL",
+        "report_url": "https://rev-bloom-duke-researchers.trycloudflare.com/r#TVDLTsMwEPwVa8-mSqCVIl-Q4IQQZ46W624SK_EDPxrSqhf-Bom_4E_4EpZWIr3tzs6MZvYIexA1h4w2jCojCAjRaJS6V65D4GBcKDmBOIIhEt21CqFobZynqy4xosvyLAJxt9pwcDgte8OhOJOTDBjlhDiAWG-qCyi1TxlEtWpItfdjsShHM-A4g7ipVtUV6qczVN_-Q73petL-RU9Z7tRMGes1h8HggVI-RyyHLcYOThy2JRmHiRjwqNrvT_biY4cu-szZQuTwVsjLeEe8115lZlr2xKIyCZmd2VKctdFb9vPxRX0rlv1lbCrm8D0z613u78lupBeSFTqardrhA_UC7ZXu4fQL"
+      }
+    },
+    "error": null,
+    "ms": 373
+  },
+  {
+    "at": "2026-10-17T13:51:39.379Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_run_scenarios",
+    "arguments": {
+      "state": "TVDLTsMwEPwVa8-mSqCVIl-Q4IQQZ46W624SK_EDPxrSqhf-Bom_4E_4EpZWIr3tzs6MZvYIexA1h4w2jCojCAjRaJS6V65D4GBcKDmBOIIhEt21CqFobZynqy4xosvyLAJxt9pwcDgte8OhOJOTDBjlhDiAWG-qCyi1TxlEtWpItfdjsShHM-A4g7ipVtUV6qczVN_-Q73petL-RU9Z7tRMGes1h8HggVI-RyyHLcYOThy2JRmHiRjwqNrvT_biY4cu-szZQuTwVsjLeEe8115lZlr2xKIyCZmd2VKctdFb9vPxRX0rlv1lbCrm8D0z613u78lupBeSFTqardrhA_UC7ZXu4fQL",
+      "business": "Café Morgenrot, Kreuzberg",
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "currency": "EUR",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Café Morgenrot, Kreuzberg: What if I raise my cappuccino from €3.50 to €3.80 next month?\nBreak-even (the one number to remember): At €3.80 each cappuccino leaves €2.34 after VAT and ingredients instead of €2.09, so you can sell up to 48 fewer a week (10.7% of 450) and still make as much as now. Lose more than that and you are worse off.\nThree possible outcomes (calculated from the owner's numbers and guesses):\n- Cautious: If sales change by −12% (about 396 a week), you make €14 less a week than now: €28 less over the 14-day test and about €60 a month.\n- Expected: If sales change by −5% (about 428 a week), you make €60 more a week than now: €120 over the 14-day test and about €259 a month.\n- Optimistic: If sales change by 0% (about 450 a week), you make €113 more a week than now: €225 over the 14-day test and about €487 a month.\nWorst case: If sales fell by 12% (your cautious guess), the 14-day test would leave you €28 worse off than keeping the old price. You can change the price back at any time, so that is what is at stake.\nBiggest uncertainty: Whether sales change by −12% or 0% changes the test result by €253, more than anything else. That is what your test should measure: count the cappuccino sales each week.\nWatch out:\n- At your cautious guess (−12%) the new price earns less than today (break-even is −10.7%). That is the risk the test checks.\nPublic facts the maths uses: VAT on drinks, milk drinks drunk in the café included 19% (§ 12 Abs. 1 und Abs. 2 Nr. 15 UStG, 2026-01-01); VAT on milk drinks sold to take away with at least 75% milk (not plant drinks such as oat); an older rule, unchanged in 2026 7% (§ 12 Abs. 2 Nr. 1 UStG mit Anlage 2 Nr. 35, 2026-01-01); VAT on food in cafés and restaurants (eat-in and take-away) 7% since 1 January 2026 (Steueränderungsgesetz 2025, § 12 Abs. 2 Nr. 15 UStG, 2026-01-01).\nNext step: let the owner move one guess (whatif_what_changed), rehearse it with imagined customers (whatif_rehearsal_start), or plan a small test (whatif_plan_test).\nNext calls (whatif_what_changed, whatif_rehearsal_start, whatif_plan_test, whatif_log_result) can take `state` = this result's state or the report link instead of template and inputs.\n\nOpen the visual report: https://rev-bloom-duke-researchers.trycloudflare.com/r#TVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Zq2M28z-i92cMWRMkh4eB7lRAE-GA0St0q2yBwMNbnFEHswZCIeK28z1ob64jVOQS0SZ5MIG4WKw4Wx3mvOGRrUpQegxwROxDLVXEGpXYxgSgWFbm2rs8Dyt502E8gropF8Q914wkqry9Qa5qWvMfoMcmNmihjueTQGdxRyqeAebfG0MCBwzpHYzGSAu5V_fPFnl1o0AaXOJuFHN4z3TLOku6tVYmZmj2yoExENkxsLs7q4Ab2-_lNfQuW3HmsCmbxI7HB2dTeXp6jqQ08vL4Q0NNPaUFL86A2eHektFO6hcMf\nCoaching: Share the link, explain break-even in one sentence, then ask which guess the owner feels least sure about."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "analysis": {
+          "id": "a-23817848",
+          "template": "price_change",
+          "lang": "en",
+          "facts": [
+            {
+              "id": "vat_drinks_19",
+              "label": "VAT on drinks, milk drinks drunk in the café included",
+              "value": "19%",
+              "source": "§ 12 Abs. 1 und Abs. 2 Nr. 15 UStG",
+              "url": "https://www.gesetze-im-internet.de/ustg_1980/__12.html",
+              "asOf": "2026-01-01"
+            },
+            {
+              "id": "vat_milk_takeaway_7",
+              "label": "VAT on milk drinks sold to take away with at least 75% milk (not plant drinks such as oat); an older rule, unchanged in 2026",
+              "value": "7%",
+              "source": "§ 12 Abs. 2 Nr. 1 UStG mit Anlage 2 Nr. 35",
+              "url": "https://www.gesetze-im-internet.de/ustg_1980/anlage_2.html",
+              "asOf": "2026-01-01"
+            },
+            {
+              "id": "vat_food_7",
+              "label": "VAT on food in cafés and restaurants (eat-in and take-away)",
+              "value": "7% since 1 January 2026",
+              "source": "Steueränderungsgesetz 2025, § 12 Abs. 2 Nr. 15 UStG",
+              "url": "https://www.gesetze-im-internet.de/ustg_1980/__12.html",
+              "asOf": "2026-01-01"
+            }
+          ],
+          "createdAt": "2026-10-17T13:51:39.346Z",
+          "business": "Café Morgenrot, Kreuzberg",
+          "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+          "demo": false,
+          "currency": "EUR",
+          "inputs": [
+            {
+              "key": "kiez",
+              "label": "Your Kiez (neighbourhood in Berlin)",
+              "value": "Kreuzberg",
+              "unit": "text",
+              "source": "owner",
+              "kind": "fact",
+              "why": "The imagined customers in the rehearsal come from your Kiez. It does not change the money sums."
+            },
+            {
+              "key": "item",
+              "label": "Item",
+              "value": "cappuccino",
+              "unit": "text",
+              "source": "owner",
+              "kind": "choice",
+              "why": "One item at a time keeps the effect easy to see and to measure."
+            },
+            {
+              "key": "current_price",
+              "label": "Current price (what customers pay)",
+              "value": 3.5,
+              "unit": "EUR",
+              "source": "owner",
+              "kind": "fact",
+              "why": "The starting point for the comparison."
+            },
+            {
+              "key": "new_price",
+              "label": "New price (what customers would pay)",
+              "value": 3.8,
+              "unit": "EUR",
+              "source": "owner",
+              "kind": "choice",
+              "why": "The change you want to rehearse."
+            },
+            {
+              "key": "units_per_week",
+              "label": "Sales per week now",
+              "value": 450,
+              "unit": "units/week",
+              "source": "owner",
+              "kind": "fact",
+              "why": "The effect of a few cents depends on how many you sell."
+            },
+            {
+              "key": "unit_cost",
+              "label": "Ingredients and packaging per item",
+              "value": 0.85,
+              "unit": "EUR",
+              "source": "owner",
+              "kind": "fact",
+              "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+            },
+            {
+              "key": "vat_rate",
+              "label": "VAT on this item",
+              "value": 0.19,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "fact",
+              "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+              "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+              "filledBy": "fallback"
+            },
+            {
+              "key": "volume_low",
+              "label": "Change in sales: cautious guess",
+              "value": -0.12,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "assumption",
+              "why": "Price changes lose some sales. A range keeps the guess honest."
+            },
+            {
+              "key": "volume_likely",
+              "label": "Change in sales: your likely guess",
+              "value": -0.05,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "assumption",
+              "why": "This is the guess the test will check."
+            },
+            {
+              "key": "volume_high",
+              "label": "Change in sales: optimistic guess",
+              "value": 0,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "assumption",
+              "why": "Shows the best case."
+            },
+            {
+              "key": "test_days",
+              "label": "Length of the test (days)",
+              "value": 14,
+              "unit": "days",
+              "source": "owner",
+              "kind": "choice",
+              "why": "Long enough for regulars to react, short enough to change back."
+            }
+          ],
+          "current": [
+            {
+              "id": "units_per_week",
+              "label": "Sales per week now",
+              "value": 450,
+              "unit": "units/week",
+              "source": "owner",
+              "maths": "cappuccino: 450 a week"
+            },
+            {
+              "id": "margin_now",
+              "label": "What each sale leaves you now, after VAT and ingredients",
+              "value": 2.09,
+              "unit": "EUR",
+              "source": "assumption",
+              "maths": "€3.50 ÷ 1.19 (without 19% VAT) − €0.85 ingredients = €2.09 per cappuccino"
+            },
+            {
+              "id": "margin_new",
+              "label": "What each sale would leave at the new price, after VAT and ingredients",
+              "value": 2.34,
+              "unit": "EUR",
+              "source": "assumption",
+              "maths": "€3.80 ÷ 1.19 (without 19% VAT) − €0.85 ingredients = €2.34 per cappuccino"
+            },
+            {
+              "id": "left_week_now",
+              "label": "Left after VAT and ingredients per week, now",
+              "value": 940.5,
+              "unit": "EUR/week",
+              "source": "assumption",
+              "maths": "450 × €2.09 = €940.50 a week"
+            },
+            {
+              "id": "left_month_now",
+              "label": "Left after VAT and ingredients per month, now",
+              "value": 4072.37,
+              "unit": "EUR/month",
+              "source": "assumption",
+              "maths": "€940.50 × 4.33 weeks = €4,072.37 a month"
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "cautious",
+              "label": "Cautious",
+              "assumptionLabel": "Change in sales",
+              "assumptionValue": -0.12,
+              "assumptionUnit": "share",
+              "assumptionText": "sales 12% lower",
+              "figures": [
+                {
+                  "id": "volume_change",
+                  "label": "Change in sales",
+                  "value": -0.12,
+                  "unit": "share",
+                  "source": "assumption",
+                  "maths": "Your cautious guess: sales change by −12%. Nobody knows this yet; the test measures it."
+                },
+                {
+                  "id": "units_week",
+                  "label": "Sales per week at the new price",
+                  "value": 396,
+                  "unit": "units/week",
+                  "source": "calculation",
+                  "maths": "450 × (100% − 12%) = 396 a week"
+                },
+                {
+                  "id": "left_week",
+                  "label": "Left after VAT and ingredients per week, new price",
+                  "value": 926.64,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "396 × €2.34 = €926.64 a week"
+                },
+                {
+                  "id": "delta_week",
+                  "label": "Difference per week",
+                  "value": -13.86,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "€926.64 − €940.50 now = −€13.86 a week"
+                },
+                {
+                  "id": "delta_test",
+                  "label": "Difference over the test (14 days)",
+                  "value": -27.72,
+                  "unit": "EUR",
+                  "source": "calculation",
+                  "maths": "−€13.86 a week × 14 days ÷ 7 = −€27.72"
+                },
+                {
+                  "id": "delta_month",
+                  "label": "Difference per month if you keep it",
+                  "value": -60.01,
+                  "unit": "EUR/month",
+                  "source": "calculation",
+                  "maths": "−€13.86 a week × 4.33 weeks = −€60.01 a month"
+                }
+              ],
+              "netTest": -27.72,
+              "netMonth": -60.01,
+              "plain": "If sales change by −12% (about 396 a week), you make €14 less a week than now: €28 less over the 14-day test and about €60 a month."
+            },
+            {
+              "id": "expected",
+              "label": "Expected",
+              "assumptionLabel": "Change in sales",
+              "assumptionValue": -0.05,
+              "assumptionUnit": "share",
+              "assumptionText": "sales 5% lower",
+              "figures": [
+                {
+                  "id": "volume_change",
+                  "label": "Change in sales",
+                  "value": -0.05,
+                  "unit": "share",
+                  "source": "assumption",
+                  "maths": "Your likely guess: sales change by −5%. Nobody knows this yet; the test measures it."
+                },
+                {
+                  "id": "units_week",
+                  "label": "Sales per week at the new price",
+                  "value": 427.5,
+                  "unit": "units/week",
+                  "source": "calculation",
+                  "maths": "450 × (100% − 5%) = 427.5 a week"
+                },
+                {
+                  "id": "left_week",
+                  "label": "Left after VAT and ingredients per week, new price",
+                  "value": 1000.35,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "427.5 × €2.34 = €1,000.35 a week"
+                },
+                {
+                  "id": "delta_week",
+                  "label": "Difference per week",
+                  "value": 59.85,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "€1,000.35 − €940.50 now = +€59.85 a week"
+                },
+                {
+                  "id": "delta_test",
+                  "label": "Difference over the test (14 days)",
+                  "value": 119.7,
+                  "unit": "EUR",
+                  "source": "calculation",
+                  "maths": "+€59.85 a week × 14 days ÷ 7 = +€119.70"
+                },
+                {
+                  "id": "delta_month",
+                  "label": "Difference per month if you keep it",
+                  "value": 259.15,
+                  "unit": "EUR/month",
+                  "source": "calculation",
+                  "maths": "+€59.85 a week × 4.33 weeks = +€259.15 a month"
+                }
+              ],
+              "netTest": 119.7,
+              "netMonth": 259.15,
+              "plain": "If sales change by −5% (about 428 a week), you make €60 more a week than now: €120 over the 14-day test and about €259 a month."
+            },
+            {
+              "id": "optimistic",
+              "label": "Optimistic",
+              "assumptionLabel": "Change in sales",
+              "assumptionValue": 0,
+              "assumptionUnit": "share",
+              "assumptionText": "sales unchanged",
+              "figures": [
+                {
+                  "id": "volume_change",
+                  "label": "Change in sales",
+                  "value": 0,
+                  "unit": "share",
+                  "source": "assumption",
+                  "maths": "Your optimistic guess: sales change by 0%. Nobody knows this yet; the test measures it."
+                },
+                {
+                  "id": "units_week",
+                  "label": "Sales per week at the new price",
+                  "value": 450,
+                  "unit": "units/week",
+                  "source": "calculation",
+                  "maths": "450 × (100% + 0%) = 450 a week"
+                },
+                {
+                  "id": "left_week",
+                  "label": "Left after VAT and ingredients per week, new price",
+                  "value": 1053,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "450 × €2.34 = €1,053.00 a week"
+                },
+                {
+                  "id": "delta_week",
+                  "label": "Difference per week",
+                  "value": 112.5,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "€1,053.00 − €940.50 now = +€112.50 a week"
+                },
+                {
+                  "id": "delta_test",
+                  "label": "Difference over the test (14 days)",
+                  "value": 225,
+                  "unit": "EUR",
+                  "source": "calculation",
+                  "maths": "+€112.50 a week × 14 days ÷ 7 = +€225.00"
+                },
+                {
+                  "id": "delta_month",
+                  "label": "Difference per month if you keep it",
+                  "value": 487.13,
+                  "unit": "EUR/month",
+                  "source": "calculation",
+                  "maths": "+€112.50 a week × 4.33 weeks = +€487.13 a month"
+                }
+              ],
+              "netTest": 225,
+              "netMonth": 487.13,
+              "plain": "If sales change by 0% (about 450 a week), you make €113 more a week than now: €225 over the 14-day test and about €487 a month."
+            }
+          ],
+          "breakEven": {
+            "value": -0.1068,
+            "unit": "share",
+            "label": "Drop in sales you can absorb before you are worse off",
+            "maths": "€2.09 now ÷ €2.34 at the new price − 1 = −10.7% change in sales. 450 × €2.09 ÷ €2.34 = 401.9 a week keeps you level, so you can sell up to 48 fewer a week.",
+            "plain": "At €3.80 each cappuccino leaves €2.34 after VAT and ingredients instead of €2.09, so you can sell up to 48 fewer a week (10.7% of 450) and still make as much as now. Lose more than that and you are worse off.",
+            "reachable": true
+          },
+          "worstCase": {
+            "value": -27.72,
+            "maths": "Cautious guess: 396 a week × €2.34 = €926.64; €926.64 − €940.50 now = −€13.86 a week; × 14 days ÷ 7 = −€27.72",
+            "plain": "If sales fell by 12% (your cautious guess), the 14-day test would leave you €28 worse off than keeping the old price. You can change the price back at any time, so that is what is at stake."
+          },
+          "biggestUncertainty": {
+            "key": "volume_likely",
+            "label": "Change in sales (−12% to 0%)",
+            "swing": 252.72,
+            "plain": "Whether sales change by −12% or 0% changes the test result by €253, more than anything else. That is what your test should measure: count the cappuccino sales each week.",
+            "ranking": [
+              {
+                "key": "volume_likely",
+                "label": "Change in sales (−12% to 0%)",
+                "swing": 252.72
+              },
+              {
+                "key": "unit_cost",
+                "label": "Ingredients per cappuccino (€0.72 to €0.98)",
+                "swing": 11.7
+              }
+            ]
+          },
+          "sensitivity": {
+            "key": "volume_likely",
+            "label": "Change in sales",
+            "unit": "share",
+            "current": -0.05,
+            "breakEvenX": -0.1068,
+            "points": [
+              {
+                "x": -0.3,
+                "netTest": -406.8,
+                "netMonth": -880.72,
+                "explanation": "If sales change by −30% (about 315 a week): 315 × €2.34 = €737.10 a week left after VAT and ingredients, against €940.50 now. That is −€203.40 a week, −€406.80 over 14 days and about −€880.72 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -526.5
+              },
+              {
+                "x": -0.29,
+                "netTest": -385.74,
+                "netMonth": -835.13,
+                "explanation": "If sales change by −29% (about 320 a week): 319.5 × €2.34 = €747.63 a week left after VAT and ingredients, against €940.50 now. That is −€192.87 a week, −€385.74 over 14 days and about −€835.13 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -505.44
+              },
+              {
+                "x": -0.28,
+                "netTest": -364.68,
+                "netMonth": -789.53,
+                "explanation": "If sales change by −28% (about 324 a week): 324 × €2.34 = €758.16 a week left after VAT and ingredients, against €940.50 now. That is −€182.34 a week, −€364.68 over 14 days and about −€789.53 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -484.38
+              },
+              {
+                "x": -0.27,
+                "netTest": -343.62,
+                "netMonth": -743.94,
+                "explanation": "If sales change by −27% (about 329 a week): 328.5 × €2.34 = €768.69 a week left after VAT and ingredients, against €940.50 now. That is −€171.81 a week, −€343.62 over 14 days and about −€743.94 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -463.32
+              },
+              {
+                "x": -0.26,
+                "netTest": -322.56,
+                "netMonth": -698.34,
+                "explanation": "If sales change by −26% (about 333 a week): 333 × €2.34 = €779.22 a week left after VAT and ingredients, against €940.50 now. That is −€161.28 a week, −€322.56 over 14 days and about −€698.34 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -442.26
+              },
+              {
+                "x": -0.25,
+                "netTest": -301.5,
+                "netMonth": -652.75,
+                "explanation": "If sales change by −25% (about 338 a week): 337.5 × €2.34 = €789.75 a week left after VAT and ingredients, against €940.50 now. That is −€150.75 a week, −€301.50 over 14 days and about −€652.75 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -421.2
+              },
+              {
+                "x": -0.24,
+                "netTest": -280.44,
+                "netMonth": -607.15,
+                "explanation": "If sales change by −24% (about 342 a week): 342 × €2.34 = €800.28 a week left after VAT and ingredients, against €940.50 now. That is −€140.22 a week, −€280.44 over 14 days and about −€607.15 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -400.14
+              },
+              {
+                "x": -0.23,
+                "netTest": -259.38,
+                "netMonth": -561.56,
+                "explanation": "If sales change by −23% (about 347 a week): 346.5 × €2.34 = €810.81 a week left after VAT and ingredients, against €940.50 now. That is −€129.69 a week, −€259.38 over 14 days and about −€561.56 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -379.08
+              },
+              {
+                "x": -0.22,
+                "netTest": -238.32,
+                "netMonth": -515.96,
+                "explanation": "If sales change by −22% (about 351 a week): 351 × €2.34 = €821.34 a week left after VAT and ingredients, against €940.50 now. That is −€119.16 a week, −€238.32 over 14 days and about −€515.96 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -358.02
+              },
+              {
+                "x": -0.21,
+                "netTest": -217.26,
+                "netMonth": -470.37,
+                "explanation": "If sales change by −21% (about 356 a week): 355.5 × €2.34 = €831.87 a week left after VAT and ingredients, against €940.50 now. That is −€108.63 a week, −€217.26 over 14 days and about −€470.37 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -336.96
+              },
+              {
+                "x": -0.2,
+                "netTest": -196.2,
+                "netMonth": -424.77,
+                "explanation": "If sales change by −20% (about 360 a week): 360 × €2.34 = €842.40 a week left after VAT and ingredients, against €940.50 now. That is −€98.10 a week, −€196.20 over 14 days and about −€424.77 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -315.9
+              },
+              {
+                "x": -0.19,
+                "netTest": -175.14,
+                "netMonth": -379.18,
+                "explanation": "If sales change by −19% (about 365 a week): 364.5 × €2.34 = €852.93 a week left after VAT and ingredients, against €940.50 now. That is −€87.57 a week, −€175.14 over 14 days and about −€379.18 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -294.84
+              },
+              {
+                "x": -0.18,
+                "netTest": -154.08,
+                "netMonth": -333.58,
+                "explanation": "If sales change by −18% (about 369 a week): 369 × €2.34 = €863.46 a week left after VAT and ingredients, against €940.50 now. That is −€77.04 a week, −€154.08 over 14 days and about −€333.58 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -273.78
+              },
+              {
+                "x": -0.17,
+                "netTest": -133.02,
+                "netMonth": -287.99,
+                "explanation": "If sales change by −17% (about 374 a week): 373.5 × €2.34 = €873.99 a week left after VAT and ingredients, against €940.50 now. That is −€66.51 a week, −€133.02 over 14 days and about −€287.99 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -252.72
+              },
+              {
+                "x": -0.16,
+                "netTest": -111.96,
+                "netMonth": -242.39,
+                "explanation": "If sales change by −16% (about 378 a week): 378 × €2.34 = €884.52 a week left after VAT and ingredients, against €940.50 now. That is −€55.98 a week, −€111.96 over 14 days and about −€242.39 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -231.66
+              },
+              {
+                "x": -0.15,
+                "netTest": -90.9,
+                "netMonth": -196.8,
+                "explanation": "If sales change by −15% (about 383 a week): 382.5 × €2.34 = €895.05 a week left after VAT and ingredients, against €940.50 now. That is −€45.45 a week, −€90.90 over 14 days and about −€196.80 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -210.6
+              },
+              {
+                "x": -0.14,
+                "netTest": -69.84,
+                "netMonth": -151.2,
+                "explanation": "If sales change by −14% (about 387 a week): 387 × €2.34 = €905.58 a week left after VAT and ingredients, against €940.50 now. That is −€34.92 a week, −€69.84 over 14 days and about −€151.20 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -189.54
+              },
+              {
+                "x": -0.13,
+                "netTest": -48.78,
+                "netMonth": -105.61,
+                "explanation": "If sales change by −13% (about 392 a week): 391.5 × €2.34 = €916.11 a week left after VAT and ingredients, against €940.50 now. That is −€24.39 a week, −€48.78 over 14 days and about −€105.61 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -168.48
+              },
+              {
+                "x": -0.12,
+                "netTest": -27.72,
+                "netMonth": -60.01,
+                "explanation": "If sales change by −12% (about 396 a week): 396 × €2.34 = €926.64 a week left after VAT and ingredients, against €940.50 now. That is −€13.86 a week, −€27.72 over 14 days and about −€60.01 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -147.42
+              },
+              {
+                "x": -0.11,
+                "netTest": -6.66,
+                "netMonth": -14.42,
+                "explanation": "If sales change by −11% (about 401 a week): 400.5 × €2.34 = €937.17 a week left after VAT and ingredients, against €940.50 now. That is −€3.33 a week, −€6.66 over 14 days and about −€14.42 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -126.36
+              },
+              {
+                "x": -0.1,
+                "netTest": 14.4,
+                "netMonth": 31.18,
+                "explanation": "If sales change by −10% (about 405 a week): 405 × €2.34 = €947.70 a week left after VAT and ingredients, against €940.50 now. That is +€7.20 a week, +€14.40 over 14 days and about +€31.18 a month. Better off than today, or level.",
+                "vsGuess": -105.3
+              },
+              {
+                "x": -0.09,
+                "netTest": 35.46,
+                "netMonth": 76.77,
+                "explanation": "If sales change by −9% (about 410 a week): 409.5 × €2.34 = €958.23 a week left after VAT and ingredients, against €940.50 now. That is +€17.73 a week, +€35.46 over 14 days and about +€76.77 a month. Better off than today, or level.",
+                "vsGuess": -84.24
+              },
+              {
+                "x": -0.08,
+                "netTest": 56.52,
+                "netMonth": 122.37,
+                "explanation": "If sales change by −8% (about 414 a week): 414 × €2.34 = €968.76 a week left after VAT and ingredients, against €940.50 now. That is +€28.26 a week, +€56.52 over 14 days and about +€122.37 a month. Better off than today, or level.",
+                "vsGuess": -63.18
+              },
+              {
+                "x": -0.07,
+                "netTest": 77.58,
+                "netMonth": 167.96,
+                "explanation": "If sales change by −7% (about 419 a week): 418.5 × €2.34 = €979.29 a week left after VAT and ingredients, against €940.50 now. That is +€38.79 a week, +€77.58 over 14 days and about +€167.96 a month. Better off than today, or level.",
+                "vsGuess": -42.12
+              },
+              {
+                "x": -0.06,
+                "netTest": 98.64,
+                "netMonth": 213.56,
+                "explanation": "If sales change by −6% (about 423 a week): 423 × €2.34 = €989.82 a week left after VAT and ingredients, against €940.50 now. That is +€49.32 a week, +€98.64 over 14 days and about +€213.56 a month. Better off than today, or level.",
+                "vsGuess": -21.06
+              },
+              {
+                "x": -0.05,
+                "netTest": 119.7,
+                "netMonth": 259.15,
+                "explanation": "If sales change by −5% (about 428 a week): 427.5 × €2.34 = €1,000.35 a week left after VAT and ingredients, against €940.50 now. That is +€59.85 a week, +€119.70 over 14 days and about +€259.15 a month. Better off than today, or level.",
+                "vsGuess": 0
+              },
+              {
+                "x": -0.04,
+                "netTest": 140.76,
+                "netMonth": 304.75,
+                "explanation": "If sales change by −4% (about 432 a week): 432 × €2.34 = €1,010.88 a week left after VAT and ingredients, against €940.50 now. That is +€70.38 a week, +€140.76 over 14 days and about +€304.75 a month. Better off than today, or level.",
+                "vsGuess": 21.06
+              },
+              {
+                "x": -0.03,
+                "netTest": 161.82,
+                "netMonth": 350.34,
+                "explanation": "If sales change by −3% (about 437 a week): 436.5 × €2.34 = €1,021.41 a week left after VAT and ingredients, against €940.50 now. That is +€80.91 a week, +€161.82 over 14 days and about +€350.34 a month. Better off than today, or level.",
+                "vsGuess": 42.12
+              },
+              {
+                "x": -0.02,
+                "netTest": 182.88,
+                "netMonth": 395.94,
+                "explanation": "If sales change by −2% (about 441 a week): 441 × €2.34 = €1,031.94 a week left after VAT and ingredients, against €940.50 now. That is +€91.44 a week, +€182.88 over 14 days and about +€395.94 a month. Better off than today, or level.",
+                "vsGuess": 63.18
+              },
+              {
+                "x": -0.01,
+                "netTest": 203.94,
+                "netMonth": 441.53,
+                "explanation": "If sales change by −1% (about 446 a week): 445.5 × €2.34 = €1,042.47 a week left after VAT and ingredients, against €940.50 now. That is +€101.97 a week, +€203.94 over 14 days and about +€441.53 a month. Better off than today, or level.",
+                "vsGuess": 84.24
+              },
+              {
+                "x": 0,
+                "netTest": 225,
+                "netMonth": 487.13,
+                "explanation": "If sales change by 0% (about 450 a week): 450 × €2.34 = €1,053.00 a week left after VAT and ingredients, against €940.50 now. That is +€112.50 a week, +€225.00 over 14 days and about +€487.13 a month. Better off than today, or level.",
+                "vsGuess": 105.3
+              },
+              {
+                "x": 0.01,
+                "netTest": 246.06,
+                "netMonth": 532.72,
+                "explanation": "If sales change by +1% (about 455 a week): 454.5 × €2.34 = €1,063.53 a week left after VAT and ingredients, against €940.50 now. That is +€123.03 a week, +€246.06 over 14 days and about +€532.72 a month. Better off than today, or level.",
+                "vsGuess": 126.36
+              },
+              {
+                "x": 0.02,
+                "netTest": 267.12,
+                "netMonth": 578.31,
+                "explanation": "If sales change by +2% (about 459 a week): 459 × €2.34 = €1,074.06 a week left after VAT and ingredients, against €940.50 now. That is +€133.56 a week, +€267.12 over 14 days and about +€578.31 a month. Better off than today, or level.",
+                "vsGuess": 147.42
+              },
+              {
+                "x": 0.03,
+                "netTest": 288.18,
+                "netMonth": 623.91,
+                "explanation": "If sales change by +3% (about 464 a week): 463.5 × €2.34 = €1,084.59 a week left after VAT and ingredients, against €940.50 now. That is +€144.09 a week, +€288.18 over 14 days and about +€623.91 a month. Better off than today, or level.",
+                "vsGuess": 168.48
+              },
+              {
+                "x": 0.04,
+                "netTest": 309.24,
+                "netMonth": 669.5,
+                "explanation": "If sales change by +4% (about 468 a week): 468 × €2.34 = €1,095.12 a week left after VAT and ingredients, against €940.50 now. That is +€154.62 a week, +€309.24 over 14 days and about +€669.50 a month. Better off than today, or level.",
+                "vsGuess": 189.54
+              },
+              {
+                "x": 0.05,
+                "netTest": 330.3,
+                "netMonth": 715.1,
+                "explanation": "If sales change by +5% (about 473 a week): 472.5 × €2.34 = €1,105.65 a week left after VAT and ingredients, against €940.50 now. That is +€165.15 a week, +€330.30 over 14 days and about +€715.10 a month. Better off than today, or level.",
+                "vsGuess": 210.6
+              }
+            ],
+            "perStep": {
+              "netTest": 21.06,
+              "netMonth": 45.59,
+              "plain": "Each percentage point of sales is about 4.5 sales a week, which moves the test result by about €21 and the monthly result by about €46."
+            }
+          },
+          "lessons": [
+            "A rise of 30 cents looks small, but ingredients cost the same: after 19% VAT, €0.25 of it is extra margin on every sale. Each cappuccino leaves €2.34 instead of €2.09, 12.0% more per sale.",
+            "Break-even is the number to beat: you can lose up to 48 sales a week (10.7%) before you are worse off. Your likely guess is −5% (about 23 fewer), inside that. The test checks the guess.",
+            "At your cautious guess (−12%) the 14-day test costs about €28. A price can be changed back the next morning, which makes this one of the cheapest things to test.",
+            "The number that matters most: whether sales change by −12% or 0% changes the test result by €253, more than anything else. That is what your test should measure: count the cappuccino sales each week.",
+            "This method works for any decision: write down your numbers, work out the break-even, then run a small test with a limit to check the one guess that matters most."
+          ],
+          "nextQuestions": [
+            "Which VAT rate is on your cappuccino? What-IF used 19%, the rate for drinks, milk drinks drunk in the café included. Food is 7%. Milk drinks with at least 75% milk sold to take away are 7% too, but only that take-away share. Your Steuerberater can confirm.",
+            "Look at the last 4 weeks in your till's item report: is 450 a week steady, or does it swing? A steady baseline makes the test easier to read.",
+            "What would regulars buy instead? If a cheaper drink's sales rise during the test, people are trading down rather than leaving."
+          ],
+          "warnings": [
+            "At your cautious guess (−12%) the new price earns less than today (break-even is −10.7%). That is the risk the test checks."
+          ]
+        },
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "state": "TVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Zq2M28z-i92cMWRMkh4eB7lRAE-GA0St0q2yBwMNbnFEHswZCIeK28z1ob64jVOQS0SZ5MIG4WKw4Wx3mvOGRrUpQegxwROxDLVXEGpXYxgSgWFbm2rs8Dyt502E8gropF8Q914wkqry9Qa5qWvMfoMcmNmihjueTQGdxRyqeAebfG0MCBwzpHYzGSAu5V_fPFnl1o0AaXOJuFHN4z3TLOku6tVYmZmj2yoExENkxsLs7q4Ab2-_lNfQuW3HmsCmbxI7HB2dTeXp6jqQ08vL4Q0NNPaUFL86A2eHektFO6hcMf",
+        "report_url": "https://rev-bloom-duke-researchers.trycloudflare.com/r#TVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Zq2M28z-i92cMWRMkh4eB7lRAE-GA0St0q2yBwMNbnFEHswZCIeK28z1ob64jVOQS0SZ5MIG4WKw4Wx3mvOGRrUpQegxwROxDLVXEGpXYxgSgWFbm2rs8Dyt502E8gropF8Q914wkqry9Qa5qWvMfoMcmNmihjueTQGdxRyqeAebfG0MCBwzpHYzGSAu5V_fPFnl1o0AaXOJuFHN4z3TLOku6tVYmZmj2yoExENkxsLs7q4Ab2-_lNfQuW3HmsCmbxI7HB2dTeXp6jqQ08vL4Q0NNPaUFL86A2eHektFO6hcMf"
+      }
+    },
+    "error": null,
+    "ms": 346
+  },
+  {
+    "at": "2026-10-17T13:52:13.561Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_what_changed",
+    "arguments": {
+      "state": "TVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Zq2M28z-i92cMWRMkh4eB7lRAE-GA0St0q2yBwMNbnFEHswZCIeK28z1ob64jVOQS0SZ5MIG4WKw4Wx3mvOGRrUpQegxwROxDLVXEGpXYxgSgWFbm2rs8Dyt502E8gropF8Q914wkqry9Qa5qWvMfoMcmNmihjueTQGdxRyqeAebfG0MCBwzpHYzGSAu5V_fPFnl1o0AaXOJuFHN4z3TLOku6tVYmZmj2yoExENkxsLs7q4Ab2-_lNfQuW3HmsCmbxI7HB2dTeXp6jqQ08vL4Q0NNPaUFL86A2eHektFO6hcMf",
+      "after": {
+        "volume_likely": -0.08
+      },
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Changed: Change in sales: your likely guess −5% → −8%.\nWhy the result moved:\n- You changed your likely guess from −5% to −8%. Each sale at the new price leaves €2.34, so the expected test result goes from +€120 to +€57. Break-even stays at −10.7%: it depends on prices and costs, not on your guess.\nExpected result now: +€56.52 over the test, +€122 a month after it.\nBreak-even now: At €3.80 each cappuccino leaves €2.34 after VAT and ingredients instead of €2.09, so you can sell up to 48 fewer a week (10.7% of 450) and still make as much as now. Lose more than that and you are worse off.\n\nOpen the visual report: https://rev-bloom-duke-researchers.trycloudflare.com/r#RVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Y0u5n3Gb03e9iCKDkkHHyvEoIAH4xGqVtlGwQOxvqcIog9GBIRr5X3WWtjHbE6h4A2yZMJxM1ixcHiOO8Vh2xNitJjkCNiB2K5Ks6g1C4mEMWiItfW9XlA2ZsO-wnEVbEoyPuPuvEEldcXqDVNS95j9JjkRk2UsVxy6AzuKOVTwLxbY2jgwGGdo7EYSQH3qv75Ys8uNGiDS5zNQg7vmW4ZZ0n31qrETM0eWVAmIhsmNhdndXAD-_38pr4FS-48VgWz-JHY4Gxqby_P0dQGHl5fCOjpp7SgpXlQG7w7Utop3cLhDw\nCoaching: Ask the owner what this tells them about which number matters most."
+        }
+      ],
+      "structuredContent": {
+        "lang": "en",
+        "change": {
+          "changes": [
+            {
+              "key": "volume_likely",
+              "label": "Change in sales: your likely guess",
+              "from": -0.05,
+              "to": -0.08,
+              "fromText": "−5%",
+              "toText": "−8%"
+            }
+          ],
+          "effects": [
+            {
+              "id": "break_even",
+              "label": "Drop in sales you can absorb before you are worse off",
+              "from": -0.1068,
+              "to": -0.1068,
+              "fromText": "−10.7%",
+              "toText": "−10.7%"
+            },
+            {
+              "id": "net_test_expected",
+              "label": "Expected result over the test",
+              "from": 119.7,
+              "to": 56.52,
+              "fromText": "+€120",
+              "toText": "+€57"
+            },
+            {
+              "id": "net_month_expected",
+              "label": "Expected result per month if you keep it",
+              "from": 259.15,
+              "to": 122.37,
+              "fromText": "+€259 a month",
+              "toText": "+€122 a month"
+            },
+            {
+              "id": "worst_case",
+              "label": "Result at your cautious guess",
+              "from": -27.72,
+              "to": -27.72,
+              "fromText": "−€28",
+              "toText": "−€28"
+            }
+          ],
+          "plain": [
+            "You changed your likely guess from −5% to −8%. Each sale at the new price leaves €2.34, so the expected test result goes from +€120 to +€57. Break-even stays at −10.7%: it depends on prices and costs, not on your guess."
+          ]
+        },
+        "analysis": {
+          "id": "a-7a63458d",
+          "template": "price_change",
+          "lang": "en",
+          "facts": [
+            {
+              "id": "vat_drinks_19",
+              "label": "VAT on drinks, milk drinks drunk in the café included",
+              "value": "19%",
+              "source": "§ 12 Abs. 1 und Abs. 2 Nr. 15 UStG",
+              "url": "https://www.gesetze-im-internet.de/ustg_1980/__12.html",
+              "asOf": "2026-01-01"
+            },
+            {
+              "id": "vat_milk_takeaway_7",
+              "label": "VAT on milk drinks sold to take away with at least 75% milk (not plant drinks such as oat); an older rule, unchanged in 2026",
+              "value": "7%",
+              "source": "§ 12 Abs. 2 Nr. 1 UStG mit Anlage 2 Nr. 35",
+              "url": "https://www.gesetze-im-internet.de/ustg_1980/anlage_2.html",
+              "asOf": "2026-01-01"
+            },
+            {
+              "id": "vat_food_7",
+              "label": "VAT on food in cafés and restaurants (eat-in and take-away)",
+              "value": "7% since 1 January 2026",
+              "source": "Steueränderungsgesetz 2025, § 12 Abs. 2 Nr. 15 UStG",
+              "url": "https://www.gesetze-im-internet.de/ustg_1980/__12.html",
+              "asOf": "2026-01-01"
+            }
+          ],
+          "createdAt": "2026-10-17T13:52:13.473Z",
+          "business": "Café Morgenrot, Kreuzberg",
+          "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+          "demo": false,
+          "currency": "EUR",
+          "inputs": [
+            {
+              "key": "kiez",
+              "label": "Your Kiez (neighbourhood in Berlin)",
+              "value": "Kreuzberg",
+              "unit": "text",
+              "source": "owner",
+              "kind": "fact",
+              "why": "The imagined customers in the rehearsal come from your Kiez. It does not change the money sums."
+            },
+            {
+              "key": "item",
+              "label": "Item",
+              "value": "cappuccino",
+              "unit": "text",
+              "source": "owner",
+              "kind": "choice",
+              "why": "One item at a time keeps the effect easy to see and to measure."
+            },
+            {
+              "key": "current_price",
+              "label": "Current price (what customers pay)",
+              "value": 3.5,
+              "unit": "EUR",
+              "source": "owner",
+              "kind": "fact",
+              "why": "The starting point for the comparison."
+            },
+            {
+              "key": "new_price",
+              "label": "New price (what customers would pay)",
+              "value": 3.8,
+              "unit": "EUR",
+              "source": "owner",
+              "kind": "choice",
+              "why": "The change you want to rehearse."
+            },
+            {
+              "key": "units_per_week",
+              "label": "Sales per week now",
+              "value": 450,
+              "unit": "units/week",
+              "source": "owner",
+              "kind": "fact",
+              "why": "The effect of a few cents depends on how many you sell."
+            },
+            {
+              "key": "unit_cost",
+              "label": "Ingredients and packaging per item",
+              "value": 0.85,
+              "unit": "EUR",
+              "source": "owner",
+              "kind": "fact",
+              "why": "A price rise goes straight to what each sale earns, so this tells you how much margin you gain."
+            },
+            {
+              "key": "vat_rate",
+              "label": "VAT on this item",
+              "value": 0.19,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "fact",
+              "why": "VAT is not yours to keep. What-IF works with prices after VAT, so the margins show what really stays with you.",
+              "note": "You did not say, so What-IF used 19%: drinks are 19%, milk drinks drunk in the café included. Only milk drinks sold to take away with at least 75% milk are 7%, so use 7% only for your take-away share, and ask your Steuerberater. If your item is food, change it to 7%.",
+              "filledBy": "fallback"
+            },
+            {
+              "key": "volume_low",
+              "label": "Change in sales: cautious guess",
+              "value": -0.12,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "assumption",
+              "why": "Price changes lose some sales. A range keeps the guess honest."
+            },
+            {
+              "key": "volume_likely",
+              "label": "Change in sales: your likely guess",
+              "value": -0.08,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "assumption",
+              "why": "This is the guess the test will check."
+            },
+            {
+              "key": "volume_high",
+              "label": "Change in sales: optimistic guess",
+              "value": 0,
+              "unit": "share",
+              "source": "assumption",
+              "kind": "assumption",
+              "why": "Shows the best case."
+            },
+            {
+              "key": "test_days",
+              "label": "Length of the test (days)",
+              "value": 14,
+              "unit": "days",
+              "source": "owner",
+              "kind": "choice",
+              "why": "Long enough for regulars to react, short enough to change back."
+            }
+          ],
+          "current": [
+            {
+              "id": "units_per_week",
+              "label": "Sales per week now",
+              "value": 450,
+              "unit": "units/week",
+              "source": "owner",
+              "maths": "cappuccino: 450 a week"
+            },
+            {
+              "id": "margin_now",
+              "label": "What each sale leaves you now, after VAT and ingredients",
+              "value": 2.09,
+              "unit": "EUR",
+              "source": "assumption",
+              "maths": "€3.50 ÷ 1.19 (without 19% VAT) − €0.85 ingredients = €2.09 per cappuccino"
+            },
+            {
+              "id": "margin_new",
+              "label": "What each sale would leave at the new price, after VAT and ingredients",
+              "value": 2.34,
+              "unit": "EUR",
+              "source": "assumption",
+              "maths": "€3.80 ÷ 1.19 (without 19% VAT) − €0.85 ingredients = €2.34 per cappuccino"
+            },
+            {
+              "id": "left_week_now",
+              "label": "Left after VAT and ingredients per week, now",
+              "value": 940.5,
+              "unit": "EUR/week",
+              "source": "assumption",
+              "maths": "450 × €2.09 = €940.50 a week"
+            },
+            {
+              "id": "left_month_now",
+              "label": "Left after VAT and ingredients per month, now",
+              "value": 4072.37,
+              "unit": "EUR/month",
+              "source": "assumption",
+              "maths": "€940.50 × 4.33 weeks = €4,072.37 a month"
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "cautious",
+              "label": "Cautious",
+              "assumptionLabel": "Change in sales",
+              "assumptionValue": -0.12,
+              "assumptionUnit": "share",
+              "assumptionText": "sales 12% lower",
+              "figures": [
+                {
+                  "id": "volume_change",
+                  "label": "Change in sales",
+                  "value": -0.12,
+                  "unit": "share",
+                  "source": "assumption",
+                  "maths": "Your cautious guess: sales change by −12%. Nobody knows this yet; the test measures it."
+                },
+                {
+                  "id": "units_week",
+                  "label": "Sales per week at the new price",
+                  "value": 396,
+                  "unit": "units/week",
+                  "source": "calculation",
+                  "maths": "450 × (100% − 12%) = 396 a week"
+                },
+                {
+                  "id": "left_week",
+                  "label": "Left after VAT and ingredients per week, new price",
+                  "value": 926.64,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "396 × €2.34 = €926.64 a week"
+                },
+                {
+                  "id": "delta_week",
+                  "label": "Difference per week",
+                  "value": -13.86,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "€926.64 − €940.50 now = −€13.86 a week"
+                },
+                {
+                  "id": "delta_test",
+                  "label": "Difference over the test (14 days)",
+                  "value": -27.72,
+                  "unit": "EUR",
+                  "source": "calculation",
+                  "maths": "−€13.86 a week × 14 days ÷ 7 = −€27.72"
+                },
+                {
+                  "id": "delta_month",
+                  "label": "Difference per month if you keep it",
+                  "value": -60.01,
+                  "unit": "EUR/month",
+                  "source": "calculation",
+                  "maths": "−€13.86 a week × 4.33 weeks = −€60.01 a month"
+                }
+              ],
+              "netTest": -27.72,
+              "netMonth": -60.01,
+              "plain": "If sales change by −12% (about 396 a week), you make €14 less a week than now: €28 less over the 14-day test and about €60 a month."
+            },
+            {
+              "id": "expected",
+              "label": "Expected",
+              "assumptionLabel": "Change in sales",
+              "assumptionValue": -0.08,
+              "assumptionUnit": "share",
+              "assumptionText": "sales 8% lower",
+              "figures": [
+                {
+                  "id": "volume_change",
+                  "label": "Change in sales",
+                  "value": -0.08,
+                  "unit": "share",
+                  "source": "assumption",
+                  "maths": "Your likely guess: sales change by −8%. Nobody knows this yet; the test measures it."
+                },
+                {
+                  "id": "units_week",
+                  "label": "Sales per week at the new price",
+                  "value": 414,
+                  "unit": "units/week",
+                  "source": "calculation",
+                  "maths": "450 × (100% − 8%) = 414 a week"
+                },
+                {
+                  "id": "left_week",
+                  "label": "Left after VAT and ingredients per week, new price",
+                  "value": 968.76,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "414 × €2.34 = €968.76 a week"
+                },
+                {
+                  "id": "delta_week",
+                  "label": "Difference per week",
+                  "value": 28.26,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "€968.76 − €940.50 now = +€28.26 a week"
+                },
+                {
+                  "id": "delta_test",
+                  "label": "Difference over the test (14 days)",
+                  "value": 56.52,
+                  "unit": "EUR",
+                  "source": "calculation",
+                  "maths": "+€28.26 a week × 14 days ÷ 7 = +€56.52"
+                },
+                {
+                  "id": "delta_month",
+                  "label": "Difference per month if you keep it",
+                  "value": 122.37,
+                  "unit": "EUR/month",
+                  "source": "calculation",
+                  "maths": "+€28.26 a week × 4.33 weeks = +€122.37 a month"
+                }
+              ],
+              "netTest": 56.52,
+              "netMonth": 122.37,
+              "plain": "If sales change by −8% (about 414 a week), you make €28 more a week than now: €57 over the 14-day test and about €122 a month."
+            },
+            {
+              "id": "optimistic",
+              "label": "Optimistic",
+              "assumptionLabel": "Change in sales",
+              "assumptionValue": 0,
+              "assumptionUnit": "share",
+              "assumptionText": "sales unchanged",
+              "figures": [
+                {
+                  "id": "volume_change",
+                  "label": "Change in sales",
+                  "value": 0,
+                  "unit": "share",
+                  "source": "assumption",
+                  "maths": "Your optimistic guess: sales change by 0%. Nobody knows this yet; the test measures it."
+                },
+                {
+                  "id": "units_week",
+                  "label": "Sales per week at the new price",
+                  "value": 450,
+                  "unit": "units/week",
+                  "source": "calculation",
+                  "maths": "450 × (100% + 0%) = 450 a week"
+                },
+                {
+                  "id": "left_week",
+                  "label": "Left after VAT and ingredients per week, new price",
+                  "value": 1053,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "450 × €2.34 = €1,053.00 a week"
+                },
+                {
+                  "id": "delta_week",
+                  "label": "Difference per week",
+                  "value": 112.5,
+                  "unit": "EUR/week",
+                  "source": "calculation",
+                  "maths": "€1,053.00 − €940.50 now = +€112.50 a week"
+                },
+                {
+                  "id": "delta_test",
+                  "label": "Difference over the test (14 days)",
+                  "value": 225,
+                  "unit": "EUR",
+                  "source": "calculation",
+                  "maths": "+€112.50 a week × 14 days ÷ 7 = +€225.00"
+                },
+                {
+                  "id": "delta_month",
+                  "label": "Difference per month if you keep it",
+                  "value": 487.13,
+                  "unit": "EUR/month",
+                  "source": "calculation",
+                  "maths": "+€112.50 a week × 4.33 weeks = +€487.13 a month"
+                }
+              ],
+              "netTest": 225,
+              "netMonth": 487.13,
+              "plain": "If sales change by 0% (about 450 a week), you make €113 more a week than now: €225 over the 14-day test and about €487 a month."
+            }
+          ],
+          "breakEven": {
+            "value": -0.1068,
+            "unit": "share",
+            "label": "Drop in sales you can absorb before you are worse off",
+            "maths": "€2.09 now ÷ €2.34 at the new price − 1 = −10.7% change in sales. 450 × €2.09 ÷ €2.34 = 401.9 a week keeps you level, so you can sell up to 48 fewer a week.",
+            "plain": "At €3.80 each cappuccino leaves €2.34 after VAT and ingredients instead of €2.09, so you can sell up to 48 fewer a week (10.7% of 450) and still make as much as now. Lose more than that and you are worse off.",
+            "reachable": true
+          },
+          "worstCase": {
+            "value": -27.72,
+            "maths": "Cautious guess: 396 a week × €2.34 = €926.64; €926.64 − €940.50 now = −€13.86 a week; × 14 days ÷ 7 = −€27.72",
+            "plain": "If sales fell by 12% (your cautious guess), the 14-day test would leave you €28 worse off than keeping the old price. You can change the price back at any time, so that is what is at stake."
+          },
+          "biggestUncertainty": {
+            "key": "volume_likely",
+            "label": "Change in sales (−12% to 0%)",
+            "swing": 252.72,
+            "plain": "Whether sales change by −12% or 0% changes the test result by €253, more than anything else. That is what your test should measure: count the cappuccino sales each week.",
+            "ranking": [
+              {
+                "key": "volume_likely",
+                "label": "Change in sales (−12% to 0%)",
+                "swing": 252.72
+              },
+              {
+                "key": "unit_cost",
+                "label": "Ingredients per cappuccino (€0.72 to €0.98)",
+                "swing": 18.72
+              }
+            ]
+          },
+          "sensitivity": {
+            "key": "volume_likely",
+            "label": "Change in sales",
+            "unit": "share",
+            "current": -0.08,
+            "breakEvenX": -0.1068,
+            "points": [
+              {
+                "x": -0.3,
+                "netTest": -406.8,
+                "netMonth": -880.72,
+                "explanation": "If sales change by −30% (about 315 a week): 315 × €2.34 = €737.10 a week left after VAT and ingredients, against €940.50 now. That is −€203.40 a week, −€406.80 over 14 days and about −€880.72 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -463.32
+              },
+              {
+                "x": -0.29,
+                "netTest": -385.74,
+                "netMonth": -835.13,
+                "explanation": "If sales change by −29% (about 320 a week): 319.5 × €2.34 = €747.63 a week left after VAT and ingredients, against €940.50 now. That is −€192.87 a week, −€385.74 over 14 days and about −€835.13 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -442.26
+              },
+              {
+                "x": -0.28,
+                "netTest": -364.68,
+                "netMonth": -789.53,
+                "explanation": "If sales change by −28% (about 324 a week): 324 × €2.34 = €758.16 a week left after VAT and ingredients, against €940.50 now. That is −€182.34 a week, −€364.68 over 14 days and about −€789.53 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -421.2
+              },
+              {
+                "x": -0.27,
+                "netTest": -343.62,
+                "netMonth": -743.94,
+                "explanation": "If sales change by −27% (about 329 a week): 328.5 × €2.34 = €768.69 a week left after VAT and ingredients, against €940.50 now. That is −€171.81 a week, −€343.62 over 14 days and about −€743.94 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -400.14
+              },
+              {
+                "x": -0.26,
+                "netTest": -322.56,
+                "netMonth": -698.34,
+                "explanation": "If sales change by −26% (about 333 a week): 333 × €2.34 = €779.22 a week left after VAT and ingredients, against €940.50 now. That is −€161.28 a week, −€322.56 over 14 days and about −€698.34 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -379.08
+              },
+              {
+                "x": -0.25,
+                "netTest": -301.5,
+                "netMonth": -652.75,
+                "explanation": "If sales change by −25% (about 338 a week): 337.5 × €2.34 = €789.75 a week left after VAT and ingredients, against €940.50 now. That is −€150.75 a week, −€301.50 over 14 days and about −€652.75 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -358.02
+              },
+              {
+                "x": -0.24,
+                "netTest": -280.44,
+                "netMonth": -607.15,
+                "explanation": "If sales change by −24% (about 342 a week): 342 × €2.34 = €800.28 a week left after VAT and ingredients, against €940.50 now. That is −€140.22 a week, −€280.44 over 14 days and about −€607.15 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -336.96
+              },
+              {
+                "x": -0.23,
+                "netTest": -259.38,
+                "netMonth": -561.56,
+                "explanation": "If sales change by −23% (about 347 a week): 346.5 × €2.34 = €810.81 a week left after VAT and ingredients, against €940.50 now. That is −€129.69 a week, −€259.38 over 14 days and about −€561.56 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -315.9
+              },
+              {
+                "x": -0.22,
+                "netTest": -238.32,
+                "netMonth": -515.96,
+                "explanation": "If sales change by −22% (about 351 a week): 351 × €2.34 = €821.34 a week left after VAT and ingredients, against €940.50 now. That is −€119.16 a week, −€238.32 over 14 days and about −€515.96 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -294.84
+              },
+              {
+                "x": -0.21,
+                "netTest": -217.26,
+                "netMonth": -470.37,
+                "explanation": "If sales change by −21% (about 356 a week): 355.5 × €2.34 = €831.87 a week left after VAT and ingredients, against €940.50 now. That is −€108.63 a week, −€217.26 over 14 days and about −€470.37 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -273.78
+              },
+              {
+                "x": -0.2,
+                "netTest": -196.2,
+                "netMonth": -424.77,
+                "explanation": "If sales change by −20% (about 360 a week): 360 × €2.34 = €842.40 a week left after VAT and ingredients, against €940.50 now. That is −€98.10 a week, −€196.20 over 14 days and about −€424.77 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -252.72
+              },
+              {
+                "x": -0.19,
+                "netTest": -175.14,
+                "netMonth": -379.18,
+                "explanation": "If sales change by −19% (about 365 a week): 364.5 × €2.34 = €852.93 a week left after VAT and ingredients, against €940.50 now. That is −€87.57 a week, −€175.14 over 14 days and about −€379.18 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -231.66
+              },
+              {
+                "x": -0.18,
+                "netTest": -154.08,
+                "netMonth": -333.58,
+                "explanation": "If sales change by −18% (about 369 a week): 369 × €2.34 = €863.46 a week left after VAT and ingredients, against €940.50 now. That is −€77.04 a week, −€154.08 over 14 days and about −€333.58 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -210.6
+              },
+              {
+                "x": -0.17,
+                "netTest": -133.02,
+                "netMonth": -287.99,
+                "explanation": "If sales change by −17% (about 374 a week): 373.5 × €2.34 = €873.99 a week left after VAT and ingredients, against €940.50 now. That is −€66.51 a week, −€133.02 over 14 days and about −€287.99 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -189.54
+              },
+              {
+                "x": -0.16,
+                "netTest": -111.96,
+                "netMonth": -242.39,
+                "explanation": "If sales change by −16% (about 378 a week): 378 × €2.34 = €884.52 a week left after VAT and ingredients, against €940.50 now. That is −€55.98 a week, −€111.96 over 14 days and about −€242.39 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -168.48
+              },
+              {
+                "x": -0.15,
+                "netTest": -90.9,
+                "netMonth": -196.8,
+                "explanation": "If sales change by −15% (about 383 a week): 382.5 × €2.34 = €895.05 a week left after VAT and ingredients, against €940.50 now. That is −€45.45 a week, −€90.90 over 14 days and about −€196.80 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -147.42
+              },
+              {
+                "x": -0.14,
+                "netTest": -69.84,
+                "netMonth": -151.2,
+                "explanation": "If sales change by −14% (about 387 a week): 387 × €2.34 = €905.58 a week left after VAT and ingredients, against €940.50 now. That is −€34.92 a week, −€69.84 over 14 days and about −€151.20 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -126.36
+              },
+              {
+                "x": -0.13,
+                "netTest": -48.78,
+                "netMonth": -105.61,
+                "explanation": "If sales change by −13% (about 392 a week): 391.5 × €2.34 = €916.11 a week left after VAT and ingredients, against €940.50 now. That is −€24.39 a week, −€48.78 over 14 days and about −€105.61 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -105.3
+              },
+              {
+                "x": -0.12,
+                "netTest": -27.72,
+                "netMonth": -60.01,
+                "explanation": "If sales change by −12% (about 396 a week): 396 × €2.34 = €926.64 a week left after VAT and ingredients, against €940.50 now. That is −€13.86 a week, −€27.72 over 14 days and about −€60.01 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -84.24
+              },
+              {
+                "x": -0.11,
+                "netTest": -6.66,
+                "netMonth": -14.42,
+                "explanation": "If sales change by −11% (about 401 a week): 400.5 × €2.34 = €937.17 a week left after VAT and ingredients, against €940.50 now. That is −€3.33 a week, −€6.66 over 14 days and about −€14.42 a month. Worse off than today: the higher margin does not make up for the lost sales.",
+                "vsGuess": -63.18
+              },
+              {
+                "x": -0.1,
+                "netTest": 14.4,
+                "netMonth": 31.18,
+                "explanation": "If sales change by −10% (about 405 a week): 405 × €2.34 = €947.70 a week left after VAT and ingredients, against €940.50 now. That is +€7.20 a week, +€14.40 over 14 days and about +€31.18 a month. Better off than today, or level.",
+                "vsGuess": -42.12
+              },
+              {
+                "x": -0.09,
+                "netTest": 35.46,
+                "netMonth": 76.77,
+                "explanation": "If sales change by −9% (about 410 a week): 409.5 × €2.34 = €958.23 a week left after VAT and ingredients, against €940.50 now. That is +€17.73 a week, +€35.46 over 14 days and about +€76.77 a month. Better off than today, or level.",
+                "vsGuess": -21.06
+              },
+              {
+                "x": -0.08,
+                "netTest": 56.52,
+                "netMonth": 122.37,
+                "explanation": "If sales change by −8% (about 414 a week): 414 × €2.34 = €968.76 a week left after VAT and ingredients, against €940.50 now. That is +€28.26 a week, +€56.52 over 14 days and about +€122.37 a month. Better off than today, or level.",
+                "vsGuess": 0
+              },
+              {
+                "x": -0.07,
+                "netTest": 77.58,
+                "netMonth": 167.96,
+                "explanation": "If sales change by −7% (about 419 a week): 418.5 × €2.34 = €979.29 a week left after VAT and ingredients, against €940.50 now. That is +€38.79 a week, +€77.58 over 14 days and about +€167.96 a month. Better off than today, or level.",
+                "vsGuess": 21.06
+              },
+              {
+                "x": -0.06,
+                "netTest": 98.64,
+                "netMonth": 213.56,
+                "explanation": "If sales change by −6% (about 423 a week): 423 × €2.34 = €989.82 a week left after VAT and ingredients, against €940.50 now. That is +€49.32 a week, +€98.64 over 14 days and about +€213.56 a month. Better off than today, or level.",
+                "vsGuess": 42.12
+              },
+              {
+                "x": -0.05,
+                "netTest": 119.7,
+                "netMonth": 259.15,
+                "explanation": "If sales change by −5% (about 428 a week): 427.5 × €2.34 = €1,000.35 a week left after VAT and ingredients, against €940.50 now. That is +€59.85 a week, +€119.70 over 14 days and about +€259.15 a month. Better off than today, or level.",
+                "vsGuess": 63.18
+              },
+              {
+                "x": -0.04,
+                "netTest": 140.76,
+                "netMonth": 304.75,
+                "explanation": "If sales change by −4% (about 432 a week): 432 × €2.34 = €1,010.88 a week left after VAT and ingredients, against €940.50 now. That is +€70.38 a week, +€140.76 over 14 days and about +€304.75 a month. Better off than today, or level.",
+                "vsGuess": 84.24
+              },
+              {
+                "x": -0.03,
+                "netTest": 161.82,
+                "netMonth": 350.34,
+                "explanation": "If sales change by −3% (about 437 a week): 436.5 × €2.34 = €1,021.41 a week left after VAT and ingredients, against €940.50 now. That is +€80.91 a week, +€161.82 over 14 days and about +€350.34 a month. Better off than today, or level.",
+                "vsGuess": 105.3
+              },
+              {
+                "x": -0.02,
+                "netTest": 182.88,
+                "netMonth": 395.94,
+                "explanation": "If sales change by −2% (about 441 a week): 441 × €2.34 = €1,031.94 a week left after VAT and ingredients, against €940.50 now. That is +€91.44 a week, +€182.88 over 14 days and about +€395.94 a month. Better off than today, or level.",
+                "vsGuess": 126.36
+              },
+              {
+                "x": -0.01,
+                "netTest": 203.94,
+                "netMonth": 441.53,
+                "explanation": "If sales change by −1% (about 446 a week): 445.5 × €2.34 = €1,042.47 a week left after VAT and ingredients, against €940.50 now. That is +€101.97 a week, +€203.94 over 14 days and about +€441.53 a month. Better off than today, or level.",
+                "vsGuess": 147.42
+              },
+              {
+                "x": 0,
+                "netTest": 225,
+                "netMonth": 487.13,
+                "explanation": "If sales change by 0% (about 450 a week): 450 × €2.34 = €1,053.00 a week left after VAT and ingredients, against €940.50 now. That is +€112.50 a week, +€225.00 over 14 days and about +€487.13 a month. Better off than today, or level.",
+                "vsGuess": 168.48
+              },
+              {
+                "x": 0.01,
+                "netTest": 246.06,
+                "netMonth": 532.72,
+                "explanation": "If sales change by +1% (about 455 a week): 454.5 × €2.34 = €1,063.53 a week left after VAT and ingredients, against €940.50 now. That is +€123.03 a week, +€246.06 over 14 days and about +€532.72 a month. Better off than today, or level.",
+                "vsGuess": 189.54
+              },
+              {
+                "x": 0.02,
+                "netTest": 267.12,
+                "netMonth": 578.31,
+                "explanation": "If sales change by +2% (about 459 a week): 459 × €2.34 = €1,074.06 a week left after VAT and ingredients, against €940.50 now. That is +€133.56 a week, +€267.12 over 14 days and about +€578.31 a month. Better off than today, or level.",
+                "vsGuess": 210.6
+              },
+              {
+                "x": 0.03,
+                "netTest": 288.18,
+                "netMonth": 623.91,
+                "explanation": "If sales change by +3% (about 464 a week): 463.5 × €2.34 = €1,084.59 a week left after VAT and ingredients, against €940.50 now. That is +€144.09 a week, +€288.18 over 14 days and about +€623.91 a month. Better off than today, or level.",
+                "vsGuess": 231.66
+              },
+              {
+                "x": 0.04,
+                "netTest": 309.24,
+                "netMonth": 669.5,
+                "explanation": "If sales change by +4% (about 468 a week): 468 × €2.34 = €1,095.12 a week left after VAT and ingredients, against €940.50 now. That is +€154.62 a week, +€309.24 over 14 days and about +€669.50 a month. Better off than today, or level.",
+                "vsGuess": 252.72
+              },
+              {
+                "x": 0.05,
+                "netTest": 330.3,
+                "netMonth": 715.1,
+                "explanation": "If sales change by +5% (about 473 a week): 472.5 × €2.34 = €1,105.65 a week left after VAT and ingredients, against €940.50 now. That is +€165.15 a week, +€330.30 over 14 days and about +€715.10 a month. Better off than today, or level.",
+                "vsGuess": 273.78
+              }
+            ],
+            "perStep": {
+              "netTest": 21.06,
+              "netMonth": 45.59,
+              "plain": "Each percentage point of sales is about 4.5 sales a week, which moves the test result by about €21 and the monthly result by about €46."
+            }
+          },
+          "lessons": [
+            "A rise of 30 cents looks small, but ingredients cost the same: after 19% VAT, €0.25 of it is extra margin on every sale. Each cappuccino leaves €2.34 instead of €2.09, 12.0% more per sale.",
+            "Break-even is the number to beat: you can lose up to 48 sales a week (10.7%) before you are worse off. Your likely guess is −8% (about 36 fewer), inside that. The test checks the guess.",
+            "At your cautious guess (−12%) the 14-day test costs about €28. A price can be changed back the next morning, which makes this one of the cheapest things to test.",
+            "The number that matters most: whether sales change by −12% or 0% changes the test result by €253, more than anything else. That is what your test should measure: count the cappuccino sales each week.",
+            "This method works for any decision: write down your numbers, work out the break-even, then run a small test with a limit to check the one guess that matters most."
+          ],
+          "nextQuestions": [
+            "Which VAT rate is on your cappuccino? What-IF used 19%, the rate for drinks, milk drinks drunk in the café included. Food is 7%. Milk drinks with at least 75% milk sold to take away are 7% too, but only that take-away share. Your Steuerberater can confirm.",
+            "Look at the last 4 weeks in your till's item report: is 450 a week steady, or does it swing? A steady baseline makes the test easier to read.",
+            "What would regulars buy instead? If a cheaper drink's sales rise during the test, people are trading down rather than leaving."
+          ],
+          "warnings": [
+            "At your cautious guess (−12%) the new price earns less than today (break-even is −10.7%). That is the risk the test checks."
+          ]
+        },
+        "ignored_inputs": [],
+        "ignored_count": 0,
+        "state": "RVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Y0u5n3Gb03e9iCKDkkHHyvEoIAH4xGqVtlGwQOxvqcIog9GBIRr5X3WWtjHbE6h4A2yZMJxM1ixcHiOO8Vh2xNitJjkCNiB2K5Ks6g1C4mEMWiItfW9XlA2ZsO-wnEVbEoyPuPuvEEldcXqDVNS95j9JjkRk2UsVxy6AzuKOVTwLxbY2jgwGGdo7EYSQH3qv75Ys8uNGiDS5zNQg7vmW4ZZ0n31qrETM0eWVAmIhsmNhdndXAD-_38pr4FS-48VgWz-JHY4Gxqby_P0dQGHl5fCOjpp7SgpXlQG7w7Utop3cLhDw",
+        "report_url": "https://rev-bloom-duke-researchers.trycloudflare.com/r#RVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Y0u5n3Gb03e9iCKDkkHHyvEoIAH4xGqVtlGwQOxvqcIog9GBIRr5X3WWtjHbE6h4A2yZMJxM1ixcHiOO8Vh2xNitJjkCNiB2K5Ks6g1C4mEMWiItfW9XlA2ZsO-wnEVbEoyPuPuvEEldcXqDVNS95j9JjkRk2UsVxy6AzuKOVTwLxbY2jgwGGdo7EYSQH3qv75Ys8uNGiDS5zNQg7vmW4ZZ0n31qrETM0eWVAmIhsmNhdndXAD-_38pr4FS-48VgWz-JHY4Gxqby_P0dQGHl5fCOjpp7SgpXlQG7w7Utop3cLhDw"
+      }
+    },
+    "error": null,
+    "ms": 430
+  },
+  {
+    "at": "2026-10-17T13:52:24.209Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "state": "RVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Y0u5n3Gb03e9iCKDkkHHyvEoIAH4xGqVtlGwQOxvqcIog9GBIRr5X3WWtjHbE6h4A2yZMJxM1ixcHiOO8Vh2xNitJjkCNiB2K5Ks6g1C4mEMWiItfW9XlA2ZsO-wnEVbEoyPuPuvEEldcXqDVNS95j9JjkRk2UsVxy6AzuKOVTwLxbY2jgwGGdo7EYSQH3qv75Ys8uNGiDS5zNQg7vmW4ZZ0n31qrETM0eWVAmIhsmNhdndXAD-_38pr4FS-48VgWz-JHY4Gxqby_P0dQGHl5fCOjpp7SgpXlQG7w7Utop3cLhDw",
+      "personas": 4,
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 410
+  },
+  {
+    "at": "2026-10-17T13:52:33.721Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "state": "RVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Y0u5n3Gb03e9iCKDkkHHyvEoIAH4xGqVtlGwQOxvqcIog9GBIRr5X3WWtjHbE6h4A2yZMJxM1ixcHiOO8Vh2xNitJjkCNiB2K5Ks6g1C4mEMWiItfW9XlA2ZsO-wnEVbEoyPuPuvEEldcXqDVNS95j9JjkRk2UsVxy6AzuKOVTwLxbY2jgwGGdo7EYSQH3qv75Ys8uNGiDS5zNQg7vmW4ZZ0n31qrETM0eWVAmIhsmNhdndXAD-_38pr4FS-48VgWz-JHY4Gxqby_P0dQGHl5fCOjpp7SgpXlQG7w7Utop3cLhDw",
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 387
+  },
+  {
+    "at": "2026-10-17T13:52:34.345Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "state": "TVBLTsMwEL2KNWtTJdBKkTdIIBYIsUFCLC3XnSRWEtv405BW3XAbJG7BTTgJ01Zq2M28z-i92cMWRMkh4eB7lRAE-GA0St0q2yBwMNbnFEHswZCIeK28z1ob64jVOQS0SZ5MIG4WKw4Wx3mvOGRrUpQegxwROxDLVXEGpXYxgSgWFbm2rs8Dyt502E8gropF8Q914wkqry9Qa5qWvMfoMcmNmihjueTQGdxRyqeAebfG0MCBwzpHYzGSAu5V_fPFnl1o0AaXOJuFHN4z3TLOku6tVYmZmj2yoExENkxsLs7q4Ab2-_lNfQuW3HmsCmbxI7HB2dTeXp6jqQ08vL4Q0NNPaUFL86A2eHektFO6hcMf",
+      "personas": 4,
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 318
+  },
+  {
+    "at": "2026-10-17T13:52:34.942Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85,
+        "volume_likely": -0.08,
+        "volume_low": -0.12,
+        "volume_high": 0,
+        "test_days": 14,
+        "kiez": "Kreuzberg"
+      },
+      "business": "Café Morgenrot, Kreuzberg",
+      "question": "What if I raise my cappuccino from €3.50 to €3.80 next month?",
+      "personas": 4,
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 314
+  },
+  {
+    "at": "2026-10-17T13:52:35.506Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85,
+        "volume_likely": -0.08,
+        "volume_low": -0.12,
+        "volume_high": 0,
+        "test_days": 14
+      },
+      "personas": 4,
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 290
+  },
+  {
+    "at": "2026-10-17T13:52:44.275Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "template": "lunch_offer",
+      "demo": true,
+      "inputs": {},
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 370
+  },
+  {
+    "at": "2026-10-17T13:52:44.943Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "template": "price_change",
+      "demo": true,
+      "inputs": {},
+      "lang": "en"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF could not do that: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 326
+  },
+  {
+    "at": "2026-10-17T13:52:45.635Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "template": "price_change",
+      "inputs": {
+        "item": "cappuccino",
+        "current_price": 3.5,
+        "new_price": 3.8,
+        "units_per_week": 450,
+        "unit_cost": 0.85,
+        "volume_likely": -0.08,
+        "volume_low": -0.12,
+        "volume_high": 0,
+        "test_days": 14
+      },
+      "lang": "de"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF konnte das nicht ausführen: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 324
+  },
+  {
+    "at": "2026-10-17T13:52:46.314Z",
+    "kind": "call_tool",
+    "url": "https://rev-bloom-duke-researchers.trycloudflare.com/api/mcp",
+    "tool": "whatif_rehearsal_start",
+    "arguments": {
+      "template": "lunch_offer",
+      "demo": true,
+      "inputs": {},
+      "lang": "de"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "What-IF konnte das nicht ausführen: Cannot read properties of undefined (reading 'replace')"
+        }
+      ],
+      "isError": true
+    },
+    "error": null,
+    "ms": 372
+  }
+]

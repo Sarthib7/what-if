@@ -19,7 +19,7 @@
  * before it is used again, so each "show the maths" line can be redone by hand with the
  * numbers it prints and gives exactly the number it shows.
  */
-import { LUNCH_VAT_BLENDED, MIN_WAGE_2026 } from "./berlin.ts";
+import { LUNCH_VAT_BLENDED, MIN_WAGE_2026, MIN_WAGE_2027 } from "./berlin.ts";
 import { ceilUp, EPS, eur, has, list, n, num, pc, pct, price, r1, r2, round, seur, signedPrice } from "./format.ts";
 import type { Values } from "./format.ts";
 import { continueSentence, fig, filledIn, fromSources, sourcesOf, sumText, valuesOf } from "./figures.ts";
@@ -191,8 +191,8 @@ function breakEvenMaths(m: LunchModel): string {
   const ratio = need / m.mOffer;
   lines.push(
     Math.abs(exact - Math.round(exact)) < 1e-6
-      ? t("lunch.be.maths.exact", { sum: sumText(parts), need: price(need), m: price(m.mOffer), be: num(m.beTest ?? 0) })
-      : t("lunch.be.maths.round", { sum: sumText(parts), need: price(need), m: price(m.mOffer), exact: num(ratio, 1), be: num(m.beTest ?? 0) }),
+      ? t("lunch.be.maths.exact", { sum: sumText(parts), need: price(need), m: price(m.mOffer), n: m.beTest ?? 0 })
+      : t("lunch.be.maths.round", { sum: sumText(parts), need: price(need), m: price(m.mOffer), exact: num(ratio, 1), n: m.beTest ?? 0 }),
   );
   return lines.join(" ");
 }
@@ -202,8 +202,8 @@ function ongoingMaths(m: LunchModel): string {
   if (m.needDay <= EPS) return t("lunch.ongoing.maths.free", { need: price(m.needDay) });
   const exact = m.beOngoingExact;
   return Math.abs(exact - Math.round(exact)) < 1e-6
-    ? t("lunch.ongoing.maths.exact", { need: price(m.needDay), m: price(m.mOffer), be: num(m.beOngoing ?? 0) })
-    : t("lunch.ongoing.maths.round", { need: price(m.needDay), m: price(m.mOffer), exact: num(exact, 1), be: num(m.beOngoing ?? 0) });
+    ? t("lunch.ongoing.maths.exact", { need: price(m.needDay), m: price(m.mOffer), n: m.beOngoing ?? 0 })
+    : t("lunch.ongoing.maths.round", { need: price(m.needDay), m: price(m.mOffer), exact: num(exact, 1), n: m.beOngoing ?? 0 });
 }
 
 export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
@@ -227,7 +227,7 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
   const left = r2(takings / m.vatDiv - takings * m.vcs);
   current.push(
     fig("weekday_takings_month", t("lunch.fig.takings.label"), takings, "EUR/month", fromSources(src, ["weekday_customers", "avg_spend"]),
-      t("lunch.fig.takings.maths", { wc: num(wc), avg: price(avg), w: num(W), takings: price(takings) })),
+      t("lunch.fig.takings.maths", { n: wc, avg: price(avg), w: num(W), takings: price(takings) })),
     fig("weekday_left_month", t("lunch.fig.left.label"), left, "EUR/month", fromSources(src, ["weekday_customers", "avg_spend", "variable_cost_share", "vat_rate"]),
       t("lunch.fig.left.maths", { takings: price(takings), div, vat: vatPct, vcs: pc(m.vcs), left: price(left) })),
     fig("lunch_margin_now", t("lunch.fig.lunchMargin.label"), m.mLunchNow, "EUR", fromSources(src, ["lunch_spend", "variable_cost_share", "vat_rate"]),
@@ -237,8 +237,8 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
     fig("switch_cost_day", t("lunch.fig.switch.label"), m.switchLoss, "EUR/day",
       fromSources(src, ["lunch_customers", "switch_share", "lunch_spend", "variable_cost_share", "offer_price", "offer_cost", "vat_rate"]),
       m.gap >= 0
-        ? t("lunch.fig.switch.maths.cost", { lc: num(m.lunchCustomers), share: pc(m.switchShare), sw: num(m.switchers), gap: price(m.gap), now: price(m.mLunchNow), deal: price(m.mOffer), loss: price(m.switchLoss) })
-        : t("lunch.fig.switch.maths.gain", { lc: num(m.lunchCustomers), share: pc(m.switchShare), sw: num(m.switchers), gap: price(-m.gap), now: price(m.mLunchNow), deal: price(m.mOffer), gain: price(-m.switchLoss) })),
+        ? t("lunch.fig.switch.maths.cost", { n: m.lunchCustomers, share: pc(m.switchShare), sw: num(m.switchers), gap: price(m.gap), now: price(m.mLunchNow), deal: price(m.mOffer), loss: price(m.switchLoss) })
+        : t("lunch.fig.switch.maths.gain", { n: m.lunchCustomers, share: pc(m.switchShare), sw: num(m.switchers), gap: price(-m.gap), now: price(m.mLunchNow), deal: price(m.mOffer), gain: price(-m.switchLoss) })),
     fig("running_cost_day", t("lunch.fig.running.label"), m.dailyCost, "EUR/day",
       fromSources(src, ["extra_staff_hours_per_day", "staff_hourly_cost", "marketing_per_week"]),
       t("lunch.fig.running.maths", { hours: t("n.staffHours", { n: m.staffHours }), rate: price(m.staffRate), mkt: price(m.marketing), daily: price(m.dailyCost) })),
@@ -252,7 +252,7 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
       fig("extra_customers", t("lunch.assume.label"), x, "customers/day", src[key] ?? "assumption",
         t("lunch.scn.extra.maths", { guess: guessName, x: t("n.extraLunchDay", { n: x }) })),
       fig("revenue_change_day", t("lunch.scn.revenue.label"), rev, "EUR/day", "calculation",
-        t("lunch.scn.revenue.maths", { x: num(x), price: price(m.offerPrice), sw: num(m.switchers), spend: price(m.lunchSpend), rev: signedPrice(rev) })),
+        t("lunch.scn.revenue.maths", { n: x, price: price(m.offerPrice), sw: num(m.switchers), spend: price(m.lunchSpend), rev: signedPrice(rev) })),
       fig("net_day", t("lunch.scn.netDay.label"), nd, "EUR/day", "calculation",
         t("lunch.scn.netDay.maths", { x: num(x), m: price(m.mOffer), switchPart, daily: price(m.dailyCost), nd: signedPrice(nd) })),
       fig("net_test", t("lunch.scn.netTest.label", { days: dayN(days) }), nt, "EUR", "calculation",
@@ -290,13 +290,17 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
 
   // ---- Break-even --------------------------------------------------------
   const be = m.beTest, beOn = m.beOngoing;
+  /** "11 extra lunch customers" in the form that follows "from" ("ab 11 zusätzlichen Mittagsgästen", "od 11 dodatkowych klientów"). */
+  const from = (x: number) => t("n.extraLunchFrom", { n: x });
+  /** Regulars who switch leave more than their usual lunch (a gain), as opposed to costing nothing at all. */
+  const switchGain = m.switchLoss < -EPS;
   let bePlain: string;
   if (!m.reachable || be === null || beOn === null) bePlain = t("lunch.be.plain.none");
   else if (be === 0) bePlain = t("lunch.be.plain.zero", { m: price(m.mOffer) });
   else if (m.setup > 0 && be !== beOn)
-    bePlain = t("lunch.be.plain.two", { days: dayN(days), setup: eur(m.setup), be: t("n.extraLunch", { n: be }), beOn: num(beOn), m: price(m.mOffer), need: price(m.needDay), costs: costWords(m) });
+    bePlain = t("lunch.be.plain.two", { days: dayN(days), setup: eur(m.setup), be: from(be), beOn: num(beOn), m: price(m.mOffer), need: price(m.needDay), costs: costWords(m) });
   else
-    bePlain = t("lunch.be.plain.one", { be: t("n.extraLunch", { n: be }), m: price(m.mOffer), need: price(r2(m.needDay + m.setupDay)), costs: m.setup > 0 ? `${costWords(m)}, ${t("lunch.word.setup")}` : costWords(m) });
+    bePlain = t("lunch.be.plain.one", { be: from(be), m: price(m.mOffer), need: price(r2(m.needDay + m.setupDay)), costs: m.setup > 0 ? `${costWords(m)}, ${t("lunch.word.setup")}` : costWords(m) });
   const breakEven: Body["breakEven"] = {
     value: be ?? 0,
     unit: "customers/day",
@@ -313,8 +317,8 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
         !m.reachable || beOn === null
           ? t("lunch.be.plain.none")
           : beOn === 0
-            ? t("lunch.ongoing.plain.zero")
-            : t("lunch.ongoing.plain", { n: beOn, beOn: t("n.extraLunch", { n: beOn }), be: num(be ?? 0) }),
+            ? t(switchGain ? "lunch.ongoing.plain.zero" : "lunch.ongoing.plain.zeroFree")
+            : t("lunch.ongoing.plain", { beOn: from(beOn), be: num(be ?? 0) }),
     },
   };
 
@@ -329,7 +333,10 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
   ]);
   const cashText = shareOfCash !== undefined && worst < 0 ? t("lunch.worst.cash", { p: pct(shareOfCash), cash: eur(cash!) }) : "";
   let worstPlain: string;
-  if (worst >= 0) worstPlain = t("lunch.worst.plain.none", { share: pc(m.switchShare) });
+  if (worst >= 0)
+    worstPlain = switchGain
+      ? t("lunch.worst.plain.gain", { share: pc(m.switchShare), spend: price(m.lunchSpend), up: worst >= 0.5 ? t("lunch.worst.up", { amt: eur(worst) }) : "" })
+      : t("lunch.worst.plain.free");
   else if (m.switchLoss > EPS)
     worstPlain =
       t("lunch.worst.plain.switch", { sw: t("n.regularsDay", { n: m.switchers }), swn: num(m.switchers), share: pc(m.switchShare), total: eur(-worst), parts: worstParts, cash: cashText }) +
@@ -404,12 +411,15 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
   const expectedTest = m.netTest(likely);
   const lessons: string[] = [];
   if (!m.reachable || be === null || beOn === null) lessons.push(t("lunch.lesson.none"));
-  else if (be === 0) lessons.push(t("lunch.lesson.zero", { spend: price(m.lunchSpend) }));
-  else if (likely >= be) lessons.push(t("lunch.lesson.beats", { be: t("n.extraLunch", { n: be }), likely: num(likely) }));
+  else if (be === 0) lessons.push(switchGain ? t("lunch.lesson.zero", { spend: price(m.lunchSpend) }) : t("lunch.lesson.zeroFree", { m: price(m.mOffer) }));
+  else if (likely >= be)
+    lessons.push(be === beOn ? t("lunch.lesson.beatsOne", { be: from(be), likely: num(likely) }) : t("lunch.lesson.beats", { be: from(be), beOn: num(beOn), likely: num(likely) }));
   else if (likely >= beOn)
-    lessons.push(t("lunch.lesson.between", { be: num(be), setup: eur(m.setup), beOn: num(beOn), likely: num(likely), amt: eur(Math.abs(expectedTest)), dir: expectedTest < 0 ? t("word.down") : t("word.up") }));
-  else lessons.push(t("lunch.lesson.below", { be: num(be), beOn: num(beOn), likely: num(likely) }));
-  if (m.gap > EPS)
+    lessons.push(t("lunch.lesson.between", { be: from(be), setup: eur(m.setup), beOn: num(beOn), likely: num(likely), amt: eur(Math.abs(expectedTest)), dir: expectedTest < 0 ? t("word.down") : t("word.up") }));
+  else lessons.push(be === beOn ? t("lunch.lesson.belowOne", { beOn: from(beOn), likely: num(likely) }) : t("lunch.lesson.below", { be: num(be), beOn: from(beOn), likely: num(likely) }));
+  if (m.gap > EPS && m.switchers <= EPS)
+    lessons.push(t("lunch.lesson.noRegulars", { price: price(m.offerPrice), net: price(m.netOfferPrice), vat: vatPct, cost: price(m.offerCost), m: price(m.mOffer) }));
+  else if (m.gap > EPS)
     lessons.push(t("lunch.lesson.switch", { price: price(m.offerPrice), net: price(m.netOfferPrice), vat: vatPct, cost: price(m.offerCost), m: price(m.mOffer), spend: price(m.lunchSpend), now: price(m.mLunchNow), gap: price(m.gap), sw: num(m.switchers), loss: price(m.switchLoss) }));
   else lessons.push(t("lunch.lesson.noSwitch", { price: price(m.offerPrice), net: price(m.netOfferPrice), vat: vatPct, m: price(m.mOffer), now: price(m.mLunchNow) }));
   if (worst < 0)
@@ -455,7 +465,11 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
     else if (-worst > cash * 0.5) warnings.push(t("lunch.warn.cashHalf", { worst: eur(-worst), cash: eur(cash) }));
   }
   if (guessed("lunch_spend") && m.gap < -EPS) warnings.push(t("lunch.warn.avgSpend", { spend: price(m.lunchSpend), now: price(m.mLunchNow), m: price(m.mOffer) }));
-  if (m.gap > EPS) warnings.push(t("lunch.warn.gap", { gap: price(m.gap), m: price(m.mOffer), now: price(m.mLunchNow) }));
+  if (m.gap > EPS && m.switchers > EPS) warnings.push(t("lunch.warn.gap", { gap: price(m.gap), m: price(m.mOffer), now: price(m.mLunchNow) }));
+  // A cost per hour below the statutory minimum wage makes the deal look cheaper to run than it can be.
+  const rateInput = inputs.find((i) => i.key === "staff_hourly_cost");
+  if (rateInput && rateInput.filledBy === undefined && typeof rateInput.value === "number" && rateInput.value < MIN_WAGE_2026 - EPS)
+    warnings.push(t("lunch.warn.belowMinWage", { rate: price(rateInput.value), min: price(MIN_WAGE_2026), next: price(MIN_WAGE_2027) }));
 
   return { current, scenarios, breakEven, worstCase, biggestUncertainty, sensitivity, lessons, nextQuestions, warnings };
 }
@@ -463,11 +477,13 @@ export function analyzeLunch(inputs: ResolvedInput[], demo: boolean): Body {
 /** "Why this number": the calculation for one slider position, in words. */
 export function explainX(m: LunchModel, x: number): string {
   const nd = m.netDay(x), nt = m.netTest(x);
-  let s = t("lunch.x.base", {
+  // When switching regulars leave more than the running costs, there is nothing to cover: add it, never "− −€10.03".
+  let s = t(m.needDay < -EPS ? "lunch.x.baseGain" : "lunch.x.base", {
     who: t("n.extraCustomersDay", { n: x }),
     x: num(x),
     m: price(m.mOffer),
     need: price(m.needDay),
+    gain: price(-m.needDay),
     nd: signedPrice(nd),
     days: t("n.weekdays", { n: m.days }),
     dn: num(m.days),
@@ -476,7 +492,8 @@ export function explainX(m: LunchModel, x: number): string {
   });
   const be = m.beTest, beOn = m.beOngoing;
   if (be !== null && beOn !== null) {
-    if (x >= be) s += t("lunch.x.pays", { be: num(be) });
+    if (be === 0) s += t("lunch.x.paysZero");
+    else if (x >= be) s += t("lunch.x.pays", { be: num(be) });
     else if (x >= beOn) s += t("lunch.x.daily", { beOn: num(beOn), be: num(be) });
     else s += t("lunch.x.loses", { beOn: num(beOn), be: num(be) });
   } else s += t("lunch.x.none");

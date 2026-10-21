@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>What if · video</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d1024; }
+body { font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; color: #fff; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+  background: radial-gradient(1200px 900px at 85% 110%, rgba(255,170,130,.38), rgba(255,170,130,0) 60%),
+              radial-gradient(1000px 800px at 10% -10%, rgba(120,140,255,.30), rgba(120,140,255,0) 60%),
+              linear-gradient(135deg, #0d1024 0%, #1c1840 45%, #3a2350 100%); }
+.layer { position: absolute; inset: 0; opacity: 0; will-change: opacity; }
+.t-slide img { position: absolute; inset: 0; width: 1920px; height: 1080px; transform-origin: 50% 50%; }
+.brand { position: absolute; top: 64px; left: 160px; font-size: 28px; font-weight: 600; opacity: .9; }
+.win { position: absolute; left: 200px; top: 128px; width: 1520px; height: 760px; border-radius: 22px; overflow: hidden;
+  background: #fffdf9; box-shadow: 0 30px 90px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08); }
+.win .bar { height: 44px; background: #f1ece4; display: flex; align-items: center; gap: 9px; padding-left: 18px; }
+.win .bar i { width: 13px; height: 13px; border-radius: 50%; background: #d8cfc1; display: block; }
+.win .view { position: absolute; left: 0; right: 0; top: 44px; bottom: 0; overflow: hidden; }
+.win .view img { position: absolute; left: 0; top: 0; width: 1520px; }
+.card { position: absolute; top: 128px; height: 760px; border-radius: 22px; overflow: hidden; background: #fffdf9;
+  box-shadow: 0 30px 90px rgba(0,0,0,.45); }
+.card img { position: absolute; left: 0; top: 0; height: 760px; }
+.cap { position: absolute; left: 0; right: 0; top: 902px; text-align: center; font-size: 42px; font-weight: 400; letter-spacing: -0.01em; }
+.cap b { font-weight: 600; background: linear-gradient(90deg, #fff 0%, #ffc2a1 60%, #ff9fb2 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.exp { position: absolute; left: 0; right: 0; top: 968px; text-align: center; font-size: 31px; font-weight: 300; color: rgba(255,255,255,.78); letter-spacing: -0.005em; }
+.exp-slide { top: 958px; font-size: 32px; }
+.exp-slide::before { content: ""; display: block; width: 72px; height: 1px; margin: 0 auto 22px; background: linear-gradient(90deg, rgba(255,194,161,0), #ffc2a1, rgba(255,194,161,0)); }
+</style></head><body><div id="stage"></div>
+<script>
+const S = "frames/", A = "../assets/shots/";
+const L = "../assets/live/";
+// [type, start, end, options]
+const SEG = [
+  ["slide", 0, 6, { img: S + "s1.png" }],
+  ["slide", 6, 12, { img: S + "s2.png" }],
+  ["slide", 12, 18, { img: S + "s3.png" }],
+  ["win", 18, 31, { seq: [[L + "live-chat-1.png", 0], [L + "live-chat-2.png", 6.5]], pan: 0.2, cap: "Lena asks her AI. <b>One question at a time, then the answer.</b>" }],
+  ["win", 31, 41, { seq: [[L + "live-report-top.png", 0], [L + "live-report-outcomes.png", 4.6]], pan: 0.35, cap: "Every answer becomes <b>a visual report.</b>" }],
+  ["slide", 41, 47, { img: S + "s4.png" }],
+  ["card", 47, 57, { seq: [["25", 0], ["24", 1.4], ["23", 1.7], ["22", 2.0], ["21", 2.3], ["20", 2.6], ["19", 2.9], ["18", 3.2], ["19", 3.9], ["20", 4.2], ["21", 4.5], ["22", 4.8], ["23", 5.1], ["24", 5.4], ["25", 5.7], ["26", 6.0], ["27", 6.3], ["28", 6.6], ["29", 6.9], ["30", 7.2], ["29", 7.9], ["28", 8.15], ["27", 8.4], ["26", 8.65], ["25", 8.9]].map(([n, at]) => [L + `live-slider-${n}.png`, at]), cap: "Move the guess. <b>See why the result changes.</b>" }],
+  ["slide", 57, 62, { img: S + "s5.png" }],
+  ["slide", 62, 68, { img: S + "s6.png" }],
+  ["win", 68, 78, { img: L + "live-report-rehearsal.png", fromY: 0, toY: 1100, cap: "Imagined customers, played by AI. <b>Questions, not predictions.</b>" }],
+  ["slide", 78, 84, { img: S + "s7.png" }],
+  ["win", 84, 91, { img: L + "live-report-test.png", fromY: 0, toY: 600, cap: "Two weeks, <b>with the rule agreed up front.</b>" }],
+  ["win", 91, 98, { seq: [[L + "live-report-top-de.png", 0], [L + "live-report-top-es.png", 1.7], [L + "live-report-top-pl.png", 3.4], [L + "live-report-top.png", 5.1]], pan: 0.1, cap: "Deutsch · English · Español · Polski" }],
+  ["win", 98, 106, { img: L + "live-connect.png", fromY: 0, toY: 250, cap: "Live now. <b>Paste one URL into your AI.</b>" }],
+  ["win", 106, 112, { img: L + "live-home.png", fromY: 0, toY: 120, cap: "No AI app? <b>Try it on the web.</b>" }],
+  ["slide", 112, 120, { img: S + "s8.png" }],
+];
+const EXP = ["A coach for small-business decisions, inside the AI you already use.", "Owners decide on gut feeling: no analyst, and chatbots that can’t show their working.", "Ask in plain words. Your own numbers become a slow, a likely and a strong outcome.", "It asks one thing at a time, and says why each number matters.", "Every number is labelled: yours, calculated by code, a guess, or imagined.", "Break-even: how many cups she can lose before the new price stops paying.", "Drag the slider and the report explains, in plain words, why the result moves.", "Code does the maths. AI only explains. Owners learn to ask where a number comes from.", "Inspired by MiroFish: imagined locals, each played by AI, react over four rounds.", "Their reactions become questions to ask real customers. Never a forecast.", "Instead of a big bet: a small, cheap test you can stop.", "Keep, tweak or stop is decided before the results come in.", "Built for Berlin cafés: four languages, 2026 VAT and minimum wage built in.", "Open source. Works in Claude, ChatGPT or any app that speaks MCP.", "Or answer the questions on the website and get the same visual report.", ""];
+const DUR = 120, X = 0.35;
+const stage = document.getElementById("stage");
+const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const clamp = (x) => Math.max(0, Math.min(1, x));
+const layers = SEG.map(([type, a, b, o]) => {
+  const L = document.createElement("div"); L.className = `layer t-${type}`; stage.appendChild(L);
+  const imgs = [];
+  const add = (src, parent) => { const im = new Image(); im.src = src; parent.appendChild(im); imgs.push(im); return im; };
+  if (type === "slide") add(o.img, L);
+  else {
+    const br = document.createElement("div"); br.className = "brand"; br.textContent = "What if"; L.appendChild(br);
+    let host;
+    if (type === "win") { const w = document.createElement("div"); w.className = "win"; w.innerHTML = '<div class="bar"><i></i><i></i><i></i></div><div class="view"></div>'; L.appendChild(w); host = w.querySelector(".view"); }
+    else { const c = document.createElement("div"); c.className = "card"; L.appendChild(c); host = c; }
+    (o.seq ? o.seq.map((s) => s[0]) : [o.img]).forEach((src) => add(src, host));
+    if (o.cap) { const c = document.createElement("div"); c.className = "cap"; c.innerHTML = o.cap; L.appendChild(c); }
+  }
+  const ex = document.createElement("div"); ex.className = type === "slide" ? "exp exp-slide" : "exp"; ex.textContent = EXP[SEG.findIndex((x) => x[1] === a)] || ""; L.appendChild(ex);
+  return { type, a, b, o, L, imgs };
+});
+window.DUR = DUR;
+window.render = (t) => {
+  for (const s of layers) {
+    const op = clamp((t - (s.a - X)) / (2 * X)) * (1 - clamp((t - (s.b - X)) / (2 * X)));
+    const first = s.a === 0, last = s.b === DUR;
+    const o = (first && t < s.a + X) ? (t < s.b - X ? 1 : op) : (last && t > s.b - X ? 1 : op);
+    s.L.style.opacity = o.toFixed(4);
+    s.L.style.visibility = o < 0.002 ? "hidden" : "visible";
+    if (o < 0.002) continue;
+    const p = clamp((t - s.a) / (s.b - s.a));
+    if (s.type === "slide") {
+      s.imgs[0].style.transform = `scale(${(1 + 0.035 * p).toFixed(5)})`;
+    } else if (s.type === "win") {
+      const lt = t - s.a;
+      let k = 0; if (s.o.seq) s.o.seq.forEach((q, j) => { if (lt >= q[1]) k = j; });
+      s.imgs.forEach((im, j) => {
+        im.style.display = j === k ? "block" : "none";
+        if (j !== k) return;
+        const scale = 1520 / (im.naturalWidth || 1520);
+        const h = (im.naturalHeight || 716) * scale;
+        let y;
+        if (s.o.seq) { const span = (h - 716) * (s.o.pan ?? 0); const nxt = s.o.seq[j + 1]?.[1] ?? (s.b - s.a); const pp = clamp((lt - s.o.seq[j][1]) / (nxt - s.o.seq[j][1])); y = span * ease(pp); }
+        else y = Math.min(h - 716, s.o.fromY + (s.o.toY - s.o.fromY) * ease(clamp((p - 0.08) / 0.84)));
+        im.style.transform = `translateY(${(-Math.max(0, y)).toFixed(2)}px)`;
+      });
+    } else {
+      const lt = t - s.a;
+      let k = 0; s.o.seq.forEach((q, j) => { if (lt >= q[1]) k = j; });
+      s.imgs.forEach((im, j) => (im.style.display = j === k ? "block" : "none"));
+      const im = s.imgs[k]; const w = (im.naturalWidth / im.naturalHeight) * 760;
+      const card = s.L.querySelector(".card"); card.style.width = `${w}px`; card.style.left = `${(1920 - w) / 2}px`;
+    }
+  }
+};
+Promise.all([...document.images].map((i) => i.decode().catch(() => {}))).then(() => { window.render(0); window.READY = true; });
+</script></body></html>

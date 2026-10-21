@@ -24,6 +24,7 @@ import {
   ICONS,
   inputSources,
   list,
+  listOf,
   lowerFirst,
   mathsToggle,
   netWords,
@@ -32,12 +33,13 @@ import {
   termDef,
   TERMS,
   termWord,
+  tidyMinus,
   tone,
   wholeSigned,
 } from "./html.ts";
 import { t } from "./messages.ts";
 import type { MsgKey } from "./messages.ts";
-import { aiPlayed, isCountUnit, madeBy, ongoingBreakEven, ongoingX, reportLang, STEPS, testDays, whoPlayedShort } from "./model.ts";
+import { aiPlayed, isCountUnit, madeBy, ongoingBreakEven, ongoingX, reportLang, STEPS, testDays, whoPlayedShort, zeroCrossing } from "./model.ts";
 import type { ReportInput, StepState } from "./model.ts";
 
 export const CHART_W = 640;
@@ -58,6 +60,21 @@ function inputText(a: Analysis, key: string): string | undefined {
 /** Inputs nobody knows yet: the owner's guesses, plus facts What-IF had to fill in with a fallback. */
 function isGuess(i: ResolvedInput): boolean {
   return i.kind === "assumption" || i.source === "assumption";
+}
+
+/** The guesses only the test can check (extra customers, regulars who switch, the change in sales). */
+export function isTestGuess(i: ResolvedInput): boolean {
+  return i.kind === "assumption";
+}
+
+/** Facts or plans the owner did not give, which What-IF filled in (a fallback or derived value): she checks these, not the test. */
+export function isFilled(i: ResolvedInput): boolean {
+  return i.kind !== "assumption" && i.source === "assumption";
+}
+
+/** How many guesses the test checks, and how many numbers What-IF filled in. The same counts everywhere in the report. */
+export function guessCounts(a: Analysis): { guesses: number; filled: number } {
+  return { guesses: a.inputs.filter(isTestGuess).length, filled: a.inputs.filter(isFilled).length };
 }
 
 /* ---------------- progress header ---------------- */
@@ -116,21 +133,25 @@ export function whoCard(input: ReportInput): string {
   const reh = input.rehearsal;
   const by = madeBy(input);
   const given = a.inputs.filter((i) => !isGuess(i));
-  const guesses = a.inputs.filter(isGuess);
+  const { guesses, filled } = guessCounts(a);
   const fromSrc: Source = a.demo || by === "demo" ? "demo" : "owner";
   const played = aiPlayed(reh);
   const aiKey = (by === "try" ? (played ? "who.ai.tryPlayed" : "who.ai.try") : by === "demo" ? (played ? "who.ai.demoPlayed" : "who.ai.demo") : played ? "who.ai.coachPlayed" : "who.ai.coach") as MsgKey;
   const row = (lead: string, k: string, v: string, cls = "") => `<li class="${cls}">${lead}<span><strong>${esc(k)}</strong> ${esc(v)}</span></li>`;
+  const guessText = `${t("who.guessV", { n: guesses, count: guesses })}${filled ? t("who.filledV", { n: filled, count: filled }) : ""}`;
   const rows = [
     row(chip(fromSrc), t(fromSrc === "demo" ? "who.demoK" : "who.youK"), t(fromSrc === "demo" ? "who.demoV" : "who.youV", { n: given.length, count: given.length })),
     row(chip("calculation"), t("who.calcK"), t("who.calcV", { n: calculatedCount(a), count: calculatedCount(a) })),
-    row(chip("assumption"), t("who.guessK"), t("who.guessV", { n: guesses.length, count: guesses.length })),
+    row(chip("assumption"), t("who.guessK"), guessText),
     reh ? row(chip("imagined"), t("who.imagK"), t("who.imagV", { n: reh.personas.length, count: reh.personas.length, played: whoPlayedShort(reh) })) : "",
-    row(`<span class="wi-who-ai">${ICONS.bot}</span>`, t("who.aiK"), t(aiKey), "is-ai"),
   ].join("");
-  return `<div class="wi-card wi-who" id="wi-who" aria-labelledby="wi-who-h" role="region">
-  <h3 class="wi-h3" id="wi-who-h">${esc(t("who.title"))}</h3>
+  // On a phone the card is one tap away, but what the AI did stays in view (the one line people most need).
+  const ai = `<p class="wi-who-ai-line"><span class="wi-who-ai">${ICONS.bot}</span><span><strong>${esc(t("who.aiK"))}</strong> ${esc(t(aiKey))}</span></p>`;
+  return `<div class="wi-card wi-who" id="wi-who" role="region" aria-labelledby="wi-who-h">
+  <details class="wi-who-d" data-wi-open-wide><summary><h3 class="wi-h3" id="wi-who-h">${esc(t("who.title"))}</h3><span class="wi-who-chips" aria-hidden="true">${chip(fromSrc)}${chip("calculation")}${chip("assumption")}${reh ? chip("imagined") : ""}</span></summary>
   <ul class="wi-who-list">${rows}</ul>
+  </details>
+  ${ai}
 </div>`;
 }
 
@@ -160,11 +181,51 @@ function expected(a: Analysis): Scenario | undefined {
   return a.scenarios.find((s) => s.id === "expected") ?? a.scenarios[1] ?? a.scenarios[0];
 }
 
+/** Costs that What-IF fills in as 0 when the owner does not give them: they make a change look better than it probably is. */
+const ZERO_COSTS = ["setup_cost", "extra_staff_hours_per_day", "marketing_per_week"];
+
+/**
+ * A warning that belongs above the short answer, not folded away: the break-even is 0 (or the worst case is no loss)
+ * only because What-IF filled in costs the owner never gave, or a filled-in lunch spend turns switching regulars into a gain.
+ * Never names the break-even itself, so the guess in step 4 still means something.
+ */
+export function filledWarning(a: Analysis): { title: string; lines: string[] } | null {
+  if (a.template !== "lunch_offer") return null;
+  const switchGain = (a.current.find((f) => f.id === "switch_cost_day")?.value ?? 0) < -0.005;
+  const fills = a.inputs.filter((i) => isFilled(i) && ((ZERO_COSTS.includes(i.key) && i.value === 0) || (i.key === "lunch_spend" && switchGain)));
+  if (!fills.length) return null;
+  const free = a.breakEven.reachable && a.breakEven.value <= 0;
+  const noLoss = a.worstCase.value >= -0.5;
+  const spendFilled = fills.some((i) => i.key === "lunch_spend");
+  if (!free && !noLoss && !spendFilled) return null;
+  const lines: string[] = [];
+  const list = listOf(fills.map((i) => `${lowerFirst(i.label)} (${fmtInput(i.value, i.unit)})`));
+  lines.push(t("warn.filled", { list: reportLang(a) === "de" ? cap1(list) : list }));
+  // the engine's own sentence about a filled-in lunch spend, when it gave one
+  if (switchGain && spendFilled) {
+    const spend = fills.find((i) => i.key === "lunch_spend");
+    const own = spend ? a.warnings.find((w) => w.includes(fmtInput(spend.value, spend.unit))) : undefined;
+    if (own) lines.push(own);
+  }
+  return { title: t("warn.filledTitle"), lines };
+}
+
+function cap1(s: string): string {
+  return s.charAt(0).toLocaleUpperCase() + s.slice(1);
+}
+
+function filledCallout(a: Analysis): string {
+  const w = filledWarning(a);
+  if (!w) return "";
+  return `<div class="wi-callout wi-callout--warn wi-filled-warn" role="note">${ICONS.warn}<div><p class="wi-callout-title">${esc(w.title)}</p>${w.lines.map((l) => `<p>${esc(tidyMinus(l))}</p>`).join("")}</div></div>`;
+}
+
 export function step1(input: ReportInput, state: StepState): string {
   const a = input.analysis;
   const cmp = compareOptions(a);
   const exp = expected(a);
   const be = bigValue(a.breakEven.value, a.breakEven.unit);
+  const on = ongoingBreakEven(a);
   const days = testDays(input);
   const w = a.worstCase.value;
   return `${openStep(1, state)}${stepHead(1, state)}
@@ -179,9 +240,10 @@ ${whoCard(input)}
     <div class="wi-versus-opt is-change" role="listitem"><span class="wi-versus-tag">${esc(t("cmp.b"))}</span><p>${esc(cmp.change)}</p></div>
   </div>
 </div>
+${filledCallout(a)}
 <h3 class="wi-h3">${esc(t("short.title"))}</h3>
 <div class="wi-tiles">
-  <a class="wi-tile" href="#wi-step-4"><span class="wi-tile-label">${esc(a.breakEven.label)}</span><span class="wi-tile-value" data-wi-be-value>${esc(be.big)}${be.small ? ` <small>${esc(be.small)}</small>` : ""}</span><span class="wi-tile-cover" data-wi-be-cover hidden><span class="wi-tile-q" aria-hidden="true">?</span>${esc(t("tile.guessFirst"))}</span>${chip("calculation")}<span class="wi-tile-more">${esc(t("tile.step", { n: 4 }))} ${ICONS.arrow}</span></a>
+  <a class="wi-tile wi-tile--be" href="#wi-step-4"><span class="wi-tile-label">${esc(a.breakEven.label)}</span><span class="wi-tile-value" data-wi-be-value>${esc(be.big)}${be.small ? ` <small>${esc(be.small)}</small>` : ""}</span>${on ? `<span class="wi-tile-words wi-tile-on" data-wi-be-value>${esc(t("tile.ongoing", { x: fmt(on.value, on.unit) }))}</span>` : ""}<span class="wi-tile-cover" data-wi-be-cover hidden><span class="wi-tile-q" aria-hidden="true">?</span>${esc(t("tile.guessFirst"))}</span>${chip("calculation")}<span class="wi-tile-more">${esc(t("tile.step", { n: 4 }))} ${ICONS.arrow}</span></a>
   ${exp ? `<a class="wi-tile" href="#wi-step-3"><span class="wi-tile-label">${esc(days ? t("tile.likelyDays", { days }) : t("tile.likely"))}</span><span class="wi-tile-value wi-${tone(exp.netTest)}">${esc(wholeSigned(exp.netTest))}</span><span class="wi-tile-words">${esc(netWords(exp.netTest))}</span>${chip("calculation")}<span class="wi-tile-more">${esc(t("tile.step", { n: 3 }))} ${ICONS.arrow}</span></a>` : ""}
   <a class="wi-tile" href="#wi-step-3-worst"><span class="wi-tile-label">${esc(t("tile.worst"))}</span><span class="wi-tile-value wi-${tone(w)}">${esc(wholeSigned(w))}</span>${a.worstCase.shareOfCash !== undefined ? `<span class="wi-tile-words">${esc(t("tile.cash", { pct: pct(a.worstCase.shareOfCash) }))}</span>` : ""}${chip("calculation")}<span class="wi-tile-more">${esc(t("tile.step", { n: 3 }))} ${ICONS.arrow}</span></a>
 </div>
@@ -209,7 +271,7 @@ function sharedChips(rows: ResolvedInput[]): { set: Source[]; all: boolean } | n
 }
 
 /** A compact label → value list. One chip set for the whole group when every row shares it ("all demo data"). */
-function kvGroup(title: string, rows: ResolvedInput[], note = "", cls = ""): string {
+function kvGroup(title: string, rows: ResolvedInput[], note = "", cls = "", tail = ""): string {
   if (!rows.length) return "";
   const shared = sharedChips(rows);
   const key = shared?.set.join(",");
@@ -220,7 +282,7 @@ function kvGroup(title: string, rows: ResolvedInput[], note = "", cls = ""): str
       return `<div><dt>${esc(i.label)}</dt><dd><span class="wi-num">${esc(fmtInput(i.value, i.unit))}</span>${own.join(",") === key ? "" : ` ${own.map(chip).join(" ")}`}</dd></div>`;
     })
     .join("");
-  return `<div class="wi-nums-col ${cls}"><div class="wi-nums-head"><h3 class="wi-h4">${esc(title)}</h3>${head}</div>${note ? `<p class="wi-muted wi-small">${esc(note)}</p>` : ""}<dl class="wi-kv">${items}</dl></div>`;
+  return `<div class="wi-nums-col ${cls}"><div class="wi-nums-head"><h3 class="wi-h4">${esc(title)}</h3>${head}</div>${note ? `<p class="wi-muted wi-small">${esc(note)}</p>` : ""}<dl class="wi-kv">${items}</dl>${tail}</div>`;
 }
 
 const GROUPS: { kind: ResolvedInput["kind"]; title: MsgKey; note: MsgKey }[] = [
@@ -246,18 +308,34 @@ export function factsCard(facts: PublicFact[] | undefined): string {
       return `<li><span class="wi-fact-l">${esc(f.label)}</span><strong class="wi-fact-v">${esc(f.value)}</strong><span class="wi-fact-src">${src} · ${esc(t("facts.asOf", { date: dateText(f.asOf) }))}</span></li>`;
     })
     .join("");
-  return `<aside class="wi-card wi-facts" id="wi-facts" aria-labelledby="wi-facts-h"><details data-wi-open-wide><summary class="wi-facts-head">${ICONS.pin}<h3 class="wi-h4" id="wi-facts-h">${esc(t("facts.title"))} (${facts.length})</h3></summary><p class="wi-muted wi-small">${esc(t("facts.note"))}</p><ul class="wi-facts-list">${items}</ul></details></aside>`;
+  // Open from the start, on a phone too: public, dated rules are the third kind of number the report teaches.
+  return `<aside class="wi-card wi-facts" id="wi-facts" aria-labelledby="wi-facts-h"><details open><summary class="wi-facts-head">${ICONS.pin}<h3 class="wi-h4" id="wi-facts-h">${esc(t("facts.title"))} (${facts.length})</h3></summary><p class="wi-muted wi-small">${esc(t("facts.note"))}</p><ul class="wi-facts-list">${items}</ul></details></aside>`;
+}
+
+/** The numbers What-IF filled in: in view when there are a few, one tap away when there are many (a quick /try). */
+function filledGroup(filled: ResolvedInput[]): string {
+  if (!filled.length) return "";
+  const rows = filled
+    .map((i) => `<div><dt>${esc(i.label)}</dt><dd><span class="wi-num">${esc(fmtInput(i.value, i.unit))}</span> ${inputSources(i.source, i.kind).map(chip).join(" ")}</dd></div>`)
+    .join("");
+  const body = `<dl class="wi-kv">${rows}</dl>`;
+  const head = `${esc(t("nums.filled"))}`;
+  // A few in view under the key facts; many (a quick /try) one tap away, with the note on why.
+  if (filled.length <= 3) return `<div class="wi-kv-filled"><p class="wi-kv-sub" title="${esc(t("nums.filledNote"))}">${head}</p>${body}</div>`;
+  return `<details class="wi-kv-filled wi-filled-more"><summary class="wi-kv-sub">${head} (${filled.length})</summary><p class="wi-muted wi-small">${esc(t("nums.filledNote"))}</p>${body}</details>`;
 }
 
 export function step2(input: ReportInput, state: StepState): string {
   const a = input.analysis;
-  const guesses = a.inputs.filter(isGuess);
+  const guesses = a.inputs.filter(isTestGuess);
+  const filled = a.inputs.filter(isFilled);
   const known = a.inputs.filter((i) => !isGuess(i));
   const keys = KEY_INPUTS[a.template] ?? [];
   let key = keys.map((k) => known.find((i) => i.key === k)).filter((i): i is ResolvedInput => !!i);
   if (key.length < 3) key = known.slice(0, 4);
+  // Filled-in facts and plans sit with their own kind (with their chip and note); only real guesses sit under "guesses".
   const groups = GROUPS.map((g) => {
-    const rows = g.kind === "assumption" ? guesses : a.inputs.filter((i) => i.kind === g.kind && !isGuess(i));
+    const rows = g.kind === "assumption" ? guesses : a.inputs.filter((i) => i.kind === g.kind);
     if (!rows.length) return "";
     return `<div class="wi-in-group"><h3 class="wi-h4">${esc(t(g.title))}</h3><p class="wi-muted wi-small">${esc(t(g.note))}</p><table class="wi-table wi-inputs"><thead><tr><th scope="col">${esc(t("th.what"))}</th><th scope="col">${esc(t("th.value"))}</th><th scope="col">${esc(t("th.source"))}</th></tr></thead><tbody>${rows.map(inputRow).join("")}</tbody></table></div>`;
   }).join("");
@@ -271,7 +349,7 @@ export function step2(input: ReportInput, state: StepState): string {
     : "";
   return `${openStep(2, state)}${stepHead(2, state)}
 <p class="wi-labels-note">${ICONS.info}<span>${esc(t("nums.labels"))} <a href="#wi-who">${esc(t("nums.labelsLink"))}</a></span></p>
-<div class="wi-nums">${kvGroup(t("nums.guesses"), guesses, t("nums.guessesShort"), "is-guess")}${kvGroup(t("nums.key"), key)}</div>
+<div class="wi-nums">${kvGroup(t("nums.guesses"), guesses, t("nums.guessesShort"), "is-guess")}${kvGroup(t("nums.key"), key, "", "", filledGroup(filled))}</div>
 <details class="wi-more"><summary>${esc(t("nums.all", { n: a.inputs.length, count: a.inputs.length }))}</summary>${groups}</details>
 ${current}
 ${factsCard(a.facts)}
@@ -316,7 +394,7 @@ function scenarioCard(s: Scenario, days: number | undefined): string {
   const guessSrc = s.figures.find((f) => isGuessFigure(s, f))?.source;
   // One sentence in view on the likely guess; the other two keep theirs with the working (the chart above already compares them).
   const main = s.id === "expected";
-  const plain = s.plain ? `<p class="wi-scn-plain">${esc(s.plain)}</p>` : "";
+  const plain = s.plain ? `<p class="wi-scn-plain">${esc(tidyMinus(s.plain))}</p>` : "";
   const workBody = `${main ? "" : plain}${net ? `<div class="wi-working-net"><span>${esc(net.label)}</span>${mathsToggle(net.maths)}</div>` : ""}${figs ? `<ul class="wi-figs wi-figs--tight">${figs}</ul>` : ""}`;
   return `<article class="wi-scn wi-scn--${esc(s.id)}${s.id === "expected" ? " is-main" : ""}" aria-labelledby="wi-scn-${esc(s.id)}">
   <header class="wi-scn-head"><h3 id="wi-scn-${esc(s.id)}" class="wi-scn-name">${esc(s.label)}</h3>${s.id === "expected" ? `<span class="wi-badge">${esc(t("scn.likely"))}</span>` : ""}</header>
@@ -377,6 +455,49 @@ function cashMeter(a: Analysis): string {
   return `<div class="wi-meter-wrap"><div class="wi-meter${over ? " is-over" : ""}" role="img" aria-label="${esc(t("meter.aria", { pct: pctText }))}"><span style="width:${width.toFixed(1)}%"></span></div><p class="wi-meter-l"><span><strong>${esc(pctText)}</strong> ${esc(t("meter.ofCash", { cash: cash ? fmtInput(cash.value, cash.unit) : "" }))}</span><span class="wi-muted">${esc(over ? t("meter.over") : t("meter.left", { pct: pct(Math.max(0, 1 - share)) }))}</span></p></div>`;
 }
 
+/**
+ * Price change and the 2027 minimum wage, when the owner gave the staff hours paid at or near it: what the new price
+ * brings a week against what the wage rise costs a week, in one unit (euros a week), from the engine's wageRise
+ * (or its two figures). Nothing without them.
+ */
+export function wageRise(a: Analysis): { gainWeek: number; costWeek: number; leftWeek: number; plain: string; maths: string } | null {
+  if (a.template !== "price_change") return null;
+  const w = a.wageRise;
+  if (w && Number.isFinite(w.costWeek) && w.costWeek > 0) return { gainWeek: w.gainWeek, costWeek: w.costWeek, leftWeek: w.leftWeek, plain: w.plain, maths: w.maths };
+  const cost = a.current.find((f) => f.id === "min_wage_rise_week");
+  const left = a.current.find((f) => f.id === "left_after_wage_rise_week");
+  if (!cost || !left || !(cost.value > 0)) return null;
+  return { gainWeek: left.value + cost.value, costWeek: cost.value, leftWeek: left.value, plain: "", maths: [cost.maths, left.maths].filter(Boolean).join("\n\n") };
+}
+
+export function wageChart(a: Analysis, width: number): string {
+  const w = wageRise(a);
+  if (!w) return "";
+  const rows = [
+    { label: t("wage.gain"), value: w.gainWeek },
+    { label: t("wage.cost"), value: -w.costWeek },
+    { label: t("wage.left"), value: w.leftWeek, highlight: true },
+  ];
+  return barsSvg(rows, {
+    width,
+    id: "wi-chart-wage",
+    title: t("wage.title"),
+    desc: rows.map((r) => `${r.label}: ${wholeSigned(r.value)}`).join("; "),
+  });
+}
+
+function wageRiseCard(input: ReportInput): string {
+  const a = input.analysis;
+  const w = wageRise(a);
+  if (!w) return "";
+  return `<figure class="wi-card wi-chart wi-wage" id="wi-wage">
+  <figcaption><span class="wi-chart-title">${esc(t("wage.title"))}</span>${chip("calculation")}<span class="wi-chart-sub">${esc(t("wage.sub"))}</span></figcaption>
+  <div class="wi-chart-box" data-wi-chart="wage">${wageChart(a, CHART_W)}</div>
+  ${w.plain ? `<p class="wi-wage-plain">${esc(tidyMinus(w.plain))}</p>` : ""}
+  ${mathsToggle(w.maths)}
+</figure>`;
+}
+
 export function step3(input: ReportInput, state: StepState): string {
   const a = input.analysis;
   const days = testDays(input);
@@ -388,8 +509,10 @@ export function step3(input: ReportInput, state: StepState): string {
   const hasRange = typeof w.ifAllSwitch === "number" && Number.isFinite(w.ifAllSwitch) && Math.abs(w.ifAllSwitch - w.value) >= 1;
   const allSwitch = hasRange ? `<p class="wi-worst-range">${esc(t("worst.range", { v: wholeSigned(w.ifAllSwitch!) }))}</p>` : "";
   const worstBody = hasRange
-    ? `${allSwitch}${cashMeter(a)}<details class="wi-more wi-worst-more"><summary>${esc(t("worst.why"))}</summary><p>${esc(w.plain)}</p>${mathsToggle(w.maths)}</details>`
-    : `<p>${esc(w.plain)}</p>${cashMeter(a)}${mathsToggle(w.maths)}`;
+    ? `${allSwitch}${cashMeter(a)}<details class="wi-more wi-worst-more"><summary>${esc(t("worst.why"))}</summary><p>${esc(tidyMinus(w.plain))}</p>${mathsToggle(w.maths)}</details>`
+    : `<p>${esc(tidyMinus(w.plain))}</p>${cashMeter(a)}${mathsToggle(w.maths)}`;
+  // No loss even in the worst case: a calm card in the engine's own words, never the red alarm.
+  const safe = Math.round(w.value) >= 0;
   return `${openStep(3, state)}${stepHead(3, state)}
 <figure class="wi-card wi-chart">
   <figcaption><span class="wi-chart-title">${esc(days ? t("chart3.titleDays", { days }) : t("chart3.title"))}</span>${chip("calculation")}<span class="wi-chart-sub">${esc(t("chart3.sub"))}</span></figcaption>
@@ -398,7 +521,8 @@ export function step3(input: ReportInput, state: StepState): string {
 </figure>
 <div class="wi-toolbar wi-noprint" data-wi-only-js hidden><button type="button" class="wi-btn wi-btn--ghost" data-wi-allmaths aria-pressed="false">${esc(t("maths.showAll"))}</button></div>
 <div class="wi-scns">${scenarioCards(a, days)}</div>
-<div class="wi-callout wi-callout--neg" id="wi-step-3-worst">${ICONS.warn}<div><p class="wi-callout-title">${esc(t("worst.title", { v: wholeSigned(w.value) }))} ${chip("calculation")}</p>${worstBody}${hint("worstCase")}</div></div>
+${wageRiseCard(input)}
+<div class="wi-callout ${safe ? "wi-callout--ok" : "wi-callout--neg"}" id="wi-step-3-worst">${safe ? ICONS.check : ICONS.warn}<div><p class="wi-callout-title">${esc(t(safe ? "worst.titleOk" : "worst.title", { v: wholeSigned(w.value) }))} ${chip("calculation")}</p>${worstBody}${hint("worstCase")}</div></div>
 </section>`;
 }
 
@@ -408,18 +532,49 @@ export function guessIndex(a: Analysis): number {
   return nearestIndex(a.sensitivity.points, a.sensitivity.current);
 }
 
-export function sensChart(a: Analysis, width: number, index: number, field: NetField = "netTest"): string {
+/** The break-even chart. `marks: false` while the owner has not guessed yet: no threshold lines or labels, and the description keeps quiet too. */
+export function sensChart(a: Analysis, width: number, index: number, field: NetField = "netTest", marks = true): string {
   const s = a.sensitivity;
   const on = ongoingX(a);
+  const lead = !marks ? t("ex.descLine") : `${s.breakEvenX !== null ? t("ex.descBe", { x: xText(s.breakEvenX, s.unit) }) : t("ex.descNoBe")}${on !== null ? ` ${t("ex.descOn", { x: xText(on, s.unit) })}` : ""}`;
   return sensitivitySvg(s, {
     width,
     index,
     field,
     ongoing: on,
+    marks,
     id: "wi-chart-sens",
     title: t("ex.chartTitle", { label: s.label }),
-    desc: `${s.breakEvenX !== null ? t("ex.descBe", { x: xText(s.breakEvenX, s.unit) }) : t("ex.descNoBe")}${on !== null ? ` ${t("ex.descOn", { x: xText(on, s.unit) })}` : ""} ${t("ex.descGuess", { x: xText(s.current, s.unit) })}`,
+    desc: `${lead} ${t("ex.descGuess", { x: xText(s.current, s.unit) })}`,
   });
+}
+
+/** The break-even numbers as the report writes them ("11", "7", "9,7 %"), to keep them out of view until the owner guesses. */
+function thresholdTokens(a: Analysis): string[] {
+  const vals = [a.breakEven, ongoingBreakEven(a)].filter((v): v is NonNullable<typeof v> => !!v && Number.isFinite(v.value));
+  return [...new Set(vals.map((v) => (v.unit === "share" ? sharePct(v.value) : num(v.value))))];
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function mentions(text: string, tokens: string[]): boolean {
+  return tokens.some((tok) => new RegExp(`(^|[^\\d.,])${escapeRe(tok)}(?![.,]?\\d)`).test(text));
+}
+
+/**
+ * An engine sentence with the break-even numbers taken out, for "Why this changed" before the owner has guessed:
+ * sentences that name a threshold are dropped, and so are brackets like "(that needs 11)". Empty when nothing is left.
+ */
+export function hideThresholds(text: string, a: Analysis): string {
+  const tokens = thresholdTokens(a);
+  if (!tokens.length || !text) return text;
+  const sentences = text.split(/(?<=[.!?])\s+(?=[\p{Lu}„"«¿¡(])/u);
+  const kept = sentences
+    .map((x) => x.replace(/\s*\([^()]*\)/g, (m) => (mentions(m, tokens) ? "" : m)))
+    .filter((x) => !mentions(x, tokens));
+  return kept.join(" ").trim();
 }
 
 /**
@@ -466,7 +621,29 @@ export function readout(a: Analysis, index: number, days: number | undefined): {
   const xs = xText(p.x, s.unit);
   const valueText = `${s.label}: ${xs}`;
   const html = `<p class="wi-readout-main"><span class="wi-readout-x">${esc(s.label)}: <strong>${esc(xs)}</strong></span><span class="wi-readout-net wi-${tone(p.netTest)}">${esc(wholeSigned(p.netTest))} <small>${esc(overTest(days))} · ${esc(netWords(p.netTest))}</small></span><span class="wi-readout-month">${esc(t("scn.month", { v: wholeSigned(p.netMonth) }))}</span></p>`;
-  return { html, why: p.explanation, diff: mechanism(a, index, days), valueText };
+  return { html, why: tidyMinus(p.explanation), diff: tidyMinus(mechanism(a, index, days)), valueText };
+}
+
+/**
+ * For a guess below the break-even: the costs gut feeling tends to miss, in the owner's own numbers
+ * (what a deal leaves after VAT and ingredients, what switching regulars cost a day), from the engine's figures.
+ */
+export function gutMisses(a: Analysis): string {
+  const fig = (id: string) => a.current.find((f) => f.id === id);
+  if (a.template === "lunch_offer") {
+    const m = fig("deal_margin");
+    const offer = a.inputs.find((i) => i.key === "offer_price");
+    if (!m || !offer || typeof offer.value !== "number") return "";
+    const sw = fig("switch_cost_day");
+    const p = { price: fmtInput(offer.value, offer.unit), m: price(m.value) };
+    return sw && sw.value > 0.005 ? t("predict.lowWhy", { ...p, sw: price(sw.value) }) : t("predict.lowWhyMargin", p);
+  }
+  if (a.template === "price_change") {
+    const old = fig("margin_now");
+    const nw = fig("margin_new");
+    return old && nw ? t("predict.lowWhyPrice", { old: price(old.value), new: price(nw.value) }) : "";
+  }
+  return "";
 }
 
 /** What the predict-then-check box says once the owner has guessed (or skipped). Plain text. */
@@ -483,7 +660,8 @@ export function predictFeedback(a: Analysis, guess: number | null): string {
   if (Math.abs(guess) < target) {
     const on = ongoingBreakEven(a);
     const extra = on && !share && guess >= on.value ? ` ${t("predict.lowOngoing", { on: fmt(on.value, on.unit) })}` : "";
-    return `${t("predict.low", { g: gText, be: beText, d: dText })}${extra}`;
+    const why = gutMisses(a);
+    return `${t("predict.low", { g: gText, be: beText, d: dText })}${extra}${why ? ` ${why}` : ""}`;
   }
   return t("predict.high", { g: gText, be: beText, d: dText });
 }
@@ -497,6 +675,24 @@ function predictBox(a: Analysis): string {
   <div class="wi-predict-row"><span class="wi-predict-field"><input class="wi-input" id="wi-predict-in" type="number" inputmode="decimal" step="any" min="0"${share ? ' max="100"' : ""} aria-describedby="wi-predict-note">${unit ? `<span class="wi-predict-unit">${esc(unit)}</span>` : ""}</span><button type="button" class="wi-btn" data-wi-predict-check>${esc(t("predict.check"))}</button><button type="button" class="wi-btn wi-btn--link" data-wi-predict-skip>${esc(t("predict.skip"))}</button></div>
   <p class="wi-muted wi-small" id="wi-predict-note">${esc(t("predict.note"))}</p>
 </div>`;
+}
+
+/**
+ * Under the slider chart, the two numbers in the engine's framing: the solid line pays back the test (setup included),
+ * the dashed one is where each day pays its way, the number for keeping it. Also why the marker sits right of where the
+ * line crosses zero (whole customers). Hidden, like the markers, until the owner has guessed.
+ */
+function twoNumbers(a: Analysis): string {
+  const be = a.breakEven;
+  const on = ongoingBreakEven(a);
+  const s = a.sensitivity;
+  const parts: string[] = [];
+  if (on) parts.push(t("ex.two", { be: fmt(be.value, be.unit), on: fmt(on.value, on.unit) }));
+  if (isCountUnit(be.unit) && be.unit === s.unit && be.reachable) {
+    const x = zeroCrossing(s.points, "netTest");
+    if (x !== null && x < be.value - 0.05 && be.value - x < 1) parts.push(t("ex.rounded", { exact: num(Math.round(x * 10) / 10), be: fmt(be.value, be.unit) }));
+  }
+  return parts.length ? `<p class="wi-ex-two" data-wi-be-reveal>${parts.map(esc).join(" ")}</p>` : "";
 }
 
 export function step4(input: ReportInput, state: StepState): string {
@@ -515,13 +711,14 @@ export function step4(input: ReportInput, state: StepState): string {
     : "";
   // Two or three things worth knowing, one tap away (their numbers are already on the card above).
   const warnings = a.warnings.length
-    ? `<details class="wi-callout wi-callout--warn wi-warn-d"><summary>${ICONS.warn}<span>${esc(t("warn.title"))} (${a.warnings.length})</span></summary>${list(a.warnings)}</details>`
+    ? `<details class="wi-callout wi-callout--warn wi-warn-d" data-wi-be-reveal><summary>${ICONS.warn}<span>${esc(t("warn.title"))} (${a.warnings.length})</span></summary>${list(a.warnings)}</details>`
     : "";
   const explorer = s.points.length
     ? `<div class="wi-card wi-explorer" data-wi-explorer>
   <div class="wi-explorer-head"><h3 class="wi-h3">${esc(t("ex.title"))}</h3>${chip("calculation")}</div>
   <p class="wi-muted wi-small">${esc(on ? t("ex.helpTwo") : t("ex.help"))}</p>
   <div class="wi-chart-box" data-wi-chart="sens">${sensChart(a, CHART_W, g)}</div>
+  ${twoNumbers(a)}
   <div class="wi-slider-row">
     <label class="wi-slider-label" for="wi-slider">${esc(s.label)}</label>
     <input class="wi-slider" id="wi-slider" type="range" min="0" max="${Math.max(0, s.points.length - 1)}" step="1" value="${g}" aria-valuetext="${esc(r.valueText)}" aria-describedby="wi-readout">
@@ -542,7 +739,7 @@ export function step4(input: ReportInput, state: StepState): string {
   <p class="wi-be-value" data-wi-be-value><span class="wi-be-big">${esc(bv.big)}</span>${bv.small ? `<span class="wi-be-small">${esc(bv.small)}</span>` : ""}</p>
   <div data-wi-be-more>
   ${reach}
-  <p class="wi-be-plain">${esc(be.plain)}</p>
+  <p class="wi-be-plain">${esc(tidyMinus(be.plain))}</p>
   ${guessInput ? `<p class="wi-be-vs"><span>${esc(t("be.yourGuess"))} <strong>${esc(fmtInput(guessInput.value, guessInput.unit))}</strong></span>${inputSources(guessInput.source, guessInput.kind).map(chip).join(" ")}</p>` : ""}
   ${mathsToggle(be.maths)}
   ${ongoingLine}
@@ -556,7 +753,55 @@ ${explorer}
 
 /* ---------------- step 6: what to test, test plan, result ---------------- */
 
-function testCard(plan: TestPlan): string {
+/** A blank daily tally for the printed card: one column per test day, the rows the test counts, and an average column. */
+function tallyGrid(a: Analysis, plan: TestPlan): string {
+  const days = Math.max(1, Math.min(31, Math.round(plan.days)));
+  const item = String(input(a, "item")?.value ?? "") || t("cmp.theItem");
+  const rows =
+    a.template === "price_change"
+      ? [t("tally.price.sold", { item: cap1(item) }), t("tally.price.alt"), t("tally.price.remarks")]
+      : [t("tally.lunch.customers"), t("tally.lunch.deals"), t("tally.lunch.regulars")];
+  const chunks: [number, number][] = [];
+  for (let d = 1; d <= days; d += 16) chunks.push([d, Math.min(days, d + 15)]);
+  const tables = chunks
+    .map(([from, to], k) => {
+      const cols = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+      const last = k === chunks.length - 1;
+      const head = `<tr><th scope="col">${esc(t("tally.day"))}</th>${cols.map((d) => `<th scope="col">${d}</th>`).join("")}${last ? `<th scope="col" class="wi-tally-avg">${esc(t("tally.avg"))}</th>` : ""}</tr>`;
+      const body = rows.map((r) => `<tr><th scope="row">${esc(r)}</th>${cols.map(() => "<td></td>").join("")}${last ? `<td class="wi-tally-avg"></td>` : ""}</tr>`).join("");
+      return `<table class="wi-tally"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+    })
+    .join("");
+  return `<div class="wi-tc-block wi-tally-wrap"><h4 class="wi-h4">${esc(t("tally.title"))}</h4>${tables}<p class="wi-tally-base">${esc(t(a.template === "price_change" ? "tally.basePrice" : "tally.baseLunch"))}</p></div>`;
+}
+
+type Verdict = "keep" | "tweak" | "stop";
+
+/** Two practice questions on the rule just agreed (retrieval before the real test), from the plan's own thresholds; none without them. */
+function selfCheck(plan: TestPlan): string {
+  const r = plan.rule;
+  if (!r || !r.testable || !(r.keepFrom > r.tweakFrom) || r.tweakFrom <= 0) return "";
+  const lunch = r.unit === "customers/day";
+  const word = (v: Verdict) => t(v === "keep" ? "tc.keep" : v === "tweak" ? "tc.tweak" : "tc.stop");
+  const qs: { x: number; answer: Verdict; sunk: boolean }[] = [];
+  qs.push({ x: lunch ? Math.max(r.tweakFrom, r.keepFrom - 1) : Math.round((r.tweakFrom + r.keepFrom) / 2), answer: "tweak", sunk: false });
+  if (lunch && r.payBackFrom !== undefined && r.payBackFrom - 1 >= r.keepFrom) qs.push({ x: r.payBackFrom - 1, answer: "keep", sunk: true });
+  else qs.push({ x: lunch ? r.tweakFrom - 1 : Math.max(0, r.tweakFrom - Math.max(1, Math.ceil(r.tweakFrom * 0.05))), answer: "stop", sunk: false });
+  const items = qs
+    .map((q, i) => {
+      const x = fmt(q.x, r.unit);
+      const why = `${t(`sc.why.${q.answer}` as MsgKey, { x, keep: fmt(r.keepFrom, r.unit), tweak: fmt(r.tweakFrom, r.unit) })}${q.sunk ? t("sc.why.sunk") : ""}`;
+      const text = lunch ? t(q.sunk ? "sc.qSunk" : "sc.qLunch", { n: num(q.x) }) : t("sc.qUnits", { n: num(q.x) });
+      const opts = (["keep", "tweak", "stop"] as const)
+        .map((v) => `<button type="button" class="wi-btn wi-btn--ghost wi-sc-opt is-${v}" data-wi-sc="${v}" aria-pressed="false">${esc(word(v))}</button>`)
+        .join("");
+      return `<li class="wi-sc-q" data-answer="${q.answer}" data-right="${esc(t("sc.right", { why }))}" data-wrong="${esc(t("sc.wrong", { why }))}"><p class="wi-sc-text" id="wi-sc-q${i + 1}">${esc(text)}</p><div class="wi-sc-opts" role="group" aria-labelledby="wi-sc-q${i + 1}">${opts}</div><p class="wi-sc-out" aria-live="polite"></p></li>`;
+    })
+    .join("");
+  return `<details class="wi-more wi-selfcheck wi-noprint" data-wi-selfcheck data-wi-only-js hidden><summary><span>${esc(t("sc.title"))}</span></summary><p class="wi-muted wi-small">${esc(t("sc.note"))}</p><ol class="wi-sc-list">${items}</ol></details>`;
+}
+
+function testCard(a: Analysis, plan: TestPlan): string {
   const measure = plan.measure.length
     ? `<div class="wi-tc-block"><h4 class="wi-h4">${esc(t("tc.measure"))}</h4><ul class="wi-tc-measure">${plan.measure.map((m) => `<li><strong>${esc(m.what)}</strong><span>${esc(m.how)}</span></li>`).join("")}</ul></div>`
     : "";
@@ -568,6 +813,7 @@ function testCard(plan: TestPlan): string {
   <header class="wi-tc-head"><p class="wi-eyebrow">${esc(t("tc.eyebrow"))}</p><h3 id="wi-testcard-h" class="wi-tc-title">${esc(plan.title)}</h3><p class="wi-tc-days-badge">${esc(fmt(plan.days, "days"))}</p></header>
   <p class="wi-tc-plain">${esc(plan.plain)}</p>
   <div class="wi-tc-block"><h4 class="wi-h4">${esc(t("tc.rule"))}</h4>
+    ${plan.rule && plan.rule.payBackFrom !== undefined && plan.rule.payBackFrom > plan.rule.keepFrom ? `<p class="wi-tc-two">${esc(t("tc.twoNumbers", { keep: fmt(plan.rule.keepFrom, plan.rule.unit), pay: fmt(plan.rule.payBackFrom, plan.rule.unit) }))}</p>` : ""}
     <div class="wi-rule">
       <div class="wi-rule-item is-keep">${ICONS.keep}<p><strong>${esc(t("tc.keep"))}</strong>${esc(plan.decisionRule.keep)}</p></div>
       <div class="wi-rule-item is-tweak">${ICONS.tweak}<p><strong>${esc(t("tc.tweak"))}</strong>${esc(plan.decisionRule.tweak)}</p></div>
@@ -583,6 +829,7 @@ function testCard(plan: TestPlan): string {
   </div>
   <p class="wi-tc-cap"><strong>${esc(t("tc.cap"))}</strong> ${esc(plan.costCap)}</p>
   </details>
+  ${tallyGrid(a, plan)}
   <div class="wi-tc-actions wi-noprint"><button type="button" class="wi-btn" data-wi-print>${ICONS.printer}<span>${esc(t("tc.print"))}</span></button></div>
 </article>`;
 }
@@ -593,7 +840,10 @@ export function resultLine(input: ReportInput, width: number): string {
   if (!res) return "";
   const unit = a.scenarios[0]?.assumptionUnit ?? a.sensitivity.unit;
   const marks: LineMark[] = a.scenarios.map((s) => ({ x: s.assumptionValue, label: `${s.label}: ${xText(s.assumptionValue, unit)}`, kind: "scenario" }));
-  if (a.breakEven.unit === unit) marks.push({ x: a.breakEven.value, label: t("chart.be", { x: xText(a.breakEven.value, unit) }), kind: "breakeven" });
+  const on = ongoingBreakEven(a);
+  const two = !!on && on.unit === unit;
+  if (a.breakEven.unit === unit) marks.push({ x: a.breakEven.value, label: t(two ? "chart.payBack" : "chart.be", { x: xText(a.breakEven.value, unit) }), kind: "breakeven" });
+  if (on && two) marks.push({ x: on.value, label: t("chart.ongoing", { x: xText(on.value, unit) }), kind: "breakeven" });
   marks.push({ x: res.actual, label: t("res.happened", { x: xText(res.actual, unit) }), kind: "actual" });
   return numberLineSvg(marks, {
     width,
@@ -631,6 +881,23 @@ const OBSERVED_KEYS = [
   "units_after_per_week",
 ] as const;
 
+const OBSERVED_UNIT: Record<string, ResolvedInput["unit"]> = {
+  baseline_lunch_customers: "customers/day",
+  test_lunch_customers: "customers/day",
+  redemptions_per_day: "customers/day",
+  regulars_per_day: "customers/day",
+  days_run: "days",
+  actual_setup_cost: "EUR",
+  units_before_per_week: "units/week",
+  units_after_per_week: "units/week",
+};
+
+function observedValue(k: string, v: unknown): string {
+  if (typeof v !== "number") return String(v);
+  const u = OBSERVED_UNIT[k];
+  return u ? fmtInput(v, u) : num(v);
+}
+
 function observedLabel(k: string): string {
   return (OBSERVED_KEYS as readonly string[]).includes(k) ? t(`obs.${k}` as MsgKey) : k.replace(/_/g, " ");
 }
@@ -639,22 +906,24 @@ function resultBlock(input: ReportInput): string {
   const res = input.result;
   if (!res) return "";
   const verdictIcon = res.verdict === "keep" ? ICONS.keep : res.verdict === "tweak" ? ICONS.tweak : ICONS.stop;
+  // The after-test demo's counts are made up: they wear the demo label, never "Your number".
+  const measured: Source = input.analysis.demo ? "demo" : "owner";
   const obs = Object.entries(res.observed)
-    .map(([k, val]) => `<li><span>${esc(observedLabel(k))}</span><strong>${esc(typeof val === "number" ? num(val) : String(val))}</strong></li>`)
+    .map(([k, val]) => `<li><span>${esc(observedLabel(k))}</span><strong>${esc(observedValue(k, val))}</strong></li>`)
     .join("");
   const unit = input.analysis.scenarios[0]?.assumptionUnit ?? input.analysis.sensitivity.unit;
   return `<div class="wi-card wi-result" aria-labelledby="wi-result-h">
   <h3 class="wi-h3" id="wi-result-h">${esc(t("res.title"))}</h3>
   <div class="wi-result-top">
     <p class="wi-verdict is-${esc(res.verdict)}">${verdictIcon}<span><small>${esc(t("res.ruleSays"))}</small>${esc(t(`res.verdict.${res.verdict}` as MsgKey))}</span></p>
-    <p class="wi-result-actual"><span class="wi-muted">${esc(res.actualLabel)}</span><strong>${esc(xText(res.actual, unit))}</strong><span>${esc(t(`res.closest.${res.closestScenario}` as MsgKey))}</span>${chip("owner")}</p>
+    <p class="wi-result-actual"><span class="wi-muted">${esc(res.actualLabel)}</span><strong>${esc(xText(res.actual, unit))}</strong><span>${esc(t(`res.closest.${res.closestScenario}` as MsgKey))}</span>${chip(measured)}</p>
     <p class="wi-result-net wi-${tone(res.netTest)}"><span class="wi-muted">${esc(t("res.net"))}</span><strong>${esc(wholeSigned(res.netTest))}</strong>${chip("calculation")}</p>
   </div>
-  <p>${esc(res.plain)}</p>
+  <p>${esc(tidyMinus(res.plain))}</p>
   <figure class="wi-chart"><figcaption><span class="wi-chart-title">${esc(t("res.lineCap"))}</span><span class="wi-chart-sub">${esc(t("res.lineSub"))}</span></figcaption><div class="wi-chart-box" data-wi-chart="result">${resultLine(input, CHART_W)}</div></figure>
   <figure class="wi-chart"><figcaption><span class="wi-chart-title">${esc(t("res.net"))}</span><span class="wi-chart-sub">${esc(t("res.barsSub"))}</span></figcaption><div class="wi-chart-box" data-wi-chart="result-net">${resultBars(input, CHART_W)}</div></figure>
   ${res.learned.length ? `<h4 class="wi-h4">${esc(t("res.learned"))}</h4>${list(res.learned)}` : ""}
-  ${obs ? `<details class="wi-tableview"><summary>${esc(t("res.measured"))}</summary><ul class="wi-observed">${obs}</ul></details>` : ""}
+  ${obs ? `<details class="wi-tableview"><summary>${esc(t("res.measured"))} ${chip(measured)}</summary><ul class="wi-observed">${obs}</ul></details>` : ""}
 </div>`;
 }
 
@@ -671,12 +940,17 @@ function whatToTest(input: ReportInput): string {
 
 export function step6(input: ReportInput, state: StepState): string {
   const plan = input.plan;
-  const body = plan ? testCard(plan) : `<div class="wi-card wi-empty"><p><strong>${esc(t("tc.none"))}</strong> ${esc(t("tc.noneAsk"))}</p></div>`;
+  const by = madeBy(input);
+  const tried = by === "try";
+  // No AI coach on /try or in the demo: the result goes in through the page's own "log your result".
+  const noCoach = by === "try" || by === "demo";
+  const body = plan ? testCard(input.analysis, plan) : `<div class="wi-card wi-empty"><p><strong>${esc(t("tc.none"))}</strong> ${esc(t(tried ? "tc.noneTry" : "tc.noneAsk"))}</p></div>`;
+  const practice = plan && !input.result ? selfCheck(plan) : "";
   const waiting =
     plan && !input.result
-      ? `<div class="wi-callout wi-callout--info">${ICONS.info}<div><p><strong>${esc(t("tc.backTitle"))}.</strong> ${esc(t("tc.back"))}</p></div></div>`
+      ? `<div class="wi-callout wi-callout--info">${ICONS.info}<div><p><strong>${esc(t("tc.backTitle"))}.</strong> ${esc(t(noCoach ? "tc.backTry" : "tc.back"))}</p></div></div>`
       : "";
-  return `${openStep(6, state)}${stepHead(6, state)}${whatToTest(input)}${body}${waiting}${resultBlock(input)}</section>`;
+  return `${openStep(6, state)}${stepHead(6, state)}${whatToTest(input)}${body}${practice}${waiting}${resultBlock(input)}</section>`;
 }
 
 /* ---------------- closing: what you learned ---------------- */
@@ -686,10 +960,10 @@ function aiLesson(input: ReportInput): string {
   const a = input.analysis;
   const reh = input.rehearsal;
   const calc = calculatedCount(a);
-  const guesses = a.inputs.filter(isGuess).length;
+  const { guesses, filled } = guessCounts(a);
   const lines = [
     t("ai.calc", { n: calc, count: calc }),
-    t("ai.guess", { n: guesses, count: guesses }),
+    `${t("ai.guess", { n: guesses, count: guesses })}${filled ? t("ai.filled", { n: filled, count: filled }) : ""}`,
     reh ? t("ai.imag", { n: reh.personas.length, count: reh.personas.length, played: whoPlayedShort(reh) }) : t("ai.imagNone"),
   ];
   return `<div class="wi-card wi-ai-lesson" aria-labelledby="wi-ai-h">

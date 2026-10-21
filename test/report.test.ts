@@ -4,7 +4,10 @@ import { test } from "node:test";
 import type { Analysis, TestPlan, TestResult } from "../src/engine/types.ts";
 import { REPORT_MESSAGES, renderReport, reportStyles, reportTokens, STEPS } from "../src/report/index.ts";
 import type { ReportInput } from "../src/report/index.ts";
-import { readout } from "../src/report/sections.ts";
+import { cellLabel } from "../src/report/rehearsal.ts";
+import { filledWarning, gutMisses, hideThresholds, predictFeedback, readout, sensChart } from "../src/report/sections.ts";
+import { TERMS } from "../src/i18n/terms.ts";
+import { ACTIONS } from "../src/sim/rounds.ts";
 import type { Lang } from "../src/i18n/index.ts";
 import type { RehearsalSummary } from "../src/sim/types.ts";
 
@@ -420,9 +423,9 @@ test("who did what: built from the data in the link, and it says plainly when no
   assert.ok(tryIt.includes("nothing. The numbers came from the form"));
   const coach = text(renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }), madeBy: "coach", rehearsal: fixtureRehearsal({ method: "subagent" }) }));
   assert.ok(coach.includes("it asked the questions, explains the steps and played the imagined customers"));
-  assert.ok(coach.includes("each played by its own AI helper"));
-  // 3 guesses in the fixture: the likely guess, the switch share and the test length What-IF filled in
-  assert.ok(coach.includes("Guesses: 3. Only your test can check them."));
+  assert.ok(coach.includes("played by an AI (Claude), each from a short brief"));
+  // 2 guesses the test checks (the likely guess, the switch share); the test length What-IF filled in is counted apart
+  assert.ok(coach.includes("Guesses: 2. Only your test can check them. Plus 1 number What-IF filled in because it was missing: check it yourself (step 2)."));
 });
 
 test("the rehearsal says who played the customers once, matching the method; an inconsistent sim caveat is dropped", () => {
@@ -452,8 +455,9 @@ test("timeline: only not_around is 'Not around'; going elsewhere has its own sta
   const reh = fixtureRehearsal();
   reh.grid = reh.grid.map((c) => (c.personaId === "p2" && c.round === 3 ? { ...c, action: "eats_elsewhere", actionLabel: "Has lunch somewhere else", positive: false } : c));
   const html = renderReport({ ...full, rehearsal: reh });
-  assert.match(html, /class="wi-cell is-elsewhere"[^>]*aria-label="Round 3, Jonas: Has lunch somewhere else\./);
-  assert.match(html, /<span class="wi-cell-label">Has lunch somewhere else<\/span>/);
+  assert.match(html, /class="wi-cell is-elsewhere"[^>]*title="Has lunch somewhere else" aria-label="Round 3, Jonas: Has lunch somewhere else\./);
+  // a short label in the cell (no mid-word breaks on a phone); the full action stays in its name and title
+  assert.match(html, /<span class="wi-cell-label">Eats elsewhere<\/span>/);
   assert.match(html, /class="wi-cell is-away"[^>]*aria-label="Round 2, Aylin: Not around/);
   assert.ok(html.includes("Went elsewhere"), "legend entry for going elsewhere");
   // round names in full above the grid; short headers in it
@@ -490,7 +494,7 @@ test("step 4 names both break-evens and the chart marks both", () => {
   const html = renderReport({ ...full, analysis: a });
   assert.ok(html.includes("If you keep it going:"));
   assert.ok(html.includes("Extra lunch customers a day for each day to pay its way: "));
-  assert.ok(html.includes("Break-even: 7"));
+  assert.ok(html.includes("Pays back the test: 7"), "the solid marker is the engine's headline: pays back the test");
   assert.ok(html.includes("Pays its way: 5"));
   assert.match(html, /class="wi-ref wi-ref--on"/);
   assert.ok(html.includes("What does “pays its way” mean?"));
@@ -530,7 +534,9 @@ test("test results are shown in whole euros (−€56, not −€56.02)", () => 
 
 test("one idea per step: details collapsed by default (numbers, the working, people, glossary)", () => {
   const html = renderReport(full);
-  assert.ok(!/<details[^>]*\sopen/.test(html), "nothing starts open");
+  // only the Berlin facts and the rehearsal's round-by-round grid start open, on a phone too
+  const open = [...html.matchAll(/<details[^>]*\sopen[^>]*>/g)].map((m) => m[0]);
+  assert.deepEqual(open, ["<details open>", '<details class="wi-more wi-views" id="wi-reh-views" open>'], "only the facts card and the grid start open");
   assert.match(html, /<details class="wi-more"><summary>See all 6 numbers, and why each one matters<\/summary>/);
   assert.match(html, /<details class="wi-working"><summary><span>The working<\/span>/);
   assert.match(html, /<details class="wi-sub wi-people" id="wi-reh-personas">/);
@@ -541,7 +547,7 @@ test("what you learned: one AI lesson in the owner's numbers, the take-home rule
   const html = text(renderReport(full));
   assert.ok(html.includes("What you learned about AI"));
   assert.match(html, /\d+ results came from plain code, not from an AI\./);
-  assert.ok(html.includes("3 numbers are guesses. No AI can know them; only your test can."));
+  assert.ok(html.includes("2 numbers are guesses. No AI can know them; only your test can. 1 more number was filled in by What-IF: check it yourself, no test will."));
   assert.ok(html.includes("The 4 customers were imagined (played by simple fixed rules, no AI)"));
   assert.ok(html.includes("next time any AI gives you a number, ask: is it yours, calculated, a guess or imagined?"));
   assert.ok(html.includes("AI model"));
@@ -586,4 +592,221 @@ test("renders a real rule-based rehearsal from the sim", { skip: !(engineReady &
   const html = renderReport({ analysis: a, plan: eng.planTest(a), rehearsal: sim.summarize(r) });
   assert.ok(html.includes("What a simulation can and cannot tell you"));
   assert.ok(html.includes(r.personas[0]!.name.replace(/&/g, "&amp;")));
+});
+
+/* ------------------------------------------------------------------ */
+/* Loop 3: /try rehearsals, phone step 5, two numbers, terms, print      */
+/* ------------------------------------------------------------------ */
+
+const step5Of = (html: string) => html.match(/<section[^>]*id="wi-step-5"[\s\S]*?<\/section>/)?.[0] ?? "";
+const capFirst = (s: string) => s.charAt(0).toLocaleUpperCase() + s.slice(1);
+
+test("/try reports: step 5 offers the simple-rules rehearsal and never says 'ask your AI coach'", () => {
+  assert.equal(REPORT_MESSAGES.de["reh.start"], "Probelauf mit ausgedachten Gästen starten (einfache Regeln, keine KI)");
+  for (const lang of LANGS) {
+    const html = renderReport({ ...full, analysis: fixtureAnalysis({ lang, demo: false }), rehearsal: undefined, result: undefined, madeBy: "try" });
+    const s5 = step5Of(html);
+    assert.match(s5, /<div class="wi-reh-start wi-noprint" data-wi-rehearse-wrap hidden><button type="button" class="wi-btn" data-wi-rehearse>/, `${lang}: the button waits for onRehearse`);
+    assert.ok(s5.includes(String(REPORT_MESSAGES[lang]["reh.start"])), `${lang}: button label`);
+    assert.ok(text(s5).includes(String(REPORT_MESSAGES[lang]["reh.emptyTry"])), `${lang}: what a coach would add, and the simple version here`);
+    assert.ok(!text(s5).includes(String(REPORT_MESSAGES[lang]["reh.empty2"])), `${lang}: no "ask your AI coach" on /try`);
+    assert.ok(text(html).includes(String(REPORT_MESSAGES[lang]["tc.backTry"])), `${lang}: no coach to tell the result to`);
+  }
+  const de = text(renderReport({ ...full, analysis: fixtureAnalysis({ lang: "de", demo: false }), rehearsal: undefined, result: undefined, madeBy: "try" }));
+  for (const coach of ["Bitten Sie Ihren KI-Coach", "Sagen Sie dem Coach"]) assert.ok(!de.includes(coach), coach);
+  // a coach's report keeps its words, and the page may still offer the simple version
+  const coach = step5Of(renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }), rehearsal: undefined, madeBy: "coach" }));
+  assert.ok(text(coach).includes("Ask your AI coach"));
+  assert.ok(coach.includes("data-wi-rehearse-wrap hidden"));
+});
+
+test("step 5 on a phone: the counts are in view and the round-by-round grid starts open", () => {
+  const s5 = step5Of(renderReport(full));
+  const funnel = s5.indexOf('class="wi-funnel"');
+  const views = s5.indexOf('<details class="wi-more wi-views" id="wi-reh-views" open>');
+  assert.ok(funnel > 0 && views > funnel, "the dots come first, outside any fold");
+  assert.ok(s5.indexOf('class="wi-timeline"') > views, "the grid is inside the open fold");
+  assert.ok(s5.indexOf("What a simulation can and cannot tell you") > views, "the caveat follows the pictures");
+  assert.ok(text(s5).includes("never scaled up"), "the counts say they are never scaled up");
+  assert.ok(text(s5).includes("Your sums keep your own guess (8 a day)."), "and that the sums keep the owner's guess");
+});
+
+test("the grid's cells use short labels in every language: no word longer than 10 letters", () => {
+  for (const id of Object.keys(ACTIONS))
+    for (const lang of LANGS) {
+      const v = (REPORT_MESSAGES[lang] as Record<string, unknown>)[`cell.${id}`];
+      assert.ok(typeof v === "string" && v.length > 0, `${lang} lacks cell.${id}`);
+      for (const w of (v as string).split(/\s+/)) assert.ok(Array.from(w).length <= 10, `${lang} cell.${id}: "${w}" is too long for a phone cell`);
+    }
+  renderReport({ ...full, analysis: fixtureAnalysis({ lang: "de" }) });
+  assert.equal(cellLabel("eats_elsewhere", "Isst woanders zu Mittag"), "Isst woanders");
+  assert.equal(cellLabel("some_new_action", "Macht etwas Neues"), "Macht etwas Neues", "unknown actions keep the sim's label");
+});
+
+test("the round chart says 'n of m' in the report language, and 'Not around' keeps full contrast", () => {
+  const svg = inLang("de").match(/<svg class="wi-svg wi-svg-uptake"[\s\S]*?<\/svg>/)?.[0] ?? "";
+  assert.ok(svg.includes(">4 von 4<"), "German value labels");
+  assert.ok(!/\d of \d/.test(svg), "no English 'of' in German");
+  const css = reportStyles();
+  const away = css.match(/\.wi-cell\.is-away \{[^}]*\}/)?.[0] ?? "";
+  assert.ok(away && !/opacity/.test(away), "no opacity on 'Not around' (it fell to 2.55:1)");
+  assert.match(css, /\.wi-cell \{[^}]*overflow-wrap: break-word;[^}]*hyphens: auto/, "cells break between words, hyphenated by the lang attribute");
+});
+
+test("two numbers, one story: no step promises one number, and step 1, step 4 and the test card use the engine's framing", () => {
+  for (const lang of LANGS) assert.ok(!/number to remember|Zahl zum Merken|número que hay que recordar|Liczba do zapamiętania/i.test(String(REPORT_MESSAGES[lang]["step4.title"])), lang);
+  const a = fixtureAnalysis();
+  a.breakEven = { ...a.breakEven, ongoing: { value: 5, unit: "customers/day", label: "Extra lunch customers a day for each day to pay its way", maths: "m", plain: "p" } };
+  a.sensitivity = { ...a.sensitivity, ongoingX: 5 };
+  const rule = { unit: "customers/day" as const, keepFrom: 5, tweakFrom: 3, payBackFrom: 7, testable: true };
+  const html = renderReport({ ...full, analysis: a, plan: { ...plan, rule } });
+  const t1 = text(html);
+  assert.ok(t1.includes("Pays its way from 5 a day: the number for keeping it"), "step 1 short answer");
+  assert.ok(t1.includes("7 a day: pays back the test, setup included · 5 a day: pays its way, the number for keeping it"), "step 4 caption");
+  assert.ok(t1.includes("Pays its way from 5 a day (keep it) · pays back the test from 7 a day"), "test card");
+  // the caption and the chart markers wait for the guess (mountReport covers [data-wi-be-reveal])
+  assert.match(html, /<p class="wi-ex-two" data-wi-be-reveal>/);
+  const bare = sensChart(a, 640, 8, "netTest", false);
+  assert.ok(!bare.includes("Pays back the test") && !bare.includes("Pays its way"), "no markers before the guess");
+});
+
+test("German: 'Gewinnschwelle', 'Ausgedacht', 'aufhören', and 'Break-even' only as the English word", () => {
+  const de = text(renderReport(neutral({ ...full, analysis: fixtureAnalysis({ lang: "de" }) })));
+  const hits = [...de.matchAll(/Break-even/g)].map((m) => de.slice(Math.max(0, m.index! - 10), m.index));
+  assert.ok(hits.length >= 1 && hits.every((h) => h.endsWith("Englisch: ")), `Break-even outside "(auf Englisch: …)": ${hits.join(" | ")}`);
+  assert.ok(de.includes("Gewinnschwelle"));
+  assert.ok(!/Erdacht|erdacht/.test(de));
+  assert.ok(de.includes("Ausgedacht"));
+  assert.ok(!de.includes("Beenden"), "the stop word is aufhören");
+});
+
+test("the shared words: decision labels, source chips and glossary words are the TERMS", () => {
+  for (const lang of LANGS) {
+    const m = REPORT_MESSAGES[lang] as Record<string, unknown>;
+    const w = TERMS[lang];
+    assert.equal(m["tc.keep"], capFirst(w.keep), `${lang} keep`);
+    assert.equal(m["tc.tweak"], capFirst(w.tweak), `${lang} tweak`);
+    assert.equal(m["tc.stop"], capFirst(w.stop), `${lang} stop`);
+    assert.equal(m["src.owner"], w.yourNumber);
+    assert.equal(m["src.assumption"], w.guess);
+    assert.equal(m["src.calculation"], w.calculated);
+    assert.equal(m["src.imagined"], w.imagined);
+    assert.equal(m["src.demo"], w.demoData);
+    assert.equal(m["term.breakEven"], w.breakEven, `${lang} break-even`);
+    assert.equal(m["term.payBack"], w.payBackTest, `${lang} pays back the test`);
+    assert.equal(m["term.paysItsWay"], w.paysItsWay, `${lang} pays its way`);
+    assert.equal(m["term.worstCase"], w.worstCase, `${lang} worst case`);
+  }
+});
+
+test("the guess count is the same in step 1 and 'What you learned', and step 6 compares numbers, not guesses", () => {
+  const de = text(renderReport(neutral({ ...full, analysis: fixtureAnalysis({ lang: "de" }) })));
+  assert.ok(de.includes("Schätzungen: 2. Nur Ihr Test kann sie prüfen."));
+  assert.ok(de.includes("2 Zahlen sind geschätzt"));
+  assert.ok(!/Schätzungen vergleichen/.test(de), "step 6 ranks numbers (yours and guesses)");
+  assert.ok(de.includes("Alle 2 Zahlen vergleichen"));
+});
+
+test("a worst case with no loss: a calm card in the engine's words, and never two minus signs in a row", () => {
+  const a = fixtureAnalysis({ worstCase: { value: 100, maths: "0 × €6.30 − −€10.00 × 10 = +€100", plain: "Even if nobody new comes, the test does not lose money." } });
+  a.sensitivity = { ...a.sensitivity, points: a.sensitivity.points.map((p) => ({ ...p, explanation: "8 × €5.35 per deal − −€10.03 a day to cover = +€52.83 a day." })) };
+  const html = renderReport({ ...full, analysis: a });
+  const card = html.match(/<div class="wi-callout [^"]*" id="wi-step-3-worst">/)?.[0] ?? "";
+  assert.ok(card.includes("wi-callout--ok") && !card.includes("wi-callout--neg"), "no red alarm card");
+  assert.ok(text(html).includes("Even in the worst case, no loss: +€100"));
+  assert.ok(!html.includes('class="wi-ref wi-ref--neg"'), "the chart's worst-case line is neutral too");
+  const plainText = html.replace(/<[^>]+>/g, " ");
+  assert.ok(!/[−-]\s*−\s*[\d€]/.test(plainText), "no '− −' anywhere");
+  assert.ok(plainText.includes("8 × €5.35 per deal + €10.03 a day to cover"));
+});
+
+test("the printed test card: 10 pt or more, and a blank daily tally on the card", () => {
+  const css = reportStyles();
+  const print = css.slice(css.indexOf("@media print"));
+  for (const m of print.matchAll(/font-size:\s*([\d.]+)pt/g)) assert.ok(Number(m[1]) >= 10, `print text at ${m[1]} pt`);
+  assert.ok(!/font-size:\s*[\d.]+px/.test(print), "no px font sizes on paper");
+  const card = renderReport(full).match(/<article class="wi-card wi-testcard"[\s\S]*?<\/article>/)?.[0] ?? "";
+  const tally = card.match(/<table class="wi-tally">[\s\S]*?<\/table>/)?.[0] ?? "";
+  assert.equal((tally.match(/<th scope="col">\d+<\/th>/g) ?? []).length, plan.days, "one column per test day");
+  for (const row of ["Lunch customers", "Lunch deals sold", "Of these, regulars who switched"]) assert.ok(tally.includes(`<th scope="row">${row}</th>`), row);
+  assert.match(css, /\.wi-tally-wrap \{ display: none; \}/, "the tally is for paper only");
+});
+
+test("an AI-played rehearsal: the card says Claude played them from short briefs; the caveat is the sim's", () => {
+  const caveat = "These are imagined customers, each played by an AI from a short description.";
+  const html = renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }), madeBy: "coach", rehearsal: fixtureRehearsal({ method: "subagent", caveat }) });
+  const who = text(html.match(/<div class="wi-card wi-who"[\s\S]*?<div class="wi-card wi-ask">/)?.[0] ?? "");
+  assert.ok(who.includes("played by an AI (Claude), each from a short brief"));
+  assert.ok(text(html.match(/<p class="wi-caveat-note">[\s\S]*?<\/p>/)?.[0] ?? "").includes(caveat));
+  const de = renderReport({ ...full, analysis: fixtureAnalysis({ lang: "de", demo: false }), madeBy: "coach", rehearsal: fixtureRehearsal({ method: "subagent" }) });
+  assert.ok(text(de).includes("von einer KI (Claude) gespielt, jeder nur nach einer kurzen Beschreibung"));
+});
+
+test("price change and the 2027 minimum wage: the weekly cost next to what the price brings, only when the engine gives it", () => {
+  const wageRise = { hoursPerWeek: 80, risePerHour: 0.7, costWeek: 56, gainWeek: 91.02, leftWeek: 35.02, covers: true, maths: "80 × €0.70 = €56 a week", plain: "The new price covers the wage rise, with about €35 a week to spare." };
+  const html = renderReport({ analysis: fixtureAnalysis({ template: "price_change", wageRise }) });
+  assert.ok(html.includes('id="wi-wage"'));
+  assert.ok(html.includes("Does the new price cover the minimum-wage rise?"));
+  assert.match(html, /wi-chart-wage/);
+  assert.ok(text(html).includes("with about €35 a week to spare"));
+  assert.ok(!renderReport({ analysis: fixtureAnalysis({ template: "price_change" }) }).includes('id="wi-wage"'));
+  assert.ok(!renderReport({ analysis: fixtureAnalysis({ wageRise }) }).includes('id="wi-wage"'), "lunch deals do not show it");
+});
+
+test("predict, then check: no threshold in 'Why this changed' before the guess, and a low guess names the two costs", () => {
+  const a = fixtureAnalysis();
+  a.breakEven = { ...a.breakEven, value: 11, ongoing: { value: 7, unit: "customers/day", label: "l", maths: "m", plain: "p" } };
+  const why = "At 8 a day: 8 × €5.35 − €36.57 = +€6.23 a day. Over 10 weekdays: €6.23 × 10 − €180 = −€117.70. Each day pays its way (from 7 a day), but the deal does not pay back the test yet: that needs 11 a day.";
+  renderReport({ ...full, analysis: a });
+  assert.equal(hideThresholds(why, a), "At 8 a day: 8 × €5.35 − €36.57 = +€6.23 a day. Over 10 weekdays: €6.23 × 10 − €180 = −€117.70.");
+  assert.equal(hideThresholds("It pays back the test (that needs 11).", a), "It pays back the test.");
+  a.current = [
+    ...a.current,
+    { id: "deal_margin", label: "d", value: 5.35, unit: "EUR", source: "calculation", maths: "m" },
+    { id: "switch_cost_day", label: "s", value: 13.57, unit: "EUR/day", source: "calculation", maths: "m" },
+  ];
+  assert.equal(gutMisses(a), "Gut feeling often misses two costs: of €9.90, only €5.35 is left after VAT and ingredients, and regulars who switch cost €13.57 a day before a single new customer comes.");
+  assert.ok(predictFeedback(a, 4).endsWith(gutMisses(a)));
+  assert.ok(!predictFeedback(a, 14).includes("Gut feeling"), "only for guesses below the break-even");
+});
+
+test("a break-even of 0 that rests on filled-in costs is flagged above the short answer, without the number", () => {
+  const a = fixtureAnalysis({ demo: false, breakEven: { value: 0, unit: "customers/day", label: "Extra lunch customers a day to pay back the test", maths: "m", plain: "p", reachable: true } });
+  a.inputs = [...a.inputs, { key: "setup_cost", label: "One-off setup costs", value: 0, unit: "EUR", source: "assumption", kind: "choice", why: "w", filledBy: "fallback" }];
+  const html = renderReport({ ...full, analysis: a, madeBy: "try" });
+  const warnAt = html.indexOf("wi-filled-warn");
+  assert.ok(warnAt > 0 && warnAt < html.indexOf("The short answer"), "above the short answer, in view");
+  const w = filledWarning(a);
+  assert.ok(w && w.lines[0]!.includes("one-off setup costs"));
+  assert.ok(!/\b0 a day\b/.test(w!.lines.join(" ")), "the warning does not give the break-even away");
+  assert.equal(filledWarning(fixtureAnalysis()), null, "no warning when the owner's own numbers say so");
+});
+
+test("after the test: the demo's counts wear the demo label, and what was measured has its units", () => {
+  const html = renderReport(full);
+  const top = html.match(/<p class="wi-result-actual">[\s\S]*?<\/p>/)?.[0] ?? "";
+  assert.ok(top.includes("wi-chip--demo") && !top.includes("wi-chip--owner"));
+  assert.ok(text(html).includes("Lunch customers a day before the test 38 a day"));
+  const own = renderReport({ ...full, analysis: fixtureAnalysis({ demo: false }) }).match(/<p class="wi-result-actual">[\s\S]*?<\/p>/)?.[0] ?? "";
+  assert.ok(own.includes("wi-chip--owner"));
+});
+
+test("interviews: the same words are shown once, with every name that said them", () => {
+  const ans = (personaId: string, name: string, answer: string) => ({ personaId, name, answer, method: "rule-based" as const });
+  const reh = fixtureRehearsal({ interviews: [{ question: "Would you come back?", answers: [ans("p1", "Mia", "Same words."), ans("p2", "Jonas", "Same words."), ans("p3", "Aylin", "Other words.")] }] });
+  const iv = renderReport({ ...full, rehearsal: reh }).match(/<ul class="wi-answers">[\s\S]*?<\/ul>/)?.[0] ?? "";
+  assert.equal((iv.match(/Same words\./g) ?? []).length, 1);
+  assert.ok(text(iv).includes("Mia and Jonas · 2 gave this answer"));
+  assert.ok(text(iv).includes("Other words."));
+});
+
+test("practice: two questions on the decision rule, answered from the plan's own thresholds", () => {
+  const rule = { unit: "customers/day" as const, keepFrom: 7, tweakFrom: 4, payBackFrom: 11, testable: true };
+  const html = renderReport({ ...full, result: undefined, plan: { ...plan, rule } });
+  assert.match(html, /<details class="wi-more wi-selfcheck wi-noprint" data-wi-selfcheck data-wi-only-js hidden>/);
+  const qs = [...html.matchAll(/<li class="wi-sc-q" data-answer="(\w+)" data-right="([^"]*)" data-wrong="([^"]*)">/g)];
+  assert.deepEqual(qs.map((q) => q[1]), ["tweak", "keep"]);
+  assert.equal(qs[0]![2], "Right: 6 a day is from 4 a day to below 7 a day, so tweak it.");
+  assert.ok((qs[1]![2] ?? "").includes("The setup is spent either way"), "the sunk-cost question");
+  assert.ok(!renderReport({ ...full, result: undefined }).includes("data-wi-selfcheck"), "no thresholds, no questions");
 });

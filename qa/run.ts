@@ -3,7 +3,7 @@
  *
  *   npm run qa                         one QA loop: every check, judges merged, report, loop counted
  *   npm run qa:dry                     dry run (= --no-loop): never counts; writes qa/reports/dry-run.*
- *   npm run qa -- --skip build,ui-names    skip checks (by id, or a whole component by its id)
+ *   npm run qa -- --skip build,ui-names    skip checks (by id, or a whole component by its id); never counts as a loop
  *   npm run qa -- --only engine        one component; never counts as a loop
  *   node --import tsx qa/run.ts --list list the checks (markdown table)
  *
@@ -12,6 +12,9 @@
  *   component = automatedWeight × automated + judgeWeight × judge   (0.6 / 0.4 unless the component overrides)
  *   judge     = mean of qa/judge/<id>.json and qa/judge/<id>.<judge>.json; none → falls back to automated
  *   overall   = Σ weight × component; pass at >= 8.5
+ *
+ * Judges: from rubric version 2 on, each judge file follows up its previous verdict
+ * (`loop<version-1>`: loop 3 reads `loop2`); the report shows the counts per status.
  *
  * Loops: state in qa/state.json. After the 5th failed loop the bot stops for good
  * (whatever the score) and says so; delete qa/state.json to start a new series.
@@ -36,7 +39,7 @@ interface Component {
 }
 interface Rubric {
   name?: string;
-  /** 2 = loop 2 (v0.2): judge files carry a `loop1` follow-up of the previous loop's improvements. */
+  /** N = loop N: from version 2 on, judge files carry a `loop<N-1>` follow-up of the previous loop's improvements (loop 3: `loop2`). */
   version?: number;
   passScore: number;
   maxLoops: number;
@@ -66,8 +69,8 @@ interface JudgeEntry {
   improvements: string[];
   at: string;
   stale: boolean;
-  /** The judge's follow-up of its loop-1 improvements: counts per status (fixed, partly, not fixed, …). */
-  loop1?: Record<string, number>;
+  /** The judge's follow-up of its previous-loop improvements (`loop<N-1>` in the file): counts per status (fixed, partly, not fixed, …). */
+  followUp?: Record<string, number>;
 }
 interface ComponentScore {
   id: string;
@@ -91,6 +94,9 @@ const rubric = JSON.parse(readFileSync(join(qaDir, "rubric.json"), "utf8")) as R
 const statePath = join(qaDir, "state.json");
 const state: State = existsSync(statePath) ? (JSON.parse(readFileSync(statePath, "utf8")) as State) : { loops: [] };
 const cap = rubric.criticalCap ?? 3;
+/** Judges follow up the previous loop's improvements: loop 3 (rubric version 3) reads `loop2` in each judge file. */
+const FOLLOW_UP_LOOP = Math.max(1, (rubric.version ?? 1) - 1);
+const FOLLOW_UP_KEY = `loop${FOLLOW_UP_LOOP}`;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -121,7 +127,8 @@ if (only && !componentIds.includes(only)) {
 }
 const unknownSkips = [...skip].filter((s) => !componentIds.includes(s) && !CHECKS.some((c) => c.id === s));
 if (unknownSkips.length) console.warn(`warning: --skip names no check or component: ${unknownSkips.join(", ")}`);
-const partial = !!only;
+// A run that leaves checks out (--only or --skip) cannot honestly pass or fail the gate, so it never counts as a loop.
+const partial = !!only || skip.size > 0;
 const dry = opt("no-loop") === "true" || partial;
 
 const weightSum = rubric.components.reduce((s, c) => s + c.weight, 0);
@@ -135,7 +142,9 @@ if (state.stopped && !dry) {
   process.exit(2);
 }
 const loopNo = state.loops.length + 1;
-const label = dry ? `dry run${partial ? ` (--only ${only}, not counted)` : ""}` : `loop ${loopNo} (failed loops so far: ${failedLoops} of max ${rubric.maxLoops})`;
+/** What a partial run left out, for the labels: "--only engine", "--skip build,ui-names" or both. */
+const partialNote = [only ? `--only ${only}` : "", skip.size ? `--skip ${[...skip].join(",")}` : ""].filter(Boolean).join(" ");
+const label = dry ? `dry run${partial ? ` (${partialNote}, not counted)` : ""}` : `loop ${loopNo} (failed loops so far: ${failedLoops} of max ${rubric.maxLoops})`;
 console.log(`\n${rubric.name ?? "What-IF"} QA bot — ${label}; pass >= ${rubric.passScore}${state.stopped ? " (series stopped; this dry run does not count)" : ""}\n`);
 
 // ---------- keep machine paths out of reports ----------
@@ -197,7 +206,7 @@ function readJudges(comp: Component): JudgeEntry[] {
   for (const f of readdirSync(judgeDir).filter((x) => x.endsWith(".json")).sort()) {
     if (f !== `${comp.id}.json` && !f.startsWith(`${comp.id}.`)) continue;
     const path = join(judgeDir, f);
-    let j: { score?: unknown; notes?: unknown; improvements?: unknown; issues?: unknown; loop1?: unknown };
+    let j: { score?: unknown; notes?: unknown; improvements?: unknown; issues?: unknown } & Record<string, unknown>;
     try {
       j = JSON.parse(readFileSync(path, "utf8")) as typeof j;
     } catch (e) {
@@ -211,14 +220,15 @@ function readJudges(comp: Component): JudgeEntry[] {
     }
     const list = Array.isArray(j.improvements) ? j.improvements : Array.isArray(j.issues) ? j.issues : [];
     const mtime = statSync(path).mtime;
-    let loop1: Record<string, number> | undefined;
-    if (Array.isArray(j.loop1)) {
-      loop1 = {};
-      for (const x of j.loop1 as { status?: unknown }[]) {
+    let followUp: Record<string, number> | undefined;
+    const fu = j[FOLLOW_UP_KEY];
+    if (Array.isArray(fu)) {
+      followUp = {};
+      for (const x of fu as { status?: unknown }[]) {
         const st = String(x?.status ?? "unstated").toLowerCase().trim() || "unstated";
-        loop1[st] = (loop1[st] ?? 0) + 1;
+        followUp[st] = (followUp[st] ?? 0) + 1;
       }
-    } else if ((rubric.version ?? 1) >= 2) warnings.push(`qa/judge/${f} has no "loop1" follow-up of the loop-1 improvements (qa/judges.md §2, §9)`);
+    } else if ((rubric.version ?? 1) >= 2) warnings.push(`qa/judge/${f} has no "${FOLLOW_UP_KEY}" follow-up of the loop-${FOLLOW_UP_LOOP} improvements (qa/judges.md §2, §9)`);
     out.push({
       file: `qa/judge/${f}`,
       judge: f === `${comp.id}.json` ? "reviewer" : f.slice(comp.id.length + 1, -".json".length),
@@ -227,7 +237,7 @@ function readJudges(comp: Component): JudgeEntry[] {
       improvements: list.map((x) => (typeof x === "string" ? x : JSON.stringify(x))),
       at: mtime.toISOString(),
       stale: !!lastLoopAt && mtime.getTime() < Date.parse(lastLoopAt),
-      ...(loop1 ? { loop1 } : {}),
+      ...(followUp ? { followUp } : {}),
     });
   }
   return out;
@@ -315,7 +325,7 @@ const base = dry ? "dry-run" : `loop-${loopNo}`;
 writeFileSync(join(reportsDir, `${base}.json`), scrub(JSON.stringify(report, null, 2)) + "\n");
 
 const md: string[] = [];
-const title = dry ? `dry run${partial ? ` (--only ${only})` : ""}` : `loop ${loopNo} of max ${rubric.maxLoops}`;
+const title = dry ? `dry run${partial ? ` (${partialNote})` : ""}` : `loop ${loopNo} of max ${rubric.maxLoops}`;
 md.push(`# ${rubric.name ?? "What-IF"} QA — ${title} — overall **${overall.toFixed(2)} / 10** — ${verdictWord} (pass ≥ ${rubric.passScore})`, "");
 const counted = results.filter((r) => !r.skipped);
 md.push(`${at} · ${counted.length} checks: ${counted.filter((r) => r.ok).length} passed, ${counted.filter((r) => !r.ok).length} failed, ${skipped.length} skipped · ${Math.round((Date.now() - t0run) / 1000)} s · failed loops so far: ${failedSoFar} of ${rubric.maxLoops}${dry ? " (this dry run does not count)" : ""}`, "");
@@ -369,7 +379,7 @@ for (const c of components) {
   md.push(`Automated ${c.automated} (${c.passed}/${c.total} checks${c.criticalFailed.length ? `; capped at ${cap} by ${c.criticalFailed.join(", ")}` : ""}). Judge ${c.judge ?? "none (fell back to automated)"}.`, "");
   for (const j of c.judges) {
     md.push(`**Judge: ${j.judge}** (${j.score}/10, ${j.file}, ${j.at.slice(0, 16).replace("T", " ")}${j.stale ? ", stale" : ""})`, "");
-    if (j.loop1) md.push(`Loop-1 improvements: ${Object.entries(j.loop1).map(([k, n]) => `${n} ${k}`).join(", ") || "none listed"}.`, "");
+    if (j.followUp) md.push(`Loop-${FOLLOW_UP_LOOP} improvements: ${Object.entries(j.followUp).map(([k, n]) => `${n} ${k}`).join(", ") || "none listed"}.`, "");
     if (j.notes) md.push(j.notes, "");
     if (j.improvements.length) {
       md.push("Improvements:");

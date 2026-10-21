@@ -14,7 +14,14 @@
  * SITE_URL:      WHATIF_SITE_URL, else (in a Vercel build) https://$VERCEL_PROJECT_PRODUCTION_URL,
  *                else http://localhost:3000 for local builds.
  * BETA_CONTACT:  WHATIF_BETA_CONTACT (an email or URL for invite-code requests), empty if unset.
+ *                Empty: every line holding {{BETA_CONTACT}} is left out of the skill files and of
+ *                site .md/.txt files (no "Ask here: ." in the zip); HTML attributes get "" (the site
+ *                then hides the request-a-code button). The MCP server does the same for its texts.
  * Client bundles also get __WHATIF_VERSION__, __WHATIF_SITE_URL__ and __WHATIF_BETA_CONTACT__.
+ *
+ * OAuth discovery paths (/.well-known/oauth-*, /register, /authorize, /token, at the root and under
+ * /api/mcp) are routed to the MCP function, which answers 404 JSON with the beta message: What-IF has
+ * no sign-in, and a 404 tells MCP clients so instead of starting OAuth.
  */
 import { build } from "esbuild";
 import { zipSync, strToU8 } from "fflate";
@@ -47,10 +54,25 @@ const warnings = [];
 
 const escapeHtml = (v) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const MARKUP_EXT = new Set([".html", ".htm", ".svg", ".xml"]);
-/** Fills {{SITE_URL}}, {{BETA_CONTACT}} and {{VERSION}}; values are HTML-escaped inside markup files. */
-const template = (text, ext = "") => {
+/** Prose files: without a contact, a line that would hold it is left out instead of reading "Ask here: .". */
+const PROSE_EXT = new Set([".md", ".markdown", ".txt", ""]);
+let droppedContactLines = 0;
+/** Without a contact, drops every line that holds {{BETA_CONTACT}} (line endings kept as they are). */
+const dropEmptyContactLines = (text) => {
+  if (BETA_CONTACT || !text.includes("{{BETA_CONTACT}}")) return text;
+  const lines = text.split("\n");
+  const kept = lines.filter((line) => !line.includes("{{BETA_CONTACT}}"));
+  droppedContactLines += lines.length - kept.length;
+  return kept.join("\n");
+};
+/**
+ * Fills {{SITE_URL}}, {{BETA_CONTACT}} and {{VERSION}}; values are HTML-escaped inside markup files.
+ * `prose`: drop the contact lines first when there is no contact (skill files, site .md/.txt).
+ */
+const template = (text, ext = "", prose = PROSE_EXT.has(ext)) => {
   const esc = MARKUP_EXT.has(ext) ? escapeHtml : (v) => v;
-  return text.split("{{SITE_URL}}").join(esc(SITE_URL)).split("{{BETA_CONTACT}}").join(esc(BETA_CONTACT)).split("{{VERSION}}").join(esc(pkg.version));
+  const src = prose ? dropEmptyContactLines(text) : text;
+  return src.split("{{SITE_URL}}").join(esc(SITE_URL)).split("{{BETA_CONTACT}}").join(esc(BETA_CONTACT)).split("{{VERSION}}").join(esc(pkg.version));
 };
 const rel = (p) => relative(ROOT, p).split(sep).join("/");
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
@@ -120,8 +142,10 @@ if (existsSync(SKILL)) {
   const files = {};
   for (const file of walk(SKILL)) {
     const inside = relative(SKILL, file).split(sep).join("/");
-    const isText = TEXT_EXT.has(extname(file).toLowerCase()) || extname(file) === "";
-    const data = isText ? strToU8(template(readFileSync(file, "utf8"))) : new Uint8Array(readFileSync(file));
+    const ext = extname(file).toLowerCase();
+    const isText = TEXT_EXT.has(ext) || ext === "";
+    // Every skill text file is prose for the model: no empty "Ask here: ." lines.
+    const data = isText ? strToU8(template(readFileSync(file, "utf8"), ext, true)) : new Uint8Array(readFileSync(file));
     files[`what-if/${inside}`] = [data, { level: 9, mtime: new Date("2026-10-01T00:00:00Z") }];
     const dest = join(STATIC, "skill", ...inside.split("/"));
     mkdirSync(dirname(dest), { recursive: true });
@@ -132,6 +156,8 @@ if (existsSync(SKILL)) {
   writeFileSync(join(STATIC, "what-if-skill.zip"), zip);
   zipBytes = zip.length;
   if (!existsSync(join(SKILL, "SKILL.md"))) warnings.push("skill/what-if/SKILL.md is missing.");
+  if (!BETA_CONTACT && ON_VERCEL)
+    warnings.push(`VERCEL BUILD: WHATIF_BETA_CONTACT is empty, so ${droppedContactLines} skill line(s) naming it were left out and the beta message says "ask the person who invited you".`);
   // The zip tells owners which MCP address to add; a localhost or http address only works on this machine.
   if (!isPublicUrl(SITE_URL)) {
     const msg = `what-if-skill.zip points at ${SITE_URL}/api/mcp, which is not a public https address. Set WHATIF_SITE_URL to the live site before sharing the zip.`;
@@ -195,7 +221,12 @@ const pages = existsSync(STATIC)
 const REQUIRED_PAGES = ["r", "connect", "try"];
 for (const must of REQUIRED_PAGES) if (!pages.includes(must)) pages.push(must);
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// OAuth discovery and sign-in paths go to the MCP function (it answers 404 JSON, never 401). The query
+// marks them, so the function knows even if the platform hands it the rewritten path.
+const OAUTH = "(?:\\.well-known/(?:oauth-protected-resource|oauth-authorization-server|openid-configuration)(?:/.*)?|register|authorize|token)";
 const routes = [
+  { src: `^/(?:api/)?mcp/${OAUTH}/?$`, dest: "/api/mcp?__whatif_oauth=1" },
+  { src: `^/${OAUTH}/?$`, dest: "/api/mcp?__whatif_oauth=1" },
   { src: "^/mcp/?$", dest: "/api/mcp" },
   { src: "^/api/mcp/$", dest: "/api/mcp" },
   { src: "^/assets/(.*)$", headers: { "Cache-Control": "public, max-age=300, must-revalidate" }, continue: true },
@@ -211,7 +242,9 @@ for (const p of REQUIRED_PAGES) if (!existsSync(join(STATIC, `${p}.html`))) warn
 const fnBytes = bytesOf(fnResult);
 console.log(`What-IF build ${pkg.version} -> ${rel(OUT)}  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 console.log(`  SITE_URL           ${SITE_URL}${ON_VERCEL ? " (Vercel build)" : ""}`);
-console.log(`  BETA_CONTACT       ${BETA_CONTACT ? "set" : "(empty: the site hides the request-a-code button)"}`);
+console.log(
+  `  BETA_CONTACT       ${BETA_CONTACT ? "set" : `(empty: the site hides the request-a-code button; ${droppedContactLines} line${droppedContactLines === 1 ? "" : "s"} that would name it left out of the skill)`}`,
+);
 console.log(`  static             ${siteFiles} site files, ${entries.length} client bundle(s) ${entries.length ? `(${kb(clientBytes)})` : ""}`);
 console.log(`  skill              ${skillFiles} file(s) -> static/what-if-skill.zip ${zipBytes ? `(${kb(zipBytes)})` : "(not built)"}`);
 console.log(`  function           functions/api/mcp.func/index.mjs (${kb(fnBytes)})`);

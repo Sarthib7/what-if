@@ -138,8 +138,10 @@ export function barsSvg(
     s += `<text class="wi-axis-label" x="${f1(a.x)}" y="14" text-anchor="${a.anchor}">${esc(zl)}</text>`;
   }
   const xw = worst ? sx(worst.value) : undefined;
+  // a worst case at or above zero is no loss: drawn neutral, not as the red alarm line
+  const worstCls = worst && worst.value >= -0.5 ? "wi-ref wi-ref--worst-ok" : "wi-ref wi-ref--neg";
   // the worst case: dashed segments in each bar band only, so the line never runs through a row label
-  if (worst && xw !== undefined) rows.forEach((_, i) => (s += `<line class="wi-ref wi-ref--neg" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(band(i) + 22)}" y2="${f1(band(i) + 52)}"/>`));
+  if (worst && xw !== undefined) rows.forEach((_, i) => (s += `<line class="${worstCls}" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(band(i) + 22)}" y2="${f1(band(i) + 52)}"/>`));
   rows.forEach((r, i) => {
     const y = band(i);
     const role = r.role ?? "polarity";
@@ -165,9 +167,9 @@ export function barsSvg(
     s += `</g>`;
   });
   if (worst && xw !== undefined) {
-    s += `<line class="wi-ref wi-ref--neg" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(H - bottom + 2)}" y2="${f1(H - bottom + 12)}"/>`;
+    s += `<line class="${worstCls}" x1="${f1(xw)}" x2="${f1(xw)}" y1="${f1(H - bottom + 2)}" y2="${f1(H - bottom + 12)}"/>`;
     const a = anchorFor(xw, W, textW(worst.label, 12));
-    s += `<text class="wi-ref-label" x="${f1(a.x)}" y="${f1(H - 4)}" text-anchor="${a.anchor}">${esc(worst.label)}</text>`;
+    s += `<text class="wi-ref-label${worst.value >= -0.5 ? " wi-ref-label--ok" : ""}" x="${f1(a.x)}" y="${f1(H - 4)}" text-anchor="${a.anchor}">${esc(worst.label)}</text>`;
   }
   return s + `</svg>`;
 }
@@ -271,13 +273,14 @@ export function nearestIndex(points: SensitivityPoint[], x: number): number {
 
 export function sensitivitySvg(
   sens: { label: string; unit: Unit; current: number; breakEvenX: number | null; points: SensitivityPoint[] },
-  opts: { width: number; index: number; field: NetField; id: string; title: string; desc: string; ongoing?: number | null },
+  opts: { width: number; index: number; field: NetField; id: string; title: string; desc: string; ongoing?: number | null; marks?: boolean },
 ): string {
   const pts = sens.points;
   if (pts.length === 0) return "";
   const be = sens.breakEvenX;
   const inRange = (x: number | null | undefined): x is number => x !== null && x !== undefined && Number.isFinite(x) && x >= Math.min(...pts.map((p) => p.x)) && x <= Math.max(...pts.map((p) => p.x));
-  const on = inRange(opts.ongoing) ? opts.ongoing : undefined;
+  const showMarks = opts.marks !== false;
+  const on = showMarks && inRange(opts.ongoing) ? opts.ongoing : undefined;
   const L = sensLayout(pts, opts.width, opts.field, on !== undefined && inRange(be));
   const { W, H, l, r, b, sx, sy } = L;
   const top = L.t;
@@ -292,7 +295,7 @@ export function sensitivitySvg(
   if (y0 > top) s += `<rect class="wi-zone wi-zone--pos" x="${l}" y="${top}" width="${f1(plotR - l)}" height="${f1(y0 - top)}"/>`;
   if (y0 < plotB) s += `<rect class="wi-zone wi-zone--neg" x="${l}" y="${f1(y0)}" width="${f1(plotR - l)}" height="${f1(plotB - y0)}"/>`;
   // zone words sit in a corner that no marker line crosses (left first, then right)
-  const vxs = [be, on].filter((x): x is number => inRange(x)).map((x) => sx(x));
+  const vxs = (showMarks ? [be, on] : []).filter((x): x is number => inRange(x)).map((x) => sx(x));
   const zone = (text: string, y: number) => {
     const w = textW(text, 12) + 4;
     const clear = (x0: number) => !vxs.some((vx) => vx > x0 - 4 && vx < x0 + w + 4);
@@ -319,7 +322,7 @@ export function sensitivitySvg(
   // break-even markers: pays back the test (solid) and, when different, pays its way each day (dashed).
   // Two labels stack on two rows above the plot, so they never overlap each other or the lines.
   const marks: { x: number; label: string; cls: string; row: number }[] = [];
-  if (inRange(be)) marks.push({ x: be, label: t("chart.be", { x: xText(be, sens.unit) }), cls: "wi-ref wi-ref--be", row: 0 });
+  if (showMarks && inRange(be)) marks.push({ x: be, label: t(on !== undefined ? "chart.payBack" : "chart.be", { x: xText(be, sens.unit) }), cls: "wi-ref wi-ref--be", row: 0 });
   if (on !== undefined) marks.push({ x: on, label: t("chart.ongoing", { x: xText(on, sens.unit) }), cls: "wi-ref wi-ref--on", row: marks.length ? 1 : 0 });
   for (const m of marks) {
     const x = sx(m.x);
@@ -413,7 +416,7 @@ export function uptakeSvg(
     }
     s += vbar(cx - bw - 1, bw, sy(0), sy(u.active), "wi-col wi-col--active");
     s += vbar(cx + 1, bw, sy(0), sy(u.engaged), "wi-col wi-col--engaged");
-    const lab = `${u.engaged} of ${u.active}`;
+    const lab = t("reh.of", { n: u.engaged, of: u.active });
     s += `<text class="wi-value" x="${f1(cx)}" y="${f1(sy(Math.max(u.active, u.engaged)) - 8)}" text-anchor="middle">${esc(lab)}</text>`;
   }
   return s + `</svg>`;

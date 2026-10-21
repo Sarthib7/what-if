@@ -18,6 +18,7 @@
 import type { Lang } from "../i18n/index.ts";
 import type { TemplateId } from "../engine/types.ts";
 import type { Persona, SegmentId } from "./types.ts";
+import type { KiezFlavour } from "./berlin.ts";
 
 export type Tx = Record<Lang, string>;
 
@@ -84,38 +85,68 @@ export interface QuirkText {
   tags?: string[];
 }
 
+/** A job, with its profession family (at most two people of one family in a run) and the Kieze it belongs to. */
+export interface JobText {
+  t: Tx;
+  family: string;
+  /** Only offered in these Kiez flavours (src/sim/berlin.ts KIEZ_FLAVOUR); absent: anywhere. */
+  flavour?: KiezFlavour[];
+}
+
+/**
+ * A routine. `freq` "most": eats out (or buys the item) on most days, the only kind a regular gets;
+ * "some": once to three times a week. `here`: the sentence says they come to this café, so a new
+ * customer never gets it (and an occasional one never gets a "here" + "most" routine).
+ */
+export interface RoutineText {
+  t: Tx;
+  freq: "most" | "some";
+  here?: boolean;
+  tags?: string[];
+}
+
 export interface ArchetypeText {
-  jobs: Tx[];
-  lunchRoutine: { t: Tx; tags?: string[] }[];
-  coffeeRoutine: { t: Tx; tags?: string[] }[];
+  jobs: JobText[];
+  lunchRoutine: RoutineText[];
+  coffeeRoutine: RoutineText[];
   quirks: QuirkText[];
   extras: Tx[];
   represents: Record<TemplateId, Tx>;
 }
 
 const q = (t: Tx, ...tags: string[]): QuirkText => (tags.length ? { t, tags } : { t });
+const j = (family: string, t: Tx, flavour?: KiezFlavour[]): JobText => (flavour ? { t, family, flavour } : { t, family });
+const rt = (t: Tx, freq: RoutineText["freq"], opts: { here?: boolean; tags?: string[] } = {}): RoutineText => ({ t, freq, ...(opts.here ? { here: true } : {}), ...(opts.tags?.length ? { tags: opts.tags } : {}) });
 
 /**
  * Persona building blocks. Jobs are a predicate after "Name, age, …"; routines are a
  * sentence without its subject ("Eats lunch out…"); quirks a predicate ("has exactly…").
+ * Within one rehearsal no two people get the same job, routine, quirk or memory.
  */
 export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   office_worker: {
     jobs: [
-      x("works in the HR team of a solar start-up two streets away", "arbeitet im Personalteam eines Solar-Start-ups zwei Straßen weiter", "trabaja en recursos humanos de una start-up solar a dos calles", "pracuje w dziale kadr start-upu solarnego dwie ulice dalej"),
-      x("is a project manager at a small architecture office nearby", "ist {g:Projektleiter|Projektleiterin} in einem kleinen Architekturbüro um die Ecke", "es {g:jefe|jefa} de proyectos en un pequeño estudio de arquitectura cercano", "jest {g:kierownikiem|kierowniczką} projektów w małym biurze architektonicznym niedaleko"),
-      x("does the accounts for a housing cooperative round the corner", "macht die Buchhaltung für eine Wohnungsgenossenschaft um die Ecke", "lleva las cuentas de una cooperativa de viviendas a la vuelta de la esquina", "prowadzi księgowość spółdzielni mieszkaniowej za rogiem"),
-      x("works in customer support for a bike-sharing company nearby", "arbeitet im Kundenservice einer Leihrad-Firma in der Nähe", "trabaja en atención al cliente de una empresa de bicis compartidas cercana", "pracuje w obsłudze klienta firmy z rowerami na minuty niedaleko"),
-      x("is a UX designer at an agency in a converted brewery down the road", "ist {g:UX-Designer|UX-Designerin} in einer Agentur in einer alten Brauerei die Straße runter", "es {g:diseñador|diseñadora} UX en una agencia instalada en una antigua fábrica de cerveza calle abajo", "jest {g:projektantem|projektantką} UX w agencji w dawnym browarze kawałek dalej"),
+      j("office", x("works in the HR team of a solar start-up two streets away", "arbeitet im Personalteam eines Solar-Start-ups zwei Straßen weiter", "trabaja en recursos humanos de una start-up solar a dos calles", "pracuje w dziale kadr start-upu solarnego dwie ulice dalej")),
+      j("planning", x("is a project manager at a small architecture office nearby", "ist {g:Projektleiter|Projektleiterin} in einem kleinen Architekturbüro um die Ecke", "es {g:jefe|jefa} de proyectos en un pequeño estudio de arquitectura cercano", "jest {g:kierownikiem|kierowniczką} projektów w małym biurze architektonicznym niedaleko")),
+      j("finance", x("does the accounts for a housing cooperative round the corner", "macht die Buchhaltung für eine Wohnungsgenossenschaft um die Ecke", "lleva las cuentas de una cooperativa de viviendas a la vuelta de la esquina", "prowadzi księgowość spółdzielni mieszkaniowej za rogiem")),
+      j("service", x("works in customer support for a bike-sharing company nearby", "arbeitet im Kundenservice einer Leihrad-Firma in der Nähe", "trabaja en atención al cliente de una empresa de bicis compartidas cercana", "pracuje w obsłudze klienta firmy z rowerami na minuty niedaleko")),
+      j("design", x("is a UX designer at an agency in a converted brewery down the road", "ist {g:UX-Designer|UX-Designerin} in einer Agentur in einer alten Brauerei die Straße runter", "es {g:diseñador|diseñadora} UX en una agencia instalada en una antigua fábrica de cerveza calle abajo", "jest {g:projektantem|projektantką} UX w agencji w dawnym browarze kawałek dalej")),
+      j("public", x("works for a federal ministry a few streets away", "arbeitet in einem Bundesministerium ein paar Straßen weiter", "trabaja en un ministerio federal a unas calles", "pracuje w ministerstwie federalnym kilka ulic dalej"), ["centre"]),
+      j("finance", x("works at an insurance company in the big office block on the square", "arbeitet bei einer Versicherung im großen Bürohaus am Platz", "trabaja en una aseguradora en el gran edificio de oficinas de la plaza", "pracuje w firmie ubezpieczeniowej w dużym biurowcu przy placu"), ["west"]),
+      j("logistics", x("plans the shifts at the logistics centre by the S-Bahn", "plant die Schichten im Logistikzentrum an der S-Bahn", "organiza los turnos del centro logístico junto al S-Bahn", "układa grafiki zmian w centrum logistycznym przy S-Bahnie"), ["outer"]),
     ],
     lunchRoutine: [
-      { t: x("Eats lunch out most weekdays around 12:30, usually something quick that can be carried back to the desk.", "Isst an den meisten Werktagen gegen 12:30 Uhr auswärts, meist etwas Schnelles für den Schreibtisch.", "Come fuera casi todos los días laborables hacia las 12:30, normalmente algo rápido para llevar a la oficina.", "W większość dni roboczych je lunch na mieście około 12:30, zwykle coś szybkiego, co da się zabrać do biurka."), tags: ["takeaway"] },
-      { t: x("Goes out for lunch with two colleagues at 12:15 on the dot; they take turns choosing the place.", "Geht pünktlich um 12:15 Uhr mit zwei Kollegen essen; sie suchen abwechselnd den Ort aus.", "Sale a comer con dos compañeros a las 12:15 en punto; se turnan para elegir el sitio.", "Punktualnie o 12:15 wychodzi na lunch z dwójką kolegów; na zmianę wybierają miejsce.") },
-      { t: x("Has a short lunch break and spends too much of it deciding where to go.", "Hat eine kurze Mittagspause und verbringt zu viel davon mit der Frage, wohin.", "Tiene una pausa corta para comer y pierde demasiado tiempo decidiendo adónde ir.", "Ma krótką przerwę na lunch i za dużo z niej traci na wybieranie miejsca."), tags: ["hurry"] },
+      rt(x("Eats lunch out most weekdays around 12:30, usually something quick that can be carried back to the desk.", "Isst an den meisten Werktagen gegen 12:30 Uhr auswärts, meist etwas Schnelles für den Schreibtisch.", "Come fuera casi todos los días laborables hacia las 12:30, normalmente algo rápido para llevar a la oficina.", "W większość dni roboczych je lunch na mieście około 12:30, zwykle coś szybkiego, co da się zabrać do biurka."), "most", { tags: ["takeaway"] }),
+      rt(x("Goes out for lunch with two colleagues at 12:15 on the dot; they take turns choosing the place.", "Geht pünktlich um 12:15 Uhr mit zwei Kollegen essen; sie suchen abwechselnd den Ort aus.", "Sale a comer con dos compañeros a las 12:15 en punto; se turnan para elegir el sitio.", "Punktualnie o 12:15 wychodzi na lunch z dwójką kolegów; na zmianę wybierają miejsce."), "most"),
+      rt(x("Has a short lunch break and spends too much of it deciding where to go.", "Hat eine kurze Mittagspause und verbringt zu viel davon mit der Frage, wohin.", "Tiene una pausa corta para comer y pierde demasiado tiempo decidiendo adónde ir.", "Ma krótką przerwę na lunch i za dużo z niej traci na wybieranie miejsca."), "most", { tags: ["hurry"] }),
+      rt(x("Is in the office three days a week and eats out on two of them, usually alone with a book.", "Ist drei Tage die Woche im Büro und isst an zweien davon auswärts, meist allein mit einem Buch.", "Va a la oficina tres días por semana y come fuera dos de ellos, casi siempre {g:solo|sola} con un libro.", "Jest w biurze trzy dni w tygodniu i w dwa z nich je na mieście, zwykle {g:sam|sama} z książką."), "some"),
+      rt(x("Eats in the canteen most days and goes out on Fridays, when the team treats itself.", "Isst meistens in der Kantine und geht freitags raus, wenn sich das Team etwas gönnt.", "Casi siempre come en el comedor de la empresa y sale los viernes, cuando el equipo se da un capricho.", "Zwykle je w stołówce, a w piątki wychodzi, kiedy zespół robi sobie przyjemność."), "some"),
     ],
     coffeeRoutine: [
-      { t: x("Picks up {a_item} on the way to the office most mornings, often while answering emails.", "Holt sich an den meisten Morgen auf dem Weg ins Büro {einen_item}, oft nebenbei mit Mails beschäftigt.", "Casi todas las mañanas recoge {un_item} de camino a la oficina, a menudo mientras contesta correos.", "Prawie każdego ranka bierze {item} w drodze do biura, często odpisując przy tym na maile."), tags: ["takeaway"] },
-      { t: x("Comes in for {a_item} after the ten o'clock meeting, sometimes bringing a colleague.", "Kommt nach dem Zehn-Uhr-Meeting auf {einen_item} vorbei, manchmal mit Kollegen.", "Pasa a por {un_item} después de la reunión de las diez, a veces con un compañero.", "Wpada na {item} po spotkaniu o dziesiątej, czasem z kimś z pracy.") },
+      rt(x("Picks up {a_item} on the way to the office most mornings, often while answering emails.", "Holt sich an den meisten Morgen auf dem Weg ins Büro {einen_item}, oft nebenbei mit Mails beschäftigt.", "Casi todas las mañanas recoge {un_item} de camino a la oficina, a menudo mientras contesta correos.", "Prawie każdego ranka bierze {item} w drodze do biura, często odpisując przy tym na maile."), "most", { tags: ["takeaway"] }),
+      rt(x("Comes in for {a_item} after the ten o'clock meeting most days, sometimes bringing a colleague.", "Kommt an den meisten Tagen nach dem Zehn-Uhr-Meeting auf {einen_item} vorbei, manchmal mit Kollegen.", "Casi todos los días pasa a por {un_item} después de la reunión de las diez, a veces con un compañero.", "Prawie codziennie wpada na {item} po spotkaniu o dziesiątej, czasem z kimś z pracy."), "most", { here: true }),
+      rt(x("Buys {a_item} on the way in on office days, two or three times a week.", "Kauft an Bürotagen, zwei-, dreimal die Woche, auf dem Weg {einen_item}.", "Compra {un_item} de camino los días de oficina, dos o tres veces por semana.", "W dni biurowe, dwa, trzy razy w tygodniu, kupuje po drodze {item}."), "some", { tags: ["takeaway"] }),
+      rt(x("Drinks the office machine coffee most days and treats {r} to {a_item} on Fridays.", "Trinkt meistens Kaffee aus dem Büroautomaten und gönnt sich freitags {einen_item}.", "Casi siempre toma el café de la máquina de la oficina y los viernes se da el capricho de {un_item}.", "Zwykle pije kawę z automatu w biurze, a w piątki funduje sobie {item}."), "some"),
     ],
     quirks: [
       q(x("has exactly thirty minutes for lunch and hates queues", "hat genau dreißig Minuten Mittagspause und hasst Schlangen", "tiene exactamente treinta minutos para comer y odia las colas", "ma dokładnie trzydzieści minut na lunch i nie znosi kolejek"), "hurry"),
@@ -136,19 +167,27 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   freelancer: {
     jobs: [
-      x("is a freelance illustrator who mostly draws for children's books", "ist {g:freiberuflicher Illustrator|freiberufliche Illustratorin} und zeichnet vor allem für Kinderbücher", "es {g:ilustrador autónomo|ilustradora autónoma} y dibuja sobre todo para libros infantiles", "jest {g:ilustratorem|ilustratorką} na własny rachunek i rysuje głównie do książek dla dzieci"),
-      x("translates video games from Polish into German", "übersetzt Videospiele aus dem Polnischen ins Deutsche", "traduce videojuegos del polaco al alemán", "tłumaczy gry wideo z polskiego na niemiecki"),
-      x("is a sound designer for podcasts and small films", "macht Sounddesign für Podcasts und kleine Filme", "hace diseño de sonido para pódcasts y películas pequeñas", "robi udźwiękowienie podcastów i małych filmów"),
-      x("writes grant applications for local charities", "schreibt Förderanträge für Vereine im Kiez", "escribe solicitudes de subvenciones para asociaciones del barrio", "pisze wnioski o granty dla lokalnych organizacji"),
-      x("builds websites for small shops and restaurants", "baut Websites für kleine Läden und Restaurants", "hace páginas web para tiendas y restaurantes pequeños", "robi strony internetowe dla małych sklepów i restauracji"),
+      j("arts", x("is a freelance illustrator who mostly draws for children's books", "ist {g:freiberuflicher Illustrator|freiberufliche Illustratorin} und zeichnet vor allem für Kinderbücher", "es {g:ilustrador autónomo|ilustradora autónoma} y dibuja sobre todo para libros infantiles", "jest {g:ilustratorem|ilustratorką} na własny rachunek i rysuje głównie do książek dla dzieci")),
+      j("language", x("translates video games from Polish into German", "übersetzt Videospiele aus dem Polnischen ins Deutsche", "traduce videojuegos del polaco al alemán", "tłumaczy gry wideo z polskiego na niemiecki")),
+      j("media", x("is a sound designer for podcasts and small films", "macht Sounddesign für Podcasts und kleine Filme", "hace diseño de sonido para pódcasts y películas pequeñas", "robi udźwiękowienie podcastów i małych filmów")),
+      j("social", x("writes grant applications for local charities", "schreibt Förderanträge für Vereine im Kiez", "escribe solicitudes de subvenciones para asociaciones del barrio", "pisze wnioski o granty dla lokalnych organizacji")),
+      j("tech", x("builds websites for small shops and restaurants", "baut Websites für kleine Läden und Restaurants", "hace páginas web para tiendas y restaurantes pequeños", "robi strony internetowe dla małych sklepów i restauracji")),
+      j("media", x("runs a small recording studio in a back courtyard", "betreibt ein kleines Tonstudio im Hinterhof", "tiene un pequeño estudio de grabación en un patio interior", "prowadzi małe studio nagraniowe w oficynie"), ["inner"]),
+      j("tourism", x("guides walking tours through the old centre", "führt Stadtspaziergänge durch die historische Mitte", "hace visitas guiadas a pie por el centro histórico", "oprowadza piesze wycieczki po starym centrum"), ["centre"]),
+      j("health", x("teaches yoga to new parents in a studio round the corner", "gibt in einem Studio um die Ecke Yoga für frischgebackene Eltern", "da clases de yoga para madres y padres primerizos en un estudio a la vuelta de la esquina", "prowadzi jogę dla świeżo upieczonych rodziców w studiu za rogiem"), ["family"]),
     ],
     lunchRoutine: [
-      { t: x("Works from a laptop at the café two or three afternoons a week; lunch is often a bowl of soup and a long flat white.", "Arbeitet zwei, drei Nachmittage pro Woche mit dem Laptop im Café; mittags gibt es oft eine Schale Suppe und einen langen Flat White.", "Trabaja con el portátil en el café dos o tres tardes a la semana; la comida suele ser un cuenco de sopa y un flat white que dura mucho.", "Dwa, trzy popołudnia w tygodniu pracuje w kawiarni na laptopie; na lunch często miska zupy i długo pity flat white.") },
-      { t: x("Works from home most days and goes out for lunch when a deadline is done or the flat feels too small.", "Arbeitet meist von zu Hause und geht mittags raus, wenn eine Deadline geschafft ist oder die Wohnung zu eng wird.", "Trabaja desde casa casi siempre y sale a comer cuando termina una entrega o el piso se le queda pequeño.", "Zwykle pracuje z domu, a na lunch wychodzi, gdy skończy jakiś termin albo mieszkanie robi się za ciasne.") },
+      rt(x("Works from a laptop at the café two or three afternoons a week; lunch is often a bowl of soup and a long flat white.", "Arbeitet zwei, drei Nachmittage pro Woche mit dem Laptop im Café; mittags gibt es oft eine Schale Suppe und einen langen Flat White.", "Trabaja con el portátil en el café dos o tres tardes a la semana; la comida suele ser un cuenco de sopa y un flat white que dura mucho.", "Dwa, trzy popołudnia w tygodniu pracuje w kawiarni na laptopie; na lunch często miska zupy i długo pity flat white."), "some", { here: true, tags: ["sitter"] }),
+      rt(x("Works from home most days and goes out for lunch when a deadline is done or the flat feels too small.", "Arbeitet meist von zu Hause und geht mittags raus, wenn eine Deadline geschafft ist oder die Wohnung zu eng wird.", "Trabaja desde casa casi siempre y sale a comer cuando termina una entrega o el piso se le queda pequeño.", "Zwykle pracuje z domu, a na lunch wychodzi, gdy skończy jakiś termin albo mieszkanie robi się za ciasne."), "some"),
+      rt(x("Rents a desk in a co-working space nearby and eats out most days with whoever is around.", "Hat einen Schreibtisch in einem Coworking-Space in der Nähe und isst an den meisten Tagen mit denen auswärts, die gerade da sind.", "Alquila una mesa en un coworking cercano y come fuera casi todos los días con quien esté por allí.", "Wynajmuje biurko w pobliskim coworkingu i w większość dni je na mieście z tymi, którzy akurat są."), "most"),
+      rt(x("Comes in most days around one with the laptop, orders lunch and stays until the battery runs out.", "Kommt an den meisten Tagen gegen eins mit dem Laptop, bestellt Mittagessen und bleibt, bis der Akku leer ist.", "Viene casi todos los días hacia la una con el portátil, pide la comida y se queda hasta que se acaba la batería.", "Przychodzi prawie codziennie około pierwszej z laptopem, zamawia lunch i siedzi, dopóki nie padnie bateria."), "most", { here: true, tags: ["sitter"] }),
+      rt(x("Eats out once or twice a week, usually wherever a client meeting ends.", "Isst ein-, zweimal die Woche auswärts, meist dort, wo gerade ein Kundentermin endet.", "Come fuera una o dos veces por semana, normalmente donde acabe una reunión con un cliente.", "Raz, dwa razy w tygodniu je na mieście, zwykle tam, gdzie akurat kończy się spotkanie z klientem."), "some"),
     ],
     coffeeRoutine: [
-      { t: x("Works from the café a few afternoons a week, making {a_item} last for hours.", "Arbeitet ein paar Nachmittage pro Woche im Café und lässt dabei {einen_item} stundenlang reichen.", "Trabaja en el café algunas tardes a la semana y hace durar {un_item} horas.", "Kilka popołudni w tygodniu pracuje w kawiarni i potrafi pić jeden {item} godzinami.") },
-      { t: x("Comes in mid-morning for {a_item} and a seat by the window to answer emails.", "Kommt am Vormittag auf {einen_item} und einen Fensterplatz, um Mails zu beantworten.", "Viene a media mañana a por {un_item} y un sitio junto a la ventana para contestar correos.", "Przychodzi przed południem na {item} i miejsce przy oknie, żeby odpisać na maile.") },
+      rt(x("Works from the café a few afternoons a week, making {a_item} last for hours.", "Arbeitet ein paar Nachmittage pro Woche im Café und lässt dabei {einen_item} stundenlang reichen.", "Trabaja en el café algunas tardes a la semana y hace durar {un_item} horas.", "Kilka popołudni w tygodniu pracuje w kawiarni i potrafi pić jeden {item} godzinami."), "some", { here: true, tags: ["sitter"] }),
+      rt(x("Comes in mid-morning most days for {a_item} and a seat by the window to answer emails.", "Kommt an den meisten Tagen am Vormittag auf {einen_item} und einen Fensterplatz, um Mails zu beantworten.", "Casi todos los días viene a media mañana a por {un_item} y un sitio junto a la ventana para contestar correos.", "Prawie codziennie przychodzi przed południem na {item} i miejsce przy oknie, żeby odpisać na maile."), "most", { here: true }),
+      rt(x("Makes coffee at home most mornings and goes out for {a_item} when the flat gets too quiet.", "Macht morgens meist zu Hause Kaffee und geht auf {einen_item} raus, wenn es in der Wohnung zu still wird.", "Casi todas las mañanas se hace el café en casa y sale a por {un_item} cuando el piso se queda demasiado silencioso.", "Zwykle rano robi kawę w domu, a na {item} wychodzi, kiedy w mieszkaniu robi się za cicho."), "some"),
+      rt(x("Picks up {a_item} on the way to the co-working space most mornings.", "Holt sich an den meisten Morgen auf dem Weg in den Coworking-Space {einen_item}.", "Casi todas las mañanas recoge {un_item} de camino al coworking.", "Prawie każdego ranka bierze {item} w drodze do coworkingu."), "most", { tags: ["takeaway"] }),
     ],
     quirks: [
       q(x("always takes the table by the power socket", "nimmt immer den Tisch an der Steckdose", "siempre coge la mesa junto al enchufe", "zawsze zajmuje stolik przy gniazdku"), "sitter"),
@@ -169,19 +208,26 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   student: {
     jobs: [
-      x("is studying sociology and works weekend shifts at a bar", "studiert Soziologie und jobbt am Wochenende in einer Bar", "estudia sociología y trabaja los fines de semana en un bar", "studiuje socjologię i w weekendy pracuje w barze"),
-      x("is doing a master's in urban planning", "macht einen Master in Stadtplanung", "hace un máster en urbanismo", "robi magisterkę z urbanistyki"),
-      x("studies music and gives guitar lessons on the side", "studiert Musik und gibt nebenbei Gitarrenunterricht", "estudia música y da clases de guitarra", "studiuje muzykę i dorabia lekcjami gitary"),
-      x("is in the last year of a nursing apprenticeship", "ist im letzten Jahr der Pflegeausbildung", "está en el último año de la formación en enfermería", "jest na ostatnim roku szkoły pielęgniarskiej"),
-      x("studies computer science and lives in a shared flat round the corner", "studiert Informatik und wohnt in einer WG um die Ecke", "estudia informática y vive en un piso compartido a la vuelta de la esquina", "studiuje informatykę i mieszka w mieszkaniu współdzielonym za rogiem"),
+      j("social", x("is studying sociology and works weekend shifts at a bar", "studiert Soziologie und jobbt am Wochenende in einer Bar", "estudia sociología y trabaja los fines de semana en un bar", "studiuje socjologię i w weekendy pracuje w barze")),
+      j("planning", x("is doing a master's in urban planning", "macht einen Master in Stadtplanung", "hace un máster en urbanismo", "robi magisterkę z urbanistyki")),
+      j("music", x("studies music and gives guitar lessons on the side", "studiert Musik und gibt nebenbei Gitarrenunterricht", "estudia música y da clases de guitarra", "studiuje muzykę i dorabia lekcjami gitary")),
+      j("care", x("is in the last year of a nursing apprenticeship", "ist im letzten Jahr der Pflegeausbildung", "está en el último año de la formación en enfermería", "jest na ostatnim roku szkoły pielęgniarskiej")),
+      j("tech", x("studies computer science and lives in a shared flat round the corner", "studiert Informatik und wohnt in einer WG um die Ecke", "estudia informática y vive en un piso compartido a la vuelta de la esquina", "studiuje informatykę i mieszka w mieszkaniu współdzielonym za rogiem")),
+      j("education", x("is training to be a primary teacher and works at an after-school club", "studiert auf Grundschullehramt und jobbt im Hort", "estudia magisterio y trabaja en un centro de actividades extraescolares", "studiuje pedagogikę wczesnoszkolną i dorabia w świetlicy")),
+      j("arts", x("studies at the art school and sells prints at the flea market", "studiert an der Kunsthochschule und verkauft Drucke auf dem Flohmarkt", "estudia en la escuela de arte y vende grabados en el mercadillo", "studiuje na akademii sztuk pięknych i sprzedaje grafiki na pchlim targu"), ["inner", "family"]),
     ],
     lunchRoutine: [
-      { t: x("Passes the café on the way to the U-Bahn; eats out maybe twice a week and cooks big pots of pasta the rest of the time.", "Kommt auf dem Weg zur U-Bahn am Café vorbei; isst vielleicht zweimal die Woche auswärts und kocht sonst große Töpfe Nudeln.", "Pasa por delante del café de camino al U-Bahn; come fuera quizá dos veces por semana y el resto del tiempo cocina ollas enormes de pasta.", "Mija kawiarnię w drodze do metra; je na mieście może dwa razy w tygodniu, a poza tym gotuje wielkie garnki makaronu.") },
-      { t: x("Has lectures until noon, and lunch is whatever is cheapest between the station and the flat.", "Hat bis mittags Vorlesungen, und Mittagessen ist das, was zwischen Station und Wohnung am billigsten ist.", "Tiene clases hasta mediodía y la comida es lo más barato que encuentre entre la estación y el piso.", "Ma zajęcia do południa, a lunch to to, co najtańsze między stacją a mieszkaniem.") },
+      rt(x("Passes the café on the way to the U-Bahn; eats out maybe twice a week and cooks big pots of pasta the rest of the time.", "Kommt auf dem Weg zur U-Bahn am Café vorbei; isst vielleicht zweimal die Woche auswärts und kocht sonst große Töpfe Nudeln.", "Pasa por delante del café de camino al U-Bahn; come fuera quizá dos veces por semana y el resto del tiempo cocina ollas enormes de pasta.", "Mija kawiarnię w drodze do metra; je na mieście może dwa razy w tygodniu, a poza tym gotuje wielkie garnki makaronu."), "some"),
+      rt(x("Has lectures until noon, and lunch is whatever is cheapest between the station and the flat.", "Hat bis mittags Vorlesungen, und Mittagessen ist das, was zwischen Station und Wohnung am billigsten ist.", "Tiene clases hasta mediodía y la comida es lo más barato que encuentre entre la estación y el piso.", "Ma zajęcia do południa, a lunch to to, co najtańsze między stacją a mieszkaniem."), "most"),
+      rt(x("Comes in most afternoons to study with one cheap drink and sometimes stays for lunch.", "Kommt an den meisten Nachmittagen zum Lernen, mit einem billigen Getränk, und bleibt manchmal zum Mittagessen.", "Viene casi todas las tardes a estudiar con una bebida barata y a veces se queda a comer.", "Przychodzi prawie każdego popołudnia się uczyć przy jednym tanim napoju, a czasem zostaje na lunch."), "most", { here: true, tags: ["sitter"] }),
+      rt(x("Eats at the Mensa on uni days and goes out with the flat once a week.", "Isst an Uni-Tagen in der Mensa und geht einmal die Woche mit der WG essen.", "Come en el comedor de la uni los días de clase y sale una vez por semana con los del piso.", "W dni na uczelni je w stołówce, a raz w tygodniu wychodzi coś zjeść ze współlokatorami."), "some"),
+      rt(x("Has two free afternoons a week, spends them in the Kiez and eats out if the money allows.", "Hat zweimal die Woche einen freien Nachmittag, verbringt ihn im Kiez und isst dann auswärts, wenn das Geld reicht.", "Tiene dos tardes libres a la semana, las pasa por el barrio y come fuera si le llega el dinero.", "Dwa razy w tygodniu ma wolne popołudnie, spędza je w okolicy i je na mieście, jeśli starczy pieniędzy."), "some"),
     ],
     coffeeRoutine: [
-      { t: x("Treats {r} to {a_item} once or twice a week between lectures.", "Gönnt sich ein-, zweimal die Woche zwischen den Vorlesungen {einen_item}.", "Se da el capricho de {un_item} una o dos veces por semana entre clase y clase.", "Raz, dwa razy w tygodniu funduje sobie między zajęciami {item}.") },
-      { t: x("Comes in with flatmates on Sunday mornings and sometimes alone on weekdays for {a_item}.", "Kommt sonntagmorgens mit der WG und manchmal unter der Woche allein auf {einen_item}.", "Viene los domingos por la mañana con sus compañeros de piso y a veces {g:solo|sola} entre semana a por {un_item}.", "W niedzielne poranki przychodzi ze współlokatorami, a czasem w tygodniu {g:sam|sama} na {item}.") },
+      rt(x("Treats {r} to {a_item} once or twice a week between lectures.", "Gönnt sich ein-, zweimal die Woche zwischen den Vorlesungen {einen_item}.", "Se da el capricho de {un_item} una o dos veces por semana entre clase y clase.", "Raz, dwa razy w tygodniu funduje sobie między zajęciami {item}."), "some"),
+      rt(x("Comes in with flatmates on Sunday mornings and sometimes alone on weekdays for {a_item}.", "Kommt sonntagmorgens mit der WG und manchmal unter der Woche allein auf {einen_item}.", "Viene los domingos por la mañana con sus compañeros de piso y a veces {g:solo|sola} entre semana a por {un_item}.", "W niedzielne poranki przychodzi ze współlokatorami, a czasem w tygodniu {g:sam|sama} na {item}."), "some", { here: true }),
+      rt(x("Gets {a_item} most mornings before the first lecture, usually to go.", "Holt sich an den meisten Morgen vor der ersten Vorlesung {einen_item}, meist zum Mitnehmen.", "Casi todas las mañanas, antes de la primera clase, se pide {un_item}, casi siempre para llevar.", "Prawie każdego ranka przed pierwszymi zajęciami bierze {item}, zwykle na wynos."), "most", { tags: ["takeaway"] }),
+      rt(x("Studies in the café most afternoons and makes one {item} last until closing.", "Lernt an den meisten Nachmittagen im Café und lässt {einen_item} bis Ladenschluss reichen.", "Estudia en el café casi todas las tardes y hace durar {un_item} hasta el cierre.", "Prawie każdego popołudnia uczy się w kawiarni i jeden {item} wystarcza {g:mu|jej} do zamknięcia."), "most", { here: true, tags: ["sitter"] }),
     ],
     quirks: [
       q(x("splits everything with a flatmate", "teilt alles mit den Leuten aus der WG", "lo comparte todo con sus compañeros de piso", "wszystkim dzieli się ze współlokatorami")),
@@ -202,24 +248,34 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   parent: {
     jobs: [
-      x("is on parental leave with an eight-month-old", "ist in Elternzeit mit einem acht Monate alten Baby", "está de permiso por crianza con un bebé de ocho meses", "jest na urlopie rodzicielskim z ośmiomiesięcznym dzieckiem"),
-      x("works part-time at a pharmacy and picks up two children at three", "arbeitet Teilzeit in einer Apotheke und holt um drei zwei Kinder ab", "trabaja media jornada en una farmacia y recoge a dos niños a las tres", "pracuje na pół etatu w aptece i o piętnastej odbiera dwoje dzieci"),
-      x("works from home on Mondays and Fridays and does the nursery run", "arbeitet montags und freitags von zu Hause und bringt das Kind in die Kita", "teletrabaja los lunes y viernes y lleva al niño a la guardería", "w poniedziałki i piątki pracuje z domu i odprowadza dziecko do przedszkola"),
-      x("is a nurse on a reduced week while the youngest settles into nursery", "ist {g:Krankenpfleger|Krankenpflegerin} mit weniger Stunden, solange das Jüngste in der Kita eingewöhnt wird", "es {g:enfermero|enfermera} y trabaja menos horas mientras el pequeño se adapta a la guardería", "jest {g:pielęgniarzem|pielęgniarką} na skróconym etacie, dopóki najmłodsze nie przyzwyczai się do przedszkola"),
+      j("leave", x("is on parental leave with an eight-month-old", "ist in Elternzeit mit einem acht Monate alten Baby", "está de permiso por crianza con un bebé de ocho meses", "jest na urlopie rodzicielskim z ośmiomiesięcznym dzieckiem")),
+      j("pharmacy", x("works part-time at a pharmacy and picks up two children at three", "arbeitet Teilzeit in einer Apotheke und holt um drei zwei Kinder ab", "trabaja media jornada en una farmacia y recoge a dos niños a las tres", "pracuje na pół etatu w aptece i o piętnastej odbiera dwoje dzieci")),
+      j("office", x("works from home on Mondays and Fridays and does the nursery run", "arbeitet montags und freitags von zu Hause und bringt das Kind in die Kita", "teletrabaja los lunes y viernes y lleva al niño a la guardería", "w poniedziałki i piątki pracuje z domu i odprowadza dziecko do przedszkola")),
+      j("care", x("is a nurse on a reduced week while the youngest settles into nursery", "ist {g:Krankenpfleger|Krankenpflegerin} mit weniger Stunden, solange das Jüngste in der Kita eingewöhnt wird", "es {g:enfermero|enfermera} y trabaja menos horas mientras el pequeño se adapta a la guardería", "jest {g:pielęgniarzem|pielęgniarką} na skróconym etacie, dopóki najmłodsze nie przyzwyczai się do przedszkola")),
+      j("transport", x("drives a bus on early shifts so the afternoons are free for the children", "fährt Bus in der Frühschicht, damit die Nachmittage für die Kinder frei sind", "conduce autobuses en el turno de mañana para tener las tardes libres para los niños", "jeździ autobusem na porannej zmianie, żeby popołudnia mieć dla dzieci")),
+      j("care", x("is a midwife who works three long days a week", "ist {g:Entbindungspfleger|Hebamme} und arbeitet drei lange Tage die Woche", "es {g:matrón|matrona} y trabaja tres días largos a la semana", "jest {g:położnym|położną} i pracuje trzy długie dni w tygodniu"), ["family"]),
+      j("design", x("designs children's furniture in a small workshop in the courtyard", "entwirft Kindermöbel in einer kleinen Werkstatt im Hof", "diseña muebles infantiles en un pequeño taller del patio", "projektuje meble dla dzieci w małym warsztacie na podwórku"), ["family", "west"]),
+      j("logistics", x("works shifts at the logistics centre and shares the childcare with the grandparents", "arbeitet im Schichtdienst im Logistikzentrum und teilt sich die Kinderbetreuung mit den Großeltern", "trabaja por turnos en el centro logístico y se reparte el cuidado de los niños con los abuelos", "pracuje na zmiany w centrum logistycznym i dzieli opiekę nad dziećmi z dziadkami"), ["outer"]),
     ],
     lunchRoutine: [
-      { t: x("Comes by with the pram after the morning walk; lunch out is a treat, usually something to share.", "Kommt nach dem Vormittagsspaziergang mit dem Kinderwagen vorbei; auswärts essen ist etwas Besonderes, meist etwas zum Teilen.", "Pasa con el carrito después del paseo de la mañana; comer fuera es un capricho, normalmente algo para compartir.", "Wpada z wózkiem po porannym spacerze; lunch na mieście to przyjemność, zwykle coś do podzielenia się."), tags: ["pram"] },
-      { t: x("Has lunch out once or twice a week between nursery drop-off and pick-up, always against the clock.", "Isst ein-, zweimal die Woche zwischen Kita-Bringen und -Abholen auswärts, immer gegen die Uhr.", "Come fuera una o dos veces por semana entre dejar y recoger al niño en la guarde, siempre con prisa.", "Raz, dwa razy w tygodniu je na mieście między odprowadzeniem a odebraniem dziecka z przedszkola, zawsze w biegu."), tags: ["hurry"] },
+      rt(x("Comes by with the pram after the morning walk; lunch out is a treat, usually something to share.", "Kommt nach dem Vormittagsspaziergang mit dem Kinderwagen vorbei; auswärts essen ist etwas Besonderes, meist etwas zum Teilen.", "Pasa con el carrito después del paseo de la mañana; comer fuera es un capricho, normalmente algo para compartir.", "Wpada z wózkiem po porannym spacerze; lunch na mieście to przyjemność, zwykle coś do podzielenia się."), "some", { here: true, tags: ["pram"] }),
+      rt(x("Has lunch out once or twice a week between nursery drop-off and pick-up, always against the clock.", "Isst ein-, zweimal die Woche zwischen Kita-Bringen und -Abholen auswärts, immer gegen die Uhr.", "Come fuera una o dos veces por semana entre dejar y recoger al niño en la guarde, siempre con prisa.", "Raz, dwa razy w tygodniu je na mieście między odprowadzeniem a odebraniem dziecka z przedszkola, zawsze w biegu."), "some", { tags: ["hurry"] }),
+      rt(x("Comes in most weekdays after the Kita run, often with the baby asleep in the sling.", "Kommt an den meisten Werktagen nach dem Kita-Bringen, oft mit dem schlafenden Baby in der Trage.", "Viene casi todos los días laborables después de dejar al niño en la guarde, a menudo con el bebé dormido en el portabebés.", "Przychodzi w większość dni roboczych po odprowadzeniu dziecka do przedszkola, często ze śpiącym niemowlakiem w chuście."), "most", { here: true }),
+      rt(x("Grabs lunch to go most days on the way back from work, before the afternoon pick-up.", "Holt sich an den meisten Tagen auf dem Rückweg von der Arbeit etwas zum Mitnehmen, vor dem Abholen am Nachmittag.", "Casi todos los días coge algo para llevar al volver del trabajo, antes de recoger a los niños por la tarde.", "Prawie codziennie w drodze z pracy bierze coś na wynos, zanim po południu odbierze dzieci."), "most", { tags: ["takeaway", "hurry"] }),
+      rt(x("Meets another parent for lunch on Wednesdays while the grandparents have the children.", "Trifft mittwochs andere Eltern zum Mittagessen, während die Großeltern die Kinder haben.", "Los miércoles queda a comer con otra madre o padre mientras los abuelos se quedan con los niños.", "W środy spotyka się na lunchu z innym rodzicem, kiedy dziadkowie mają dzieci."), "some"),
     ],
     coffeeRoutine: [
-      { t: x("Gets {a_item} after nursery drop-off, often with a pastry to share later.", "Holt sich nach dem Kita-Bringen {einen_item}, oft mit einem Gebäck zum Teilen für später.", "Se pide {un_item} después de dejar al niño en la guarde, a menudo con un bollo para compartir luego.", "Po odprowadzeniu dziecka do przedszkola bierze {item}, często z drożdżówką do podzielenia później."), tags: ["takeaway"] },
-      { t: x("Meets another parent for {a_item} on Wednesday mornings, pram parked by the window.", "Trifft mittwochmorgens andere Eltern auf {einen_item}, der Kinderwagen parkt am Fenster.", "Queda con otra madre o padre los miércoles por la mañana para tomar {un_item}, con el carrito aparcado junto a la ventana.", "W środowe poranki spotyka się z innym rodzicem na {item}, wózek stoi przy oknie."), tags: ["pram"] },
+      rt(x("Gets {a_item} after nursery drop-off most days, often with a pastry to share later.", "Holt sich an den meisten Tagen nach dem Kita-Bringen {einen_item}, oft mit einem Gebäck zum Teilen für später.", "Casi todos los días se pide {un_item} después de dejar al niño en la guarde, a menudo con un bollo para compartir luego.", "Prawie codziennie po odprowadzeniu dziecka do przedszkola bierze {item}, często z drożdżówką do podzielenia później."), "most", { tags: ["takeaway"] }),
+      rt(x("Meets another parent for {a_item} on Wednesday mornings, pram parked by the window.", "Trifft mittwochmorgens andere Eltern auf {einen_item}, der Kinderwagen parkt am Fenster.", "Queda con otra madre o padre los miércoles por la mañana para tomar {un_item}, con el carrito aparcado junto a la ventana.", "W środowe poranki spotyka się z innym rodzicem na {item}, wózek stoi przy oknie."), "some", { here: true, tags: ["pram"] }),
+      rt(x("Pushes the pram past most mornings and stops for {a_item} when the baby is asleep.", "Schiebt an den meisten Morgen den Kinderwagen vorbei und hält auf {einen_item} an, wenn das Baby schläft.", "Casi todas las mañanas pasa con el carrito y se para a por {un_item} si el bebé duerme.", "Prawie każdego ranka przechodzi obok z wózkiem i wpada na {item}, kiedy dziecko śpi."), "most", { here: true, tags: ["pram"] }),
+      rt(x("Has {a_item} twice a week while the older one is at swimming lessons.", "Trinkt zweimal die Woche {einen_item}, während das Große beim Schwimmkurs ist.", "Se toma {un_item} dos veces por semana mientras el mayor está en natación.", "Dwa razy w tygodniu pije {item}, kiedy starsze dziecko jest na basenie."), "some"),
     ],
     quirks: [
       q(x("needs space for a pram", "braucht Platz für einen Kinderwagen", "necesita sitio para el carrito", "potrzebuje miejsca na wózek"), "pram"),
-      q(x("always asks whether things contain nuts", "fragt immer, ob Nüsse drin sind", "siempre pregunta si algo lleva frutos secos", "zawsze pyta, czy coś zawiera orzechy")),
+      q(x("always asks whether things contain nuts", "fragt immer, ob Nüsse drin sind", "siempre pregunta si algo lleva frutos secos", "zawsze pyta, czy coś zawiera orzechy"), "nuts"),
       q(x("is in a hurry after half past two", "ist ab halb drei in Eile", "va con prisa a partir de las dos y media", "po wpół do trzeciej zawsze się spieszy"), "hurry"),
       q(x("orders for two and eats for one", "bestellt für zwei und isst für einen", "pide para dos y come por uno", "zamawia dwie porcje, a zjada jedną")),
+      q(x("carries snacks for everyone and rarely finishes a hot drink", "hat Snacks für alle dabei und trinkt selten ein Heißgetränk zu Ende", "lleva tentempiés para todos y casi nunca se acaba una bebida caliente", "nosi przekąski dla wszystkich i rzadko dopija gorący napój")),
     ],
     extras: [
       x("A good day is one where nobody cries in public, including {o}.", "Ein guter Tag ist einer, an dem niemand in der Öffentlichkeit weint, {g:er|sie} selbst eingeschlossen.", "Un buen día es uno en el que nadie llora en público, {g:incluido él|incluida ella}.", "Dobry dzień to taki, w którym nikt nie płacze publicznie, łącznie z {g:nim samym|nią samą}."),
@@ -233,25 +289,34 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   regular: {
     jobs: [
-      x("has lived on this street for eleven years", "wohnt seit elf Jahren in dieser Straße", "vive en esta calle desde hace once años", "mieszka przy tej ulicy od jedenastu lat"),
-      x("runs the bookshop three doors down", "führt den Buchladen drei Türen weiter", "lleva la librería que está tres portales más allá", "prowadzi księgarnię trzy drzwi dalej"),
-      x("is a night-shift nurse who stops by on the way home", "ist {g:Krankenpfleger|Krankenpflegerin} in der Nachtschicht und kommt auf dem Heimweg vorbei", "es {g:enfermero|enfermera} del turno de noche y pasa de camino a casa", "jest {g:pielęgniarzem|pielęgniarką} na nocnej zmianie i wpada w drodze do domu"),
-      x("teaches German at the language school nearby", "unterrichtet Deutsch an der Sprachschule nebenan", "da clases de alemán en la academia de idiomas de al lado", "uczy niemieckiego w pobliskiej szkole językowej"),
-      x("repairs bicycles in a workshop across the courtyard", "repariert Fahrräder in einer Werkstatt im Hinterhof", "arregla bicis en un taller al otro lado del patio", "naprawia rowery w warsztacie po drugiej stronie podwórka"),
+      j("home", x("has lived on this street for eleven years", "wohnt seit elf Jahren in dieser Straße", "vive en esta calle desde hace once años", "mieszka przy tej ulicy od jedenastu lat")),
+      j("retail", x("runs the bookshop three doors down", "führt den Buchladen drei Türen weiter", "lleva la librería que está tres portales más allá", "prowadzi księgarnię trzy drzwi dalej")),
+      j("care", x("is a night-shift nurse who stops by on the way home", "ist {g:Krankenpfleger|Krankenpflegerin} in der Nachtschicht und kommt auf dem Heimweg vorbei", "es {g:enfermero|enfermera} del turno de noche y pasa de camino a casa", "jest {g:pielęgniarzem|pielęgniarką} na nocnej zmianie i wpada w drodze do domu")),
+      j("education", x("teaches German at the language school nearby", "unterrichtet Deutsch an der Sprachschule nebenan", "da clases de alemán en la academia de idiomas de al lado", "uczy niemieckiego w pobliskiej szkole językowej")),
+      j("bikes", x("repairs bicycles in a workshop across the courtyard", "repariert Fahrräder in einer Werkstatt im Hinterhof", "arregla bicis en un taller al otro lado del patio", "naprawia rowery w warsztacie po drugiej stronie podwórka")),
+      j("beauty", x("is a hairdresser at the salon across the road", "ist {g:Friseur|Friseurin} im Salon gegenüber", "es {g:peluquero|peluquera} en la peluquería de enfrente", "jest {g:fryzjerem|fryzjerką} w salonie naprzeciwko")),
+      j("finance", x("works at a small tax adviser's office upstairs", "arbeitet in einer kleinen Steuerkanzlei im ersten Stock", "trabaja en una pequeña asesoría fiscal del primer piso", "pracuje w małym biurze doradztwa podatkowego na piętrze"), ["west", "outer"]),
+      j("transport", x("drives a taxi at night and has breakfast here at noon", "fährt nachts Taxi und frühstückt hier mittags", "conduce un taxi de noche y desayuna aquí a mediodía", "jeździ nocą taksówką i w południe je tu śniadanie"), ["inner", "centre"]),
     ],
     lunchRoutine: [
-      { t: x("Comes in almost every weekday, sits at the same window table and usually has the soup with bread.", "Kommt fast jeden Werktag, sitzt am selben Fenstertisch und nimmt meist die Suppe mit Brot.", "Viene casi todos los días laborables, se sienta en la misma mesa junto a la ventana y suele tomar la sopa con pan.", "Przychodzi prawie w każdy dzień roboczy, siada przy tym samym stoliku przy oknie i zwykle bierze zupę z chlebem."), tags: ["sitter"] },
-      { t: x("Has lunch here three or four times a week, usually the sandwich of the day and a mint tea.", "Isst hier drei-, viermal die Woche zu Mittag, meist das Sandwich des Tages und einen Pfefferminztee.", "Come aquí tres o cuatro veces por semana, casi siempre el bocadillo del día y un té de menta.", "Je tu lunch trzy, cztery razy w tygodniu, zwykle kanapkę dnia i herbatę miętową.") },
+      rt(x("Comes in almost every weekday, sits at the same window table and usually has the soup with bread.", "Kommt fast jeden Werktag, sitzt am selben Fenstertisch und nimmt meist die Suppe mit Brot.", "Viene casi todos los días laborables, se sienta en la misma mesa junto a la ventana y suele tomar la sopa con pan.", "Przychodzi prawie w każdy dzień roboczy, siada przy tym samym stoliku przy oknie i zwykle bierze zupę z chlebem."), "most", { here: true, tags: ["sitter"] }),
+      rt(x("Has lunch here three or four times a week, usually the sandwich of the day and a mint tea.", "Isst hier drei-, viermal die Woche zu Mittag, meist das Sandwich des Tages und einen Pfefferminztee.", "Come aquí tres o cuatro veces por semana, casi siempre el bocadillo del día y un té de menta.", "Je tu lunch trzy, cztery razy w tygodniu, zwykle kanapkę dnia i herbatę miętową."), "most", { here: true }),
+      rt(x("Drops in every weekday at a quarter past twelve and is out again by one.", "Kommt jeden Werktag um Viertel nach zwölf und ist um eins wieder draußen.", "Pasa todos los días laborables a las doce y cuarto y a la una ya se ha ido.", "Wpada w każdy dzień roboczy kwadrans po dwunastej i o pierwszej już {g:go|jej} nie ma."), "most", { here: true, tags: ["hurry"] }),
+      rt(x("Has lunch at the counter most days and chats with whoever is working.", "Isst an den meisten Tagen an der Theke zu Mittag und plaudert mit dem, der gerade Dienst hat.", "Come en la barra casi todos los días y charla con quien esté trabajando.", "Prawie codziennie je lunch przy ladzie i gawędzi z tym, kto akurat pracuje."), "most", { here: true }),
     ],
     coffeeRoutine: [
-      { t: x("Has {a_item} at the counter almost every morning, often as the first customer.", "Trinkt fast jeden Morgen {einen_item} an der Theke, oft als erster Gast.", "Se toma {un_item} en la barra casi todas las mañanas, a menudo como primer cliente.", "Prawie każdego ranka pije {item} przy ladzie, często jako pierwszy gość.") },
-      { t: x("Stops in for {a_item} most days and knows the staff's names.", "Kommt an den meisten Tagen auf {einen_item} vorbei und kennt das Team mit Namen.", "Pasa casi todos los días a por {un_item} y conoce al personal por su nombre.", "Wpada na {item} prawie codziennie i zna obsługę po imieniu.") },
+      rt(x("Has {a_item} at the counter almost every morning, often as the first customer.", "Trinkt fast jeden Morgen {einen_item} an der Theke, oft als erster Gast.", "Se toma {un_item} en la barra casi todas las mañanas, a menudo como primer cliente.", "Prawie każdego ranka pije {item} przy ladzie, często jako pierwszy gość."), "most", { here: true }),
+      rt(x("Stops in for {a_item} most days and knows the staff's names.", "Kommt an den meisten Tagen auf {einen_item} vorbei und kennt das Team mit Namen.", "Pasa casi todos los días a por {un_item} y conoce al personal por su nombre.", "Wpada na {item} prawie codziennie i zna obsługę po imieniu."), "most", { here: true }),
+      rt(x("Takes {a_item} to go every morning on the way to work and brings the cup back the next day.", "Nimmt jeden Morgen auf dem Weg zur Arbeit {einen_item} mit und bringt den Becher am nächsten Tag zurück.", "Cada mañana se lleva {un_item} de camino al trabajo y devuelve el vaso al día siguiente.", "Każdego ranka w drodze do pracy bierze {item} na wynos i następnego dnia oddaje kubek."), "most", { here: true, tags: ["takeaway"] }),
+      rt(x("Comes in for {a_item} most afternoons and does the crossword at the window.", "Kommt an den meisten Nachmittagen auf {einen_item} und löst am Fenster das Kreuzworträtsel.", "Viene casi todas las tardes a por {un_item} y hace el crucigrama junto a la ventana.", "Prawie każdego popołudnia przychodzi na {item} i rozwiązuje krzyżówkę przy oknie."), "most", { here: true, tags: ["sitter"] }),
     ],
     quirks: [
       q(x("knows the staff by name and their days off", "kennt das Team mit Namen und weiß, wer wann frei hat", "conoce al personal por su nombre y sabe qué días libran", "zna obsługę z imienia i wie, kto kiedy ma wolne")),
       q(x("dislikes changes to the menu", "mag keine Änderungen an der Karte", "no soporta los cambios en la carta", "nie lubi zmian w menu")),
       q(x("always pays in cash and leaves the change", "zahlt immer bar und lässt das Wechselgeld liegen", "siempre paga en efectivo y deja el cambio", "zawsze płaci gotówką i zostawia resztę")),
       q(x("reads the paper for an hour and keeps the same chair", "liest eine Stunde Zeitung und sitzt immer auf demselben Stuhl", "lee el periódico durante una hora y siempre ocupa la misma silla", "czyta gazetę przez godzinę i zawsze siada na tym samym krześle"), "sitter"),
+      q(x("always asks the staff how their weekend was", "fragt das Team immer, wie das Wochenende war", "siempre pregunta al personal qué tal el fin de semana", "zawsze pyta obsługę, jak minął weekend")),
+      q(x("has a dog that waits by the door for a biscuit", "hat einen Hund, der an der Tür auf einen Keks wartet", "tiene un perro que espera en la puerta una galleta", "ma psa, który czeka przy drzwiach na ciastko")),
     ],
     extras: [
       x("{S} has seen the café through two owners and a lot of staff.", "{S} hat das Café schon mit zwei Inhabern und vielen Teams erlebt.", "Ha visto pasar por el café a dos dueños y a mucho personal.", "{g:Widział|Widziała} już w tej kawiarni dwóch właścicieli i mnóstwo obsługi."),
@@ -265,25 +330,31 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   tourist: {
     jobs: [
-      x("is visiting from Lyon for a long weekend", "ist für ein langes Wochenende aus Lyon zu Besuch", "está de visita desde Lyon un fin de semana largo", "{g:przyjechał|przyjechała} z Lyonu na długi weekend"),
-      x("is in town from Kraków for a week of trade fairs", "ist für eine Messewoche aus Krakau in der Stadt", "ha venido de Cracovia para una semana de ferias", "{g:przyjechał|przyjechała} z Krakowa na tydzień targów"),
-      x("is backpacking from Melbourne and staying in a hostel nearby", "ist als {g:Backpacker|Backpackerin} aus Melbourne unterwegs und wohnt in einem Hostel in der Nähe", "viaja de {g:mochilero|mochilera} desde Melbourne y se aloja en un hostal cercano", "podróżuje z plecakiem z Melbourne i nocuje w pobliskim hostelu"),
-      x("is visiting a friend who lives round the corner, from Milan", "besucht aus Mailand eine Freundin, die um die Ecke wohnt", "ha venido de Milán a visitar a una amiga que vive a la vuelta de la esquina", "{g:przyjechał|przyjechała} z Mediolanu do przyjaciółki, która mieszka za rogiem"),
-      x("is on a city break from Leeds", "macht einen Städtetrip aus Leeds", "está de escapada desde Leeds", "jest na krótkim wypadzie z Leeds"),
+      j("visit-lyon", x("is visiting from Lyon for a long weekend", "ist für ein langes Wochenende aus Lyon zu Besuch", "está de visita desde Lyon un fin de semana largo", "{g:przyjechał|przyjechała} z Lyonu na długi weekend")),
+      j("fair", x("is in town from Kraków for a week of trade fairs", "ist für eine Messewoche aus Krakau in der Stadt", "ha venido de Cracovia para una semana de ferias", "{g:przyjechał|przyjechała} z Krakowa na tydzień targów")),
+      j("backpack", x("is backpacking from Melbourne and staying in a hostel nearby", "ist als {g:Backpacker|Backpackerin} aus Melbourne unterwegs und wohnt in einem Hostel in der Nähe", "viaja de {g:mochilero|mochilera} desde Melbourne y se aloja en un hostal cercano", "podróżuje z plecakiem z Melbourne i nocuje w pobliskim hostelu")),
+      j("visit-milan", x("is visiting a friend who lives round the corner, from Milan", "besucht aus Mailand eine Freundin, die um die Ecke wohnt", "ha venido de Milán a visitar a una amiga que vive a la vuelta de la esquina", "{g:przyjechał|przyjechała} z Mediolanu do przyjaciółki, która mieszka za rogiem")),
+      j("visit-leeds", x("is on a city break from Leeds", "macht einen Städtetrip aus Leeds", "está de escapada desde Leeds", "jest na krótkim wypadzie z Leeds")),
+      j("visit-valencia", x("has come from Valencia to see the museums", "ist aus Valencia hier, um die Museen zu sehen", "ha venido de Valencia a ver los museos", "{g:przyjechał|przyjechała} z Walencji zobaczyć muzea")),
+      j("conference", x("is in Berlin for a conference at a hotel nearby", "ist für eine Konferenz in einem Hotel in der Nähe in Berlin", "está en Berlín por un congreso en un hotel cercano", "jest w Berlinie na konferencji w pobliskim hotelu"), ["centre", "west"]),
     ],
     lunchRoutine: [
-      { t: x("Wanders the neighbourhood and picks lunch spots from map reviews and the look of the window.", "Streift durch den Kiez und sucht Mittagslokale nach Bewertungen auf der Karte und nach dem Schaufenster aus.", "Pasea por el barrio y elige dónde comer por las reseñas del mapa y el aspecto del escaparate.", "Krąży po okolicy i wybiera miejsca na lunch według opinii w mapach i wyglądu witryny.") },
-      { t: x("Eats out every day while in town and likes places that feel local.", "Isst in der Stadt jeden Tag auswärts und mag Orte, die sich nach Kiez anfühlen.", "Come fuera todos los días mientras está en la ciudad y le gustan los sitios con ambiente de barrio.", "Podczas pobytu codziennie je na mieście i lubi miejsca z lokalnym klimatem.") },
+      rt(x("Wanders the neighbourhood and picks lunch spots from map reviews and the look of the window.", "Streift durch den Kiez und sucht Mittagslokale nach Bewertungen auf der Karte und nach dem Schaufenster aus.", "Pasea por el barrio y elige dónde comer por las reseñas del mapa y el aspecto del escaparate.", "Krąży po okolicy i wybiera miejsca na lunch według opinii w mapach i wyglądu witryny."), "most"),
+      rt(x("Eats out every day while in town and likes places that feel local.", "Isst in der Stadt jeden Tag auswärts und mag Orte, die sich nach Kiez anfühlen.", "Come fuera todos los días mientras está en la ciudad y le gustan los sitios con ambiente de barrio.", "Podczas pobytu codziennie je na mieście i lubi miejsca z lokalnym klimatem."), "most"),
+      rt(x("Has a big hotel breakfast and only wants something small at lunch, wherever the walk ends.", "Frühstückt groß im Hotel und will mittags nur eine Kleinigkeit, wo auch immer der Spaziergang endet.", "Desayuna fuerte en el hotel y a mediodía solo quiere algo ligero, donde acabe el paseo.", "Je duże śniadanie w hotelu, a w południe chce tylko czegoś małego, tam, gdzie skończy się spacer."), "some"),
+      rt(x("Follows a list of food tips from a travel blog and eats wherever is next on it.", "Folgt einer Liste mit Essenstipps aus einem Reiseblog und isst dort, was als Nächstes draufsteht.", "Sigue una lista de recomendaciones de un blog de viajes y come donde toque después.", "Trzyma się listy kulinarnych poleceń z bloga podróżniczego i je tam, gdzie wypada następny punkt."), "most"),
     ],
     coffeeRoutine: [
-      { t: x("Stops for {a_item} while exploring the neighbourhood.", "Macht beim Erkunden des Kiezes Halt für {einen_item}.", "Se para a tomar {un_item} mientras explora el barrio.", "Zwiedzając okolicę, zatrzymuje się na {item}.") },
-      { t: x("Looks for a good {item} every morning before sightseeing.", "Sucht jeden Morgen vor dem Sightseeing nach gutem Kaffee.", "Busca un buen café cada mañana antes de hacer turismo.", "Każdego ranka przed zwiedzaniem szuka dobrej kawy.") },
+      rt(x("Stops for {a_item} while exploring the neighbourhood.", "Macht beim Erkunden des Kiezes Halt für {einen_item}.", "Se para a tomar {un_item} mientras explora el barrio.", "Zwiedzając okolicę, zatrzymuje się na {item}."), "some"),
+      rt(x("Looks for a good {item} every morning before sightseeing.", "Sucht jeden Morgen vor dem Sightseeing nach gutem Kaffee.", "Busca un buen café cada mañana antes de hacer turismo.", "Każdego ranka przed zwiedzaniem szuka dobrej kawy."), "most"),
+      rt(x("Takes {a_item} to go on the way to the S-Bahn every morning.", "Nimmt jeden Morgen auf dem Weg zur S-Bahn {einen_item} mit.", "Cada mañana se lleva {un_item} de camino al S-Bahn.", "Każdego ranka w drodze na S-Bahn bierze {item} na wynos."), "most", { tags: ["takeaway"] }),
     ],
     quirks: [
       q(x("reads every review before going in", "liest jede Bewertung, bevor {g:er|sie} reingeht", "lee todas las reseñas antes de entrar", "zanim wejdzie, czyta wszystkie opinie")),
       q(x("takes photos of chalkboards", "fotografiert Kreidetafeln", "fotografía las pizarras", "fotografuje tablice kredowe")),
       q(x("speaks English and a little German", "spricht Englisch und ein bisschen Deutsch", "habla inglés y un poco de alemán", "mówi po angielsku i trochę po niemiecku")),
       q(x("wants to eat 'like a local'", "will essen „wie die Leute von hier“", "quiere comer «como la gente de aquí»", "chce jeść „jak miejscowi”")),
+      q(x("always asks for the wifi password first", "fragt immer zuerst nach dem WLAN-Passwort", "siempre pide primero la contraseña del wifi", "zawsze najpierw pyta o hasło do wifi")),
     ],
     extras: [
       x("{S} will only be around for a few days.", "{S} ist nur ein paar Tage hier.", "Solo estará por aquí unos días.", "Będzie tu tylko kilka dni."),
@@ -297,25 +368,34 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   retiree: {
     jobs: [
-      x("drove trams for thirty-five years and still knows every timetable", "ist fünfunddreißig Jahre Tram gefahren und kennt immer noch jeden Fahrplan", "condujo tranvías durante treinta y cinco años y aún se sabe todos los horarios", "przez trzydzieści pięć lat {g:prowadził|prowadziła} tramwaje i wciąż zna każdy rozkład"),
-      x("is a retired primary-school teacher", "ist {g:pensionierter Grundschullehrer|pensionierte Grundschullehrerin}", "es {g:maestro de primaria jubilado|maestra de primaria jubilada}", "jest {g:emerytowanym nauczycielem|emerytowaną nauczycielką} ze szkoły podstawowej"),
-      x("used to run a tailoring shop two streets away", "hatte früher eine Schneiderei zwei Straßen weiter", "tenía una sastrería a dos calles de aquí", "{g:prowadził|prowadziła} kiedyś zakład krawiecki dwie ulice dalej"),
-      x("worked as a hospital cook and has opinions about soup", "war {g:Koch|Köchin} im Krankenhaus und hat eine klare Meinung zu Suppe", "fue {g:cocinero|cocinera} de hospital y tiene opiniones firmes sobre la sopa", "{g:był kucharzem|była kucharką} w szpitalu i ma swoje zdanie o zupach"),
-      x("worked at the post office counter for forty years", "hat vierzig Jahre am Postschalter gearbeitet", "trabajó cuarenta años en la ventanilla de Correos", "przez czterdzieści lat {g:pracował|pracowała} w okienku na poczcie"),
+      j("transport", x("drove trams for thirty-five years and still knows every timetable", "ist fünfunddreißig Jahre Tram gefahren und kennt immer noch jeden Fahrplan", "condujo tranvías durante treinta y cinco años y aún se sabe todos los horarios", "przez trzydzieści pięć lat {g:prowadził|prowadziła} tramwaje i wciąż zna każdy rozkład")),
+      j("education", x("is a retired primary-school teacher", "ist {g:pensionierter Grundschullehrer|pensionierte Grundschullehrerin}", "es {g:maestro de primaria jubilado|maestra de primaria jubilada}", "jest {g:emerytowanym nauczycielem|emerytowaną nauczycielką} ze szkoły podstawowej")),
+      j("craft", x("used to run a tailoring shop two streets away", "hatte früher eine Schneiderei zwei Straßen weiter", "tenía una sastrería a dos calles de aquí", "{g:prowadził|prowadziła} kiedyś zakład krawiecki dwie ulice dalej")),
+      j("food", x("worked as a hospital cook and has opinions about soup", "war {g:Koch|Köchin} im Krankenhaus und hat eine klare Meinung zu Suppe", "fue {g:cocinero|cocinera} de hospital y tiene opiniones firmes sobre la sopa", "{g:był kucharzem|była kucharką} w szpitalu i ma swoje zdanie o zupach")),
+      j("public", x("worked at the post office counter for forty years", "hat vierzig Jahre am Postschalter gearbeitet", "trabajó cuarenta años en la ventanilla de Correos", "przez czterdzieści lat {g:pracował|pracowała} w okienku na poczcie")),
+      j("music", x("played second violin in a Berlin orchestra for thirty years", "hat dreißig Jahre lang in einem Berliner Orchester die zweite Geige gespielt", "tocó el segundo violín en una orquesta de Berlín durante treinta años", "przez trzydzieści lat {g:grał|grała} na drugich skrzypcach w berlińskiej orkiestrze"), ["west", "centre"]),
+      j("pharmacy", x("ran a pharmacy for decades and still reads the small print on everything", "hatte jahrzehntelang eine Apotheke und liest bis heute überall das Kleingedruckte", "tuvo una farmacia durante décadas y todavía lee la letra pequeña de todo", "przez dziesięciolecia {g:prowadził|prowadziła} aptekę i wciąż czyta wszędzie drobny druk"), ["west", "family"]),
+      j("industry", x("worked at the cable factory down by the river for forty years", "hat vierzig Jahre im Kabelwerk unten am Fluss gearbeitet", "trabajó cuarenta años en la fábrica de cables junto al río", "przez czterdzieści lat {g:pracował|pracowała} w fabryce kabli nad rzeką"), ["outer"]),
     ],
     lunchRoutine: [
-      { t: x("Goes out for lunch on Tuesdays and Thursdays and cooks at home the rest of the week; likes a proper bowl of soup.", "Geht dienstags und donnerstags essen und kocht sonst zu Hause; mag eine ordentliche Schale Suppe.", "Sale a comer los martes y jueves y el resto de la semana cocina en casa; le gusta un buen plato de sopa.", "We wtorki i czwartki je na mieście, w pozostałe dni gotuje w domu; lubi porządny talerz zupy.") },
-      { t: x("Eats a late lunch out once a week with a friend from the choir.", "Isst einmal die Woche spät zu Mittag, zusammen mit einer Freundin aus dem Chor.", "Una vez por semana come tarde fuera con una amiga del coro.", "Raz w tygodniu je późny lunch na mieście z przyjaciółką z chóru."), tags: ["sitter"] },
+      rt(x("Goes out for lunch on Tuesdays and Thursdays and cooks at home the rest of the week; likes a proper bowl of soup.", "Geht dienstags und donnerstags essen und kocht sonst zu Hause; mag eine ordentliche Schale Suppe.", "Sale a comer los martes y jueves y el resto de la semana cocina en casa; le gusta un buen plato de sopa.", "We wtorki i czwartki je na mieście, w pozostałe dni gotuje w domu; lubi porządny talerz zupy."), "some"),
+      rt(x("Eats a late lunch out once a week with a friend from the choir.", "Isst einmal die Woche spät zu Mittag, zusammen mit einer Freundin aus dem Chor.", "Una vez por semana come tarde fuera con una amiga del coro.", "Raz w tygodniu je późny lunch na mieście z przyjaciółką z chóru."), "some", { tags: ["sitter"] }),
+      rt(x("Has lunch here most weekdays since living alone; it saves cooking for one.", "Isst seit dem Alleinleben an den meisten Werktagen hier zu Mittag; das spart das Kochen für eine Person.", "Desde que vive {g:solo|sola} come aquí casi todos los días laborables; así no cocina para una persona.", "Odkąd mieszka {g:sam|sama}, je tu lunch w większość dni roboczych; nie musi gotować dla jednej osoby."), "most", { here: true, tags: ["sitter"] }),
+      rt(x("Takes a walk every day at noon and stops somewhere for soup on the way back.", "Geht jeden Tag um zwölf spazieren und kehrt auf dem Rückweg irgendwo auf eine Suppe ein.", "Da un paseo cada día a mediodía y a la vuelta se para en algún sitio a tomar una sopa.", "Codziennie w południe chodzi na spacer i w drodze powrotnej wstępuje gdzieś na zupę."), "most"),
     ],
     coffeeRoutine: [
-      { t: x("Meets a friend for {a_item} on Tuesday and Thursday mornings.", "Trifft sich dienstags und donnerstags vormittags mit einer Freundin auf {einen_item}.", "Queda con una amiga los martes y jueves por la mañana para tomar {un_item}.", "We wtorki i czwartki rano spotyka się z przyjaciółką na {item}.") },
-      { t: x("Takes {a_item} at the window after the morning walk, three times a week.", "Trinkt dreimal die Woche nach dem Morgenspaziergang {einen_item} am Fenster.", "Tres veces por semana se toma {un_item} junto a la ventana después del paseo de la mañana.", "Trzy razy w tygodniu po porannym spacerze pije {item} przy oknie."), tags: ["sitter"] },
+      rt(x("Meets a friend for {a_item} on Tuesday and Thursday mornings.", "Trifft sich dienstags und donnerstags vormittags mit einer Freundin auf {einen_item}.", "Queda con una amiga los martes y jueves por la mañana para tomar {un_item}.", "We wtorki i czwartki rano spotyka się z przyjaciółką na {item}."), "some"),
+      rt(x("Takes {a_item} at the window after the morning walk, three times a week.", "Trinkt dreimal die Woche nach dem Morgenspaziergang {einen_item} am Fenster.", "Tres veces por semana se toma {un_item} junto a la ventana después del paseo de la mañana.", "Trzy razy w tygodniu po porannym spacerze pije {item} przy oknie."), "some", { here: true, tags: ["sitter"] }),
+      rt(x("Has {a_item} here every morning after buying the paper.", "Trinkt hier jeden Morgen {einen_item}, nachdem {g:er|sie} die Zeitung geholt hat.", "Se toma aquí {un_item} todas las mañanas después de comprar el periódico.", "Każdego ranka po kupieniu gazety pije tu {item}."), "most", { here: true }),
+      rt(x("Treats {r} to {a_item} out on Sundays after the market.", "Gönnt sich sonntags nach dem Markt {einen_item} auswärts.", "Los domingos, después del mercado, se da el gusto de tomar {un_item} fuera.", "W niedziele po targu pozwala sobie na {item} na mieście."), "some"),
     ],
     quirks: [
       q(x("pays in coins", "zahlt mit Münzen", "paga con monedas", "płaci monetami")),
       q(x("reads the board outside carefully, with glasses", "liest die Tafel draußen genau, mit Brille", "lee la pizarra de fuera con atención, con gafas", "dokładnie czyta tablicę przed wejściem, w okularach")),
       q(x("notices when portions shrink", "merkt, wenn die Portionen kleiner werden", "nota cuando las raciones encogen", "zauważa, kiedy porcje maleją")),
       q(x("comes with a friend from the choir", "kommt mit einer Freundin aus dem Chor", "viene con una amiga del coro", "przychodzi z przyjaciółką z chóru")),
+      q(x("asks for a glass of tap water with everything", "bestellt zu allem ein Glas Leitungswasser", "pide un vaso de agua del grifo con todo", "do wszystkiego prosi o szklankę kranówki")),
+      q(x("brings a cushion for the hard chairs", "bringt ein Kissen für die harten Stühle mit", "trae un cojín para las sillas duras", "przynosi poduszkę na twarde krzesła"), "sitter"),
     ],
     extras: [
       x("The pension goes up more slowly than prices, and {s} keeps a little notebook of what things cost.", "Die Rente steigt langsamer als die Preise, und {s} führt ein kleines Heft, was was kostet.", "La pensión sube más despacio que los precios, y apunta en una libretita lo que cuesta cada cosa.", "Emerytura rośnie wolniej niż ceny, więc zapisuje w zeszyciku, ile co kosztuje."),
@@ -329,24 +409,32 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
   trades: {
     jobs: [
-      x("is an electrician rewiring flats on the next street for a few weeks", "ist {g:Elektriker|Elektrikerin} und verlegt ein paar Wochen lang Leitungen in Wohnungen in der Nachbarstraße", "es electricista y durante unas semanas renueva la instalación de pisos en la calle de al lado", "jest {g:elektrykiem|elektryczką} i przez kilka tygodni wymienia instalację w mieszkaniach na sąsiedniej ulicy"),
-      x("is a painter on a renovation job nearby", "ist {g:Maler|Malerin} auf einer Baustelle in der Nähe", "es {g:pintor|pintora} en una reforma cercana", "jest {g:malarzem|malarką} przy remoncie niedaleko"),
-      x("drives a delivery van for a local organic wholesaler", "fährt einen Lieferwagen für einen Bio-Großhandel aus dem Kiez", "conduce una furgoneta de reparto para un mayorista ecológico del barrio", "jeździ dostawczakiem dla lokalnej hurtowni ekologicznej"),
-      x("is a plumber whose van is often parked outside", "ist {g:Installateur|Installateurin}, und {g:sein|ihr} Transporter parkt oft vor der Tür", "es {g:fontanero|fontanera} y su furgoneta suele estar aparcada en la puerta", "jest {g:hydraulikiem|hydrauliczką}, a {g:jego|jej} bus często stoi przed wejściem"),
+      j("building", x("is an electrician rewiring flats on the next street for a few weeks", "ist {g:Elektriker|Elektrikerin} und verlegt ein paar Wochen lang Leitungen in Wohnungen in der Nachbarstraße", "es electricista y durante unas semanas renueva la instalación de pisos en la calle de al lado", "jest {g:elektrykiem|elektryczką} i przez kilka tygodni wymienia instalację w mieszkaniach na sąsiedniej ulicy")),
+      j("building", x("is a painter on a renovation job nearby", "ist {g:Maler|Malerin} auf einer Baustelle in der Nähe", "es {g:pintor|pintora} en una reforma cercana", "jest {g:malarzem|malarką} przy remoncie niedaleko")),
+      j("transport", x("drives a delivery van for a local organic wholesaler", "fährt einen Lieferwagen für einen Bio-Großhandel aus dem Kiez", "conduce una furgoneta de reparto para un mayorista ecológico del barrio", "jeździ dostawczakiem dla lokalnej hurtowni ekologicznej")),
+      j("building", x("is a plumber whose van is often parked outside", "ist {g:Installateur|Installateurin}, und {g:sein|ihr} Transporter parkt oft vor der Tür", "es {g:fontanero|fontanera} y su furgoneta suele estar aparcada en la puerta", "jest {g:hydraulikiem|hydrauliczką}, a {g:jego|jej} bus często stoi przed wejściem")),
+      j("garden", x("is a gardener looking after the courtyards for a housing company", "ist {g:Gärtner|Gärtnerin} und pflegt die Höfe für eine Wohnungsgesellschaft", "es {g:jardinero|jardinera} y cuida los patios de una empresa de viviendas", "jest {g:ogrodnikiem|ogrodniczką} i dba o podwórka spółdzielni mieszkaniowej")),
+      j("bikes", x("fixes cargo bikes in a workshop by the canal", "repariert Lastenräder in einer Werkstatt am Kanal", "arregla bicicletas de carga en un taller junto al canal", "naprawia rowery cargo w warsztacie nad kanałem"), ["inner", "family"]),
+      j("transport", x("drives a bus out of the depot nearby", "fährt Bus vom Betriebshof in der Nähe", "conduce un autobús que sale de la cochera cercana", "jeździ autobusem z pobliskiej zajezdni"), ["outer"]),
     ],
     lunchRoutine: [
-      { t: x("Grabs something filling at 11:45 between jobs and eats it in the van.", "Holt sich um 11:45 Uhr zwischen zwei Aufträgen etwas Sättigendes und isst es im Transporter.", "A las 11:45, entre trabajo y trabajo, coge algo contundente y se lo come en la furgoneta.", "O 11:45, między zleceniami, bierze coś sycącego i je w busie."), tags: ["takeaway"] },
-      { t: x("Takes a proper lunch break at noon with two workmates and wants it fast.", "Macht um zwölf mit zwei Kollegen richtig Mittagspause und will es schnell.", "Hace una pausa de verdad a mediodía con dos compañeros y quiere que sea rápido.", "W południe robi porządną przerwę z dwoma kolegami i chce, żeby było szybko."), tags: ["hurry"] },
+      rt(x("Grabs something filling at 11:45 between jobs and eats it in the van.", "Holt sich um 11:45 Uhr zwischen zwei Aufträgen etwas Sättigendes und isst es im Transporter.", "A las 11:45, entre trabajo y trabajo, coge algo contundente y se lo come en la furgoneta.", "O 11:45, między zleceniami, bierze coś sycącego i je w busie."), "most", { tags: ["takeaway"] }),
+      rt(x("Takes a proper lunch break at noon with two workmates and wants it fast.", "Macht um zwölf mit zwei Kollegen richtig Mittagspause und will es schnell.", "Hace una pausa de verdad a mediodía con dos compañeros y quiere que sea rápido.", "W południe robi porządną przerwę z dwoma kolegami i chce, żeby było szybko."), "most", { tags: ["hurry"] }),
+      rt(x("Brings sandwiches most days and buys something hot on Fridays, when the week is done.", "Bringt meistens Stullen mit und kauft sich freitags, wenn die Woche geschafft ist, etwas Warmes.", "Casi siempre trae bocadillos de casa y los viernes, cuando acaba la semana, compra algo caliente.", "Zwykle przynosi kanapki z domu, a w piątki, po skończonym tygodniu, kupuje coś ciepłego."), "some"),
+      rt(x("Eats wherever the job is that week and goes somewhere warm twice a week.", "Isst dort, wo der Auftrag gerade ist, und geht zweimal die Woche irgendwo ins Warme.", "Come donde esté el trabajo esa semana y dos veces por semana va a algún sitio caliente.", "Je tam, gdzie akurat jest robota, a dwa razy w tygodniu idzie gdzieś w ciepłe miejsce."), "some"),
     ],
     coffeeRoutine: [
-      { t: x("Picks up {a_item} to go before the first job of the day.", "Holt sich vor dem ersten Auftrag des Tages {einen_item} zum Mitnehmen.", "Recoge {un_item} para llevar antes del primer trabajo del día.", "Przed pierwszym zleceniem dnia bierze {item} na wynos."), tags: ["takeaway"] },
-      { t: x("Stops for {a_item} on the morning delivery round.", "Hält auf der Morgenrunde für {einen_item} an.", "Para a tomar {un_item} en la ruta de reparto de la mañana.", "Na porannej trasie zatrzymuje się na {item}."), tags: ["takeaway"] },
+      rt(x("Picks up {a_item} to go before the first job of the day.", "Holt sich vor dem ersten Auftrag des Tages {einen_item} zum Mitnehmen.", "Recoge {un_item} para llevar antes del primer trabajo del día.", "Przed pierwszym zleceniem dnia bierze {item} na wynos."), "most", { tags: ["takeaway"] }),
+      rt(x("Stops for {a_item} on the morning delivery round.", "Hält auf der Morgenrunde für {einen_item} an.", "Para a tomar {un_item} en la ruta de reparto de la mañana.", "Na porannej trasie zatrzymuje się na {item}."), "most", { tags: ["takeaway"] }),
+      rt(x("Gets {a_item} to go when the job is nearby, two or three times a week.", "Holt sich {einen_item} zum Mitnehmen, wenn der Auftrag in der Nähe ist, zwei-, dreimal die Woche.", "Se lleva {un_item} cuando el trabajo le pilla cerca, dos o tres veces por semana.", "Bierze {item} na wynos, kiedy zlecenie jest w pobliżu, dwa, trzy razy w tygodniu."), "some", { tags: ["takeaway"] }),
+      rt(x("Has {a_item} at the counter most mornings while the van is being loaded.", "Trinkt an den meisten Morgen {einen_item} an der Theke, während der Transporter beladen wird.", "Casi todas las mañanas se toma {un_item} en la barra mientras cargan la furgoneta.", "Prawie każdego ranka pije {item} przy ladzie, kiedy ładują bus."), "most", { here: true }),
     ],
     quirks: [
       q(x("wants big portions", "will große Portionen", "quiere raciones grandes", "chce dużych porcji")),
       q(x("always takes it to go", "nimmt immer alles zum Mitnehmen", "siempre lo pide para llevar", "zawsze bierze na wynos"), "takeaway"),
       q(x("comes with two workmates", "kommt mit zwei Kollegen", "viene con dos compañeros", "przychodzi z dwoma kolegami")),
       q(x("pays in cash and wants it fast", "zahlt bar und will es schnell", "paga en efectivo y lo quiere rápido", "płaci gotówką i chce szybko"), "takeaway", "hurry"),
+      q(x("asks for extra hot sauce on everything", "will auf alles extra scharfe Soße", "pide salsa picante extra para todo", "do wszystkiego prosi o dodatkowy ostry sos")),
     ],
     extras: [
       x("The job nearby ends in a few weeks, then it's another part of the city.", "Der Auftrag hier endet in ein paar Wochen, dann geht es in einen anderen Teil der Stadt.", "El trabajo de aquí acaba en unas semanas y luego toca otra parte de la ciudad.", "Zlecenie tutaj kończy się za kilka tygodni, potem inna część miasta."),
@@ -360,7 +448,35 @@ export const ARCHETYPE_TEXT: Record<SegmentId, ArchetypeText> = {
   },
 };
 
-/** What this person remembers about the café (the last line of the story). */
+/** Routines and quirks anyone can get when their segment's own are used up (large or one-segment runs). */
+export const GENERIC_TEXT: { lunchRoutine: RoutineText[]; coffeeRoutine: RoutineText[]; quirks: QuirkText[] } = {
+  lunchRoutine: [
+    rt(x("Eats out on most weekdays, wherever is closest when hunger hits.", "Isst an den meisten Werktagen auswärts, dort, wo es gerade am nächsten ist, wenn der Hunger kommt.", "Come fuera casi todos los días laborables, donde le pille más cerca cuando aprieta el hambre.", "W większość dni roboczych je na mieście, tam, gdzie najbliżej, kiedy zgłodnieje."), "most"),
+    rt(x("Eats out once or twice a week and cooks the rest of the time.", "Isst ein-, zweimal die Woche auswärts und kocht sonst selbst.", "Come fuera una o dos veces por semana y el resto del tiempo cocina.", "Raz, dwa razy w tygodniu je na mieście, a poza tym gotuje."), "some"),
+    rt(x("Has lunch here most days and knows the menu by heart.", "Isst an den meisten Tagen hier zu Mittag und kennt die Karte auswendig.", "Come aquí casi todos los días y se sabe la carta de memoria.", "Prawie codziennie je tu lunch i zna menu na pamięć."), "most", { here: true }),
+    rt(x("Comes in for lunch now and then, when the week allows.", "Kommt ab und zu zum Mittagessen, wenn die Woche es zulässt.", "Viene a comer de vez en cuando, cuando la semana lo permite.", "Od czasu do czasu wpada na lunch, kiedy tydzień na to pozwala."), "some", { here: true }),
+    rt(x("Skips breakfast and eats a big lunch out most days.", "Lässt das Frühstück aus und isst an den meisten Tagen mittags groß auswärts.", "Se salta el desayuno y casi todos los días come fuerte fuera.", "Nie je śniadań i w większość dni je na mieście porządny lunch."), "most"),
+    rt(x("Eats out on Mondays and Fridays and brings food from home in between.", "Isst montags und freitags auswärts und bringt dazwischen Essen von zu Hause mit.", "Come fuera los lunes y los viernes y entre medias se trae la comida de casa.", "W poniedziałki i piątki je na mieście, a w pozostałe dni przynosi jedzenie z domu."), "some"),
+  ],
+  coffeeRoutine: [
+    rt(x("Buys {a_item} somewhere on the way most mornings.", "Kauft sich an den meisten Morgen unterwegs {einen_item}.", "Casi todas las mañanas compra {un_item} en algún sitio de camino.", "Prawie każdego ranka kupuje gdzieś po drodze {item}."), "most"),
+    rt(x("Has {a_item} out a couple of times a week.", "Trinkt ein paar Mal die Woche auswärts {einen_item}.", "Se toma {un_item} fuera un par de veces por semana.", "Kilka razy w tygodniu pije {item} na mieście."), "some"),
+    rt(x("Has {a_item} here most days.", "Trinkt an den meisten Tagen hier {einen_item}.", "Se toma {un_item} aquí casi todos los días.", "Prawie codziennie pije tu {item}."), "most", { here: true }),
+    rt(x("Comes in for {a_item} now and then.", "Kommt ab und zu auf {einen_item} vorbei.", "Pasa de vez en cuando a por {un_item}.", "Od czasu do czasu wpada na {item}."), "some", { here: true }),
+    rt(x("Drinks {a_item} out every afternoon around three.", "Trinkt jeden Nachmittag gegen drei auswärts {einen_item}.", "Se toma {un_item} fuera cada tarde hacia las tres.", "Codziennie około piętnastej pije gdzieś {item}."), "most"),
+    rt(x("Has {a_item} out on Saturdays with whoever is free.", "Trinkt samstags mit dem, der gerade Zeit hat, auswärts {einen_item}.", "Los sábados se toma {un_item} fuera con quien esté libre.", "W soboty pije {item} na mieście z tym, kto akurat ma czas."), "some"),
+  ],
+  quirks: [
+    q(x("always sits facing the door", "sitzt immer mit Blick zur Tür", "siempre se sienta mirando a la puerta", "zawsze siada przodem do drzwi")),
+    q(x("never takes a receipt", "nimmt nie einen Kassenbon", "nunca coge el tique", "nigdy nie bierze paragonu")),
+    q(x("hums along to the music without noticing", "summt unbewusst die Musik mit", "tararea la música sin darse cuenta", "nieświadomie nuci do muzyki")),
+    q(x("always asks what the staff would recommend", "fragt immer, was das Team empfehlen würde", "siempre pregunta qué le recomendaría el personal", "zawsze pyta obsługę, co by poleciła")),
+    q(x("carries a reusable cup everywhere", "hat überall einen Mehrwegbecher dabei", "lleva a todas partes un vaso reutilizable", "wszędzie nosi kubek wielokrotnego użytku")),
+    q(x("tips in round numbers", "gibt Trinkgeld immer in runden Beträgen", "deja propina siempre en cifras redondas", "napiwki daje zawsze w okrągłych kwotach")),
+  ],
+};
+
+/** What this person remembers about the café (the last line of the story). No two people in a run share one. */
 export const MEMORIES: Record<"known" | "new", Record<Persona["attitude"], Tx[]>> = {
   known: {
     fan: [
@@ -368,32 +484,48 @@ export const MEMORIES: Record<"known" | "new", Record<Persona["attitude"], Tx[]>
       x("the barista remembering {p} order after only the second visit", "die Barista, die sich schon beim zweiten Besuch an {g:seine|ihre} Bestellung erinnerte", "el barista que recordaba su pedido ya en la segunda visita", "barista, który zapamiętał {g:jego|jej} zamówienie już przy drugiej wizycie"),
       x("a birthday when the staff put a candle in {p} slice of cake without being asked", "ein Geburtstag, an dem das Team ungefragt eine Kerze in {g:sein|ihr} Stück Kuchen steckte", "un cumpleaños en que el personal le puso una vela en su trozo de tarta sin que nadie lo pidiera", "urodziny, kiedy obsługa bez pytania wbiła świeczkę w {g:jego|jej} kawałek ciasta"),
       x("the first warm week of spring, sitting by the open window and watching the street wake up", "die erste warme Frühlingswoche am offenen Fenster, während die Straße aufwachte", "la primera semana cálida de primavera, {g:sentado|sentada} junto a la ventana abierta viendo despertar la calle", "pierwszy ciepły tydzień wiosny, siedzenie przy otwartym oknie i patrzenie, jak ulica się budzi"),
+      x("the winter the staff kept a bowl of soup back for {o} every Thursday", "der Winter, in dem das Team {g:ihm|ihr} jeden Donnerstag eine Schale Suppe zurückgelegt hat", "aquel invierno en que el personal le guardaba un cuenco de sopa todos los jueves", "zima, kiedy obsługa w każdy czwartek odkładała dla {g:niego|niej} miskę zupy"),
+      x("being lent an umbrella on the way out and bringing it back a week later", "ein Regenschirm, den man {g:ihm|ihr} beim Gehen lieh und den {g:er|sie} eine Woche später zurückbrachte", "que le prestaran un paraguas al salir y devolverlo una semana después", "parasol pożyczony przy wyjściu i oddany tydzień później"),
     ],
     neutral: [
       x("a good soup on a cold day, though {s} can't remember what kind", "eine gute Suppe an einem kalten Tag, auch wenn {g:er|sie} nicht mehr weiß, welche", "una buena sopa un día de frío, aunque no recuerda de qué era", "dobra zupa w zimny dzień, choć nie pamięta jaka"),
       x("bumping into an old friend there by chance and staying an hour longer than planned", "ein zufälliges Wiedersehen mit einer alten Freundin, das eine Stunde länger dauerte als geplant", "encontrarse allí por casualidad con un viejo amigo y quedarse una hora más de lo previsto", "przypadkowe spotkanie ze starym znajomym i godzina dłużej, niż {g:planował|planowała}"),
       x("decent coffee, slightly too loud music and a table that always wobbles", "ordentlicher Kaffee, etwas zu laute Musik und ein Tisch, der immer wackelt", "café decente, música un poco alta y una mesa que siempre cojea", "przyzwoita kawa, trochę za głośna muzyka i stolik, który zawsze się chwieje"),
       x("being served quickly once when {s} was in a hurry, which {s} noticed because it doesn't happen everywhere", "einmal schnell bedient worden zu sein, als {g:er|sie} es eilig hatte, was {g:ihm|ihr} auffiel, weil es nicht überall so ist", "que una vez {g:lo|la} atendieran rápido cuando tenía prisa, algo que notó porque no pasa en todas partes", "że raz, kiedy się {g:spieszył|spieszyła}, obsłużono {g:go|ją} szybko, co {g:zauważył|zauważyła}, bo nie wszędzie tak jest"),
+      x("a long wait for a table on a Saturday, then a very good cake", "ein langes Warten auf einen Tisch an einem Samstag, dann ein sehr guter Kuchen", "una larga espera por una mesa un sábado y luego una tarta muy buena", "długie czekanie na stolik w sobotę, a potem bardzo dobre ciasto"),
+      x("the new chairs that appeared one spring, which nobody had asked for", "die neuen Stühle, die eines Frühlings plötzlich da waren, obwohl niemand danach gefragt hatte", "las sillas nuevas que aparecieron una primavera sin que nadie las pidiera", "nowe krzesła, które pojawiły się pewnej wiosny, choć nikt o nie nie prosił"),
+      x("sitting out a summer storm at the window with a cold drink", "ein Sommergewitter, das {g:er|sie} mit einem kalten Getränk am Fenster abgewartet hat", "esperar a que pasara una tormenta de verano junto a la ventana con algo frío", "przeczekanie letniej burzy przy oknie z zimnym napojem"),
     ],
     sceptical: [
       x("waiting twelve minutes for a sandwich in the lunch rush and nearly missing a meeting", "zwölf Minuten Warten auf ein Sandwich in der Mittagszeit und fast ein verpasstes Meeting", "esperar doce minutos un bocadillo en plena hora de comer y casi perder una reunión", "dwanaście minut czekania na kanapkę w porze lunchu i prawie spóźnienie na spotkanie"),
       x("paying more than expected for a small coffee and wondering who it was for", "mehr als erwartet für einen kleinen Kaffee zu zahlen und sich zu fragen, für wen das gedacht ist", "pagar más de lo esperado por un café pequeño y preguntarse para quién era ese precio", "zapłacenie więcej, niż się {g:spodziewał|spodziewała}, za małą kawę i pytanie, dla kogo ta cena"),
       x("a 'special' that tasted a lot like yesterday's quiche warmed up", "ein „Tagesgericht“, das sehr nach aufgewärmter Quiche von gestern schmeckte", "un «plato del día» que sabía mucho a la quiche de ayer recalentada", "„danie dnia”, które smakowało jak odgrzana wczorajsza quiche"),
       x("standing at the counter while two of the staff finished their conversation first", "an der Theke zu stehen, während zwei aus dem Team erst ihr Gespräch beendeten", "esperar en la barra mientras dos del personal terminaban su conversación", "stanie przy ladzie, gdy dwie osoby z obsługi najpierw kończyły rozmowę"),
+      x("a card machine that was 'broken' twice in one month", "ein Kartenlesegerät, das in einem Monat zweimal „kaputt“ war", "un datáfono que estuvo «roto» dos veces en un mes", "terminal płatniczy, który w jednym miesiącu dwa razy był „zepsuty”"),
+      x("a lukewarm soup and a shrug when {s} mentioned it", "eine lauwarme Suppe und ein Schulterzucken, als {g:er|sie} es ansprach", "una sopa tibia y un encogimiento de hombros cuando lo comentó", "letnia zupa i wzruszenie ramion, kiedy o tym {g:wspomniał|wspomniała}"),
     ],
   },
   new: {
     fan: [
       x("one very good cinnamon bun on {p} first and only visit, eaten standing at the window", "eine sehr gute Zimtschnecke beim ersten und einzigen Besuch, im Stehen am Fenster gegessen", "un rollo de canela buenísimo en su primera y única visita, comido de pie junto a la ventana", "bardzo dobra drożdżówka z cynamonem podczas pierwszej i jedynej wizyty, zjedzona na stojąco przy oknie"),
       x("a friend's photo of the counter, with a note saying 'you'd like this place'", "das Foto einer Freundin von der Theke, mit dem Satz „Das würde dir gefallen“", "la foto de la barra que le mandó una amiga con un «este sitio te gustaría»", "zdjęcie lady od przyjaciółki z dopiskiem „spodobałoby ci się tu”"),
+      x("a neighbour saying the cakes there are the best in the Kiez", "eine Nachbarin, die sagte, dort gebe es den besten Kuchen im Kiez", "una vecina que le dijo que allí están las mejores tartas del barrio", "sąsiadka, która powiedziała, że mają tam najlepsze ciasta w okolicy"),
+      x("the smell of fresh bread from the door one early morning", "der Duft von frischem Brot aus der Tür an einem frühen Morgen", "el olor a pan recién hecho que salía por la puerta una mañana temprano", "zapach świeżego chleba z drzwi pewnego wczesnego ranka"),
     ],
     neutral: [
       x("walking past it twice and noticing the plants in the window, but never going in", "zweimal daran vorbeigegangen zu sein und die Pflanzen im Fenster bemerkt zu haben, aber nie hineingegangen zu sein", "haber pasado dos veces por delante y fijarse en las plantas del escaparate, sin entrar nunca", "dwa razy {g:przechodził|przechodziła} obok i {g:widział|widziała} rośliny w oknie, ale nigdy nie {g:wszedł|weszła}"),
       x("a photo of the counter on Google Maps, with a queue in it", "ein Foto der Theke auf Google Maps, mit Schlange davor", "una foto de la barra en Google Maps, con cola delante", "zdjęcie lady w Mapach Google, z kolejką"),
+      x("a chalkboard outside with a joke on it, which {s} photographed without going in", "eine Tafel draußen mit einem Witz drauf, die {g:er|sie} fotografiert hat, ohne hineinzugehen", "una pizarra en la puerta con un chiste, a la que hizo una foto sin entrar", "tablica przed wejściem z dowcipem, którą {g:sfotografował|sfotografowała}, ale nie {g:wszedł|weszła} do środka"),
+      x("the window full of people on a Sunday, and thinking 'some other time'", "das Fenster an einem Sonntag voller Leute und der Gedanke „ein andermal“", "ver el escaparate lleno de gente un domingo y pensar «otro día»", "okno pełne ludzi w niedzielę i myśl „innym razem”"),
+      x("a takeaway cup with the café's name on it, left on a bench in the park", "ein Pappbecher mit dem Namen des Cafés, der auf einer Parkbank stand", "un vaso para llevar con el nombre del café, olvidado en un banco del parque", "kubek na wynos z nazwą kawiarni, zostawiony na ławce w parku"),
+      x("a flyer for a quiz night on the café door, months ago", "ein Flyer für einen Quizabend an der Tür des Cafés, vor ein paar Monaten", "un cartel de una noche de preguntas en la puerta del café, hace meses", "ulotka o wieczorze quizowym na drzwiach kawiarni, kilka miesięcy temu"),
     ],
     sceptical: [
       x("a three-star review on Google Maps that complained about slow service", "eine Drei-Sterne-Bewertung auf Google Maps, die über langsamen Service klagte", "una reseña de tres estrellas en Google Maps que se quejaba del servicio lento", "opinia na trzy gwiazdki w Mapach Google, narzekająca na wolną obsługę"),
       x("peering in once, seeing every table taken and walking on", "einmal reingeschaut, alle Tische besetzt gesehen und weitergegangen", "asomarse una vez, ver todas las mesas ocupadas y seguir andando", "raz {g:zajrzał|zajrzała}, {g:zobaczył|zobaczyła} same zajęte stoliki i {g:poszedł|poszła} dalej"),
+      x("a friend saying it's nice but slow when it's busy", "eine Freundin, die meinte, es sei nett, aber langsam, wenn viel los ist", "una amiga que le dijo que está bien pero que es lento cuando hay gente", "przyjaciółka, która mówiła, że jest miło, ale wolno, gdy jest tłoczno"),
+      x("the prices on the board looking high from the street", "die Preise auf der Tafel, die von der Straße aus hoch aussahen", "los precios de la pizarra, que desde la calle le parecieron altos", "ceny na tablicy, które z ulicy wyglądały na wysokie"),
+      x("a locked door and a handwritten 'back in 10 minutes' sign one weekday lunchtime", "eine verschlossene Tür und ein handgeschriebenes „Bin in 10 Minuten zurück“ an einem Werktag zur Mittagszeit", "una puerta cerrada y un cartel escrito a mano de «vuelvo en 10 minutos» un mediodía entre semana", "zamknięte drzwi i odręczna kartka „wracam za 10 minut” w porze lunchu w dzień roboczy"),
     ],
   },
 };
@@ -477,6 +609,99 @@ export const PLACES: Record<string, PlaceText> = {
     to: x("the chain café by the U-Bahn", "zur Café-Kette am U-Bahnhof", "a la cadena de cafeterías junto al U-Bahn", "do sieciówki przy metrze"),
     nom: x("the chain café by the U-Bahn", "die Café-Kette am U-Bahnhof", "la cadena de cafeterías junto al U-Bahn", "sieciówka przy metrze"),
   },
+  // Kiez places (KIEZ_FLAVOUR_TEXT): generic kinds of place, never real businesses.
+  office_canteen: {
+    at: x("the canteen in the office block", "in der Kantine im Bürohaus", "en el comedor del edificio de oficinas", "w stołówce w biurowcu"),
+    to: x("the canteen in the office block", "in die Kantine im Bürohaus", "al comedor del edificio de oficinas", "do stołówki w biurowcu"),
+    nom: x("the canteen in the office block", "die Kantine im Bürohaus", "el comedor del edificio de oficinas", "stołówka w biurowcu"),
+  },
+  salad_bar: {
+    at: x("the salad bar in the office lobby", "an der Salatbar in der Bürolobby", "en la barra de ensaladas del vestíbulo", "w barze sałatkowym w holu biurowca"),
+    to: x("the salad bar in the office lobby", "zur Salatbar in der Bürolobby", "a la barra de ensaladas del vestíbulo", "do baru sałatkowego w holu biurowca"),
+    nom: x("the salad bar in the office lobby", "die Salatbar in der Bürolobby", "la barra de ensaladas del vestíbulo", "bar sałatkowy w holu biurowca"),
+  },
+  currywurst: {
+    at: x("the Currywurst stand by the S-Bahn", "an der Currywurstbude an der S-Bahn", "en el puesto de currywurst del S-Bahn", "w budce z currywurstem przy S-Bahnie"),
+    to: x("the Currywurst stand by the S-Bahn", "zur Currywurstbude an der S-Bahn", "al puesto de currywurst del S-Bahn", "do budki z currywurstem przy S-Bahnie"),
+    nom: x("the Currywurst stand by the S-Bahn", "die Currywurstbude an der S-Bahn", "el puesto de currywurst del S-Bahn", "budka z currywurstem przy S-Bahnie"),
+  },
+  lobby_espresso: {
+    at: x("the espresso bar in the office lobby", "an der Espressobar in der Bürolobby", "en la barra de café del vestíbulo de oficinas", "w barze espresso w holu biurowca"),
+    to: x("the espresso bar in the office lobby", "zur Espressobar in der Bürolobby", "a la barra de café del vestíbulo de oficinas", "do baru espresso w holu biurowca"),
+    nom: x("the espresso bar in the office lobby", "die Espressobar in der Bürolobby", "la barra de café del vestíbulo de oficinas", "bar espresso w holu biurowca"),
+  },
+  turkish_bakery: {
+    at: x("the Turkish bakery two streets down", "beim türkischen Bäcker zwei Straßen weiter", "en la panadería turca a dos calles", "w tureckiej piekarni dwie ulice dalej"),
+    to: x("the Turkish bakery two streets down", "zum türkischen Bäcker zwei Straßen weiter", "a la panadería turca a dos calles", "do tureckiej piekarni dwie ulice dalej"),
+    nom: x("the Turkish bakery two streets down", "der türkische Bäcker zwei Straßen weiter", "la panadería turca a dos calles", "turecka piekarnia dwie ulice dalej"),
+  },
+  falafel: {
+    at: x("the falafel place on the main road", "beim Falafel-Imbiss an der Hauptstraße", "en el sitio de falafel de la avenida", "w budce z falafelem przy głównej ulicy"),
+    to: x("the falafel place on the main road", "zum Falafel-Imbiss an der Hauptstraße", "al sitio de falafel de la avenida", "do budki z falafelem przy głównej ulicy"),
+    nom: x("the falafel place on the main road", "der Falafel-Imbiss an der Hauptstraße", "el sitio de falafel de la avenida", "budka z falafelem przy głównej ulicy"),
+  },
+  organic_bakery: {
+    at: x("the organic bakery opposite", "bei der Biobäckerei gegenüber", "en la panadería ecológica de enfrente", "w ekologicznej piekarni naprzeciwko"),
+    to: x("the organic bakery opposite", "zur Biobäckerei gegenüber", "a la panadería ecológica de enfrente", "do ekologicznej piekarni naprzeciwko"),
+    nom: x("the organic bakery opposite", "die Biobäckerei gegenüber", "la panadería ecológica de enfrente", "ekologiczna piekarnia naprzeciwko"),
+  },
+  bio_counter: {
+    at: x("the hot counter at the organic supermarket", "an der warmen Theke im Biomarkt", "en el mostrador de comida caliente del súper ecológico", "przy ciepłej ladzie w ekologicznym markecie"),
+    to: x("the hot counter at the organic supermarket", "zur warmen Theke im Biomarkt", "al mostrador de comida caliente del súper ecológico", "do ciepłej lady w ekologicznym markecie"),
+    nom: x("the hot counter at the organic supermarket", "die warme Theke im Biomarkt", "el mostrador de comida caliente del súper ecológico", "ciepła lada w ekologicznym markecie"),
+  },
+  playground_kiosk: {
+    at: x("the kiosk by the playground", "am Kiosk am Spielplatz", "en el quiosco del parque infantil", "w kiosku przy placu zabaw"),
+    to: x("the kiosk by the playground", "zum Kiosk am Spielplatz", "al quiosco del parque infantil", "do kiosku przy placu zabaw"),
+    nom: x("the kiosk by the playground", "der Kiosk am Spielplatz", "el quiosco del parque infantil", "kiosk przy placu zabaw"),
+  },
+  konditorei: {
+    at: x("the Konditorei on the square", "in der Konditorei am Platz", "en la pastelería de la plaza", "w cukierni przy placu"),
+    to: x("the Konditorei on the square", "in die Konditorei am Platz", "a la pastelería de la plaza", "do cukierni przy placu"),
+    nom: x("the Konditorei on the square", "die Konditorei am Platz", "la pastelería de la plaza", "cukiernia przy placu"),
+  },
+  italian: {
+    at: x("the Italian place on the next street", "beim Italiener in der Nebenstraße", "en el italiano de la calle de al lado", "we włoskiej knajpce na sąsiedniej ulicy"),
+    to: x("the Italian place on the next street", "zum Italiener in der Nebenstraße", "al italiano de la calle de al lado", "do włoskiej knajpki na sąsiedniej ulicy"),
+    nom: x("the Italian place on the next street", "der Italiener in der Nebenstraße", "el italiano de la calle de al lado", "włoska knajpka na sąsiedniej ulicy"),
+  },
+  market_stall: {
+    at: x("the stall at the weekly market", "am Stand auf dem Wochenmarkt", "en el puesto del mercado semanal", "przy straganie na cotygodniowym targu"),
+    to: x("the stall at the weekly market", "zum Stand auf dem Wochenmarkt", "al puesto del mercado semanal", "do straganu na cotygodniowym targu"),
+    nom: x("the stall at the weekly market", "der Stand auf dem Wochenmarkt", "el puesto del mercado semanal", "stragan na cotygodniowym targu"),
+  },
+  butcher: {
+    at: x("the butcher's hot lunch counter", "beim Mittagstisch der Fleischerei", "en la carnicería que da comidas calientes", "w mięsnym z ciepłymi obiadami"),
+    to: x("the butcher's hot lunch counter", "zum Mittagstisch der Fleischerei", "a la carnicería que da comidas calientes", "do mięsnego z ciepłymi obiadami"),
+    nom: x("the butcher's hot lunch counter", "der Mittagstisch der Fleischerei", "la carnicería que da comidas calientes", "mięsny z ciepłymi obiadami"),
+  },
+  asia_imbiss: {
+    at: x("the Asia snack bar at the station", "beim Asia-Imbiss am Bahnhof", "en el puesto de comida asiática de la estación", "w azjatyckim barze przy stacji"),
+    to: x("the Asia snack bar at the station", "zum Asia-Imbiss am Bahnhof", "al puesto de comida asiática de la estación", "do azjatyckiego baru przy stacji"),
+    nom: x("the Asia snack bar at the station", "der Asia-Imbiss am Bahnhof", "el puesto de comida asiática de la estación", "azjatycki bar przy stacji"),
+  },
+  food_court: {
+    at: x("the food court in the shopping centre", "im Food-Court im Einkaufszentrum", "en la zona de restaurantes del centro comercial", "w strefie gastronomicznej w centrum handlowym"),
+    to: x("the food court in the shopping centre", "in den Food-Court im Einkaufszentrum", "a la zona de restaurantes del centro comercial", "do strefy gastronomicznej w centrum handlowym"),
+    nom: x("the food court in the shopping centre", "der Food-Court im Einkaufszentrum", "la zona de restaurantes del centro comercial", "strefa gastronomiczna w centrum handlowym"),
+  },
+  bakery_chain: {
+    at: x("the bakery chain at the S-Bahn", "bei der Bäckereikette an der S-Bahn", "en la cadena de panaderías del S-Bahn", "w sieciowej piekarni przy S-Bahnie"),
+    to: x("the bakery chain at the S-Bahn", "zur Bäckereikette an der S-Bahn", "a la cadena de panaderías del S-Bahn", "do sieciowej piekarni przy S-Bahnie"),
+    nom: x("the bakery chain at the S-Bahn", "die Bäckereikette an der S-Bahn", "la cadena de panaderías del S-Bahn", "sieciowa piekarnia przy S-Bahnie"),
+  },
+  /** The food stalls of the "street_festival" event (plural: only lines written for it use it). */
+  festival: {
+    at: x("the food stalls at the street festival", "an den Essensständen vom Straßenfest", "en los puestos de comida de la fiesta del barrio", "przy straganach z jedzeniem na festynie"),
+    to: x("the food stalls at the street festival", "zu den Essensständen vom Straßenfest", "a los puestos de comida de la fiesta del barrio", "do straganów z jedzeniem na festynie"),
+    nom: x("the food stalls at the street festival", "die Essensstände vom Straßenfest", "los puestos de comida de la fiesta del barrio", "stragany z jedzeniem na festynie"),
+  },
+  /** The stalls of the "christmas_market" event (plural: only lines written for it use it). */
+  xmas: {
+    at: x("the Christmas market stalls", "an den Buden auf dem Weihnachtsmarkt", "en los puestos del mercado navideño", "przy straganach na jarmarku"),
+    to: x("the Christmas market stalls", "zu den Buden auf dem Weihnachtsmarkt", "a los puestos del mercado navideño", "do straganów na jarmarku"),
+    nom: x("the Christmas market stalls", "die Buden auf dem Weihnachtsmarkt", "los puestos del mercado navideño", "stragany na jarmarku"),
+  },
   /** The new café of the "rival_lunch" event (and any free-text competitor event). */
   rival: {
     at: x("the new café two doors down", "im neuen Café zwei Häuser weiter", "en el café nuevo de dos portales más allá", "w nowej kawiarni dwa budynki dalej"),
@@ -499,6 +724,20 @@ export const LUNCH_ALTS: Record<string, AltText> = {
   doener: { text: x("the döner place by the U-Bahn", "einen Döner am U-Bahnhof", "un döner del sitio junto al U-Bahn", "kebaba z budki przy metrze"), place: "doener" },
   vietnamese: { text: x("the Vietnamese place round the corner", "beim Vietnamesen um die Ecke", "el vietnamita de la esquina", "w wietnamskiej knajpce za rogiem"), place: "vietnamese" },
   homemade: { text: x("a home-made lunchbox", "Selbstgemachtes aus der Brotdose", "un táper de casa", "lunch z domu w pudełku") },
+  // Kiez alternatives (KIEZ_FLAVOUR_TEXT).
+  office_canteen: { text: x("the canteen in the office block", "in der Kantine im Bürohaus", "el comedor del edificio de oficinas", "w stołówce w biurowcu"), place: "office_canteen" },
+  salad_bar: { text: x("the salad bar in the office lobby", "an der Salatbar in der Bürolobby", "la barra de ensaladas del vestíbulo", "w barze sałatkowym w holu biurowca"), place: "salad_bar" },
+  currywurst: { text: x("a Currywurst from the stand by the S-Bahn", "eine Currywurst an der S-Bahn", "un currywurst del puesto del S-Bahn", "currywursta z budki przy S-Bahnie"), place: "currywurst" },
+  turkish_bakery: { text: x("something from the Turkish bakery two streets down", "beim türkischen Bäcker zwei Straßen weiter", "algo de la panadería turca a dos calles", "coś z tureckiej piekarni dwie ulice dalej"), place: "turkish_bakery" },
+  falafel: { text: x("a falafel wrap from the place on the main road", "eine Falafel an der Hauptstraße", "un falafel del sitio de la avenida", "falafela z budki przy głównej ulicy"), place: "falafel" },
+  organic_bakery: { text: x("something from the organic bakery opposite", "bei der Biobäckerei gegenüber", "algo de la panadería ecológica de enfrente", "coś z ekologicznej piekarni naprzeciwko"), place: "organic_bakery" },
+  bio_counter: { text: x("the hot counter at the organic supermarket", "an der warmen Theke im Biomarkt", "el mostrador caliente del súper ecológico", "przy ciepłej ladzie w ekologicznym markecie"), place: "bio_counter" },
+  konditorei: { text: x("something at the Konditorei on the square", "in der Konditorei am Platz", "algo en la pastelería de la plaza", "coś w cukierni przy placu"), place: "konditorei" },
+  italian: { text: x("the Italian place on the next street", "beim Italiener in der Nebenstraße", "el italiano de la calle de al lado", "we włoskiej knajpce na sąsiedniej ulicy"), place: "italian" },
+  market_stall: { text: x("something from the stall at the weekly market", "am Stand auf dem Wochenmarkt", "algo del puesto del mercado semanal", "coś ze straganu na cotygodniowym targu"), place: "market_stall" },
+  butcher: { text: x("the butcher's hot lunch counter", "beim Mittagstisch der Fleischerei", "en la carnicería que da comidas calientes", "w mięsnym z ciepłymi obiadami"), place: "butcher" },
+  asia_imbiss: { text: x("the Asia snack bar at the station", "beim Asia-Imbiss am Bahnhof", "el puesto de comida asiática de la estación", "w azjatyckim barze przy stacji"), place: "asia_imbiss" },
+  food_court: { text: x("the food court in the shopping centre", "im Food-Court im Einkaufszentrum", "la zona de restaurantes del centro comercial", "w strefie gastronomicznej w centrum handlowym"), place: "food_court" },
 };
 
 export const COFFEE_ALTS: Record<string, AltText> = {
@@ -508,6 +747,14 @@ export const COFFEE_ALTS: Record<string, AltText> = {
   uni: { text: x("the machine at uni", "aus dem Automaten an der Uni", "de la máquina de la uni", "z automatu na uczelni"), place: "uni_machine" },
   chain: { text: x("the chain café by the U-Bahn", "bei der Café-Kette am U-Bahnhof", "en la cadena junto al U-Bahn", "w sieciówce przy metrze"), place: "chain" },
   home: { text: x("home, with a moka pot", "zu Hause aus der Mokkakanne", "en casa, con la cafetera italiana", "w domu, z kawiarki") },
+  // Kiez alternatives (KIEZ_FLAVOUR_TEXT).
+  lobby_espresso: { text: x("the espresso bar in the office lobby", "an der Espressobar in der Bürolobby", "en la barra de café del vestíbulo de oficinas", "w barze espresso w holu biurowca"), place: "lobby_espresso" },
+  turkish_bakery: { text: x("the Turkish bakery two streets down", "beim türkischen Bäcker zwei Straßen weiter", "en la panadería turca a dos calles", "w tureckiej piekarni dwie ulice dalej"), place: "turkish_bakery" },
+  organic_bakery: { text: x("the organic bakery opposite", "bei der Biobäckerei gegenüber", "en la panadería ecológica de enfrente", "w ekologicznej piekarni naprzeciwko"), place: "organic_bakery" },
+  playground_kiosk: { text: x("the kiosk by the playground", "am Kiosk am Spielplatz", "en el quiosco del parque infantil", "w kiosku przy placu zabaw"), place: "playground_kiosk" },
+  konditorei: { text: x("the Konditorei on the square", "in der Konditorei am Platz", "en la pastelería de la plaza", "w cukierni przy placu"), place: "konditorei" },
+  italian: { text: x("the bar of the Italian place on the next street", "an der Bar vom Italiener in der Nebenstraße", "en la barra del italiano de la calle de al lado", "przy barze we włoskiej knajpce na sąsiedniej ulicy"), place: "italian" },
+  bakery_chain: { text: x("the bakery chain at the S-Bahn", "bei der Bäckereikette an der S-Bahn", "en la cadena de panaderías del S-Bahn", "w sieciowej piekarni przy S-Bahnie"), place: "bakery_chain" },
 };
 
 /** How a persona hears about new things. Ids are stored in Persona.channels. */
@@ -521,6 +768,104 @@ export const CHANNEL_TEXT: Record<string, Tx> = {
   "a neighbour": x("from neighbours", "von Nachbarn", "por los vecinos", "od sąsiadów"),
   "the board outside": x("from the board outside", "von der Tafel vor der Tür", "por la pizarra de la puerta", "z tablicy przed wejściem"),
   "the staff": x("from chatting with the staff", "im Gespräch mit dem Team", "charlando con el personal", "z rozmów z obsługą"),
+  // Kiez channels (KIEZ_FLAVOUR_TEXT).
+  "the office chat": x("in the office group chat", "im Büro-Gruppenchat", "en el chat de grupo de la oficina", "na biurowym czacie grupowym"),
+  "a city-guide app": x("in a city-guide app", "in einer Stadtführer-App", "en una app de guía de la ciudad", "w aplikacji z przewodnikiem po mieście"),
+  "the Späti owner": x("from the Späti owner next door", "vom Späti-Besitzer nebenan", "por el dueño del Späti de al lado", "od właściciela Späti obok"),
+  "the Kita parents' group": x("in the Kita parents' WhatsApp group", "in der WhatsApp-Gruppe der Kita-Eltern", "en el grupo de WhatsApp de las familias de la guarde", "na grupie WhatsApp rodziców z przedszkola"),
+  "the Kiez newspaper": x("from the Kiez newspaper", "aus der Kiezzeitung", "en el periódico del barrio", "z osiedlowej gazetki"),
+  "the free local paper": x("from the free local paper", "aus dem Anzeigenblatt", "en el periódico gratuito del barrio", "z darmowej lokalnej gazety"),
+};
+
+/** One Kiez flavour: places people go instead (with the segments each fits), an extra channel, and a scene detail per round. */
+export interface KiezFlavourText {
+  lunchAlts: [id: string, fits: SegmentId[]][];
+  coffeeAlts: [id: string, fits: SegmentId[]][];
+  channels: [id: string, fits: SegmentId[]][];
+  /** A sentence added to round 1 and round 2 of each template. */
+  scene: Record<TemplateId, { r1: Tx; r2: Tx }>;
+}
+
+const ALL_SEGMENTS: SegmentId[] = ["office_worker", "freelancer", "student", "parent", "regular", "tourist", "retiree", "trades"];
+const ALL_BUT = (...not: SegmentId[]): SegmentId[] => ALL_SEGMENTS.filter((s) => !not.includes(s));
+
+/** Kiez flavour (src/sim/berlin.ts KIEZ_FLAVOUR): generic kinds of place and scene, never real businesses. A rough guess, like the mix. */
+export const KIEZ_FLAVOUR_TEXT: Record<KiezFlavour, KiezFlavourText> = {
+  centre: {
+    lunchAlts: [["office_canteen", ["office_worker", "trades"]], ["salad_bar", ["office_worker", "freelancer", "parent", "tourist", "retiree"]], ["currywurst", ["tourist", "trades", "student", "regular", "office_worker"]]],
+    coffeeAlts: [["lobby_espresso", ["office_worker", "freelancer", "trades"]], ["chain", ALL_SEGMENTS]],
+    channels: [["the office chat", ["office_worker", "freelancer"]], ["a city-guide app", ["tourist"]]],
+    scene: {
+      lunch_offer: {
+        r1: x("Office workers with lanyards hurry past from the S-Bahn, and a tour group stops at the corner to look at a map.", "Büroleute mit Schlüsselband eilen von der S-Bahn vorbei, und eine Reisegruppe bleibt an der Ecke vor einem Stadtplan stehen.", "Oficinistas con la acreditación al cuello pasan deprisa desde el S-Bahn, y un grupo de turistas se para en la esquina a mirar un plano.", "Ludzie z identyfikatorami na smyczach śpieszą z S-Bahnu do biur, a grupa turystów zatrzymuje się na rogu nad mapą."),
+        r2: x("Most of the queue wear office lanyards; two visitors are reading the board with a translation app.", "Die meisten in der Schlange tragen Büro-Schlüsselbänder; zwei Besucher lesen die Tafel mit einer Übersetzungs-App.", "Casi todos en la cola llevan la acreditación de la oficina; dos visitantes leen la pizarra con una app de traducción.", "Większość kolejki ma firmowe identyfikatory; dwoje przyjezdnych czyta tablicę w aplikacji do tłumaczenia."),
+      },
+      price_change: {
+        r1: x("Outside, people stream from the S-Bahn towards the offices, and a couple with a city map hovers at the door.", "Draußen strömen die Leute von der S-Bahn zu den Büros, und ein Paar mit Stadtplan zögert an der Tür.", "Fuera, la gente sale en riada del S-Bahn hacia las oficinas y una pareja con un plano duda en la puerta.", "Na zewnątrz ludzie płyną z S-Bahnu do biur, a para z mapą waha się w drzwiach."),
+        r2: x("Most of the queue are on their way to the office.", "Die meisten in der Schlange sind auf dem Weg ins Büro.", "Casi todos en la cola van camino de la oficina.", "Większość kolejki jest w drodze do biura."),
+      },
+    },
+  },
+  inner: {
+    lunchAlts: [["turkish_bakery", ALL_SEGMENTS], ["falafel", ALL_BUT("retiree")], ["doener", ALL_BUT("retiree", "parent")], ["vietnamese", ALL_BUT("trades")]],
+    coffeeAlts: [["turkish_bakery", ALL_SEGMENTS], ["spaeti", ["student", "trades", "freelancer", "tourist"]]],
+    channels: [["the Späti owner", ["student", "freelancer", "trades", "regular", "parent"]]],
+    scene: {
+      lunch_offer: {
+        r1: x("Next door the Späti is putting its crates out, and it smells of fresh bread from the Turkish bakery.", "Nebenan stellt der Späti seine Getränkekisten raus, und es riecht nach frischem Brot vom türkischen Bäcker.", "Al lado, el Späti saca sus cajas de bebidas y huele a pan recién hecho de la panadería turca.", "Obok Späti wystawia skrzynki z napojami, a od tureckiej piekarni pachnie świeżym chlebem."),
+        r2: x("In the queue: a builder in dusty boots, two students sharing a table and someone with a laptop.", "In der Schlange: ein Bauarbeiter in staubigen Schuhen, zwei Studierende, die sich einen Tisch teilen, und jemand mit Laptop.", "En la cola: un albañil con las botas llenas de polvo, dos estudiantes que comparten mesa y alguien con un portátil.", "W kolejce: budowlaniec w zakurzonych butach, dwoje studentów przy jednym stoliku i ktoś z laptopem."),
+      },
+      price_change: {
+        r1: x("Outside, the Späti owner is sweeping the pavement and a cargo bike squeezes past.", "Draußen fegt der Späti-Besitzer den Gehweg, und ein Lastenrad quetscht sich vorbei.", "Fuera, el dueño del Späti barre la acera y una bici de carga pasa apretada.", "Na zewnątrz właściciel Späti zamiata chodnik, a obok przeciska się rower cargo."),
+        r2: x("In the queue: a student with headphones and a bike courier.", "In der Schlange: eine Studentin mit Kopfhörern und ein Fahrradkurier.", "En la cola: una estudiante con auriculares y un mensajero en bici.", "W kolejce: studentka w słuchawkach i kurier rowerowy."),
+      },
+    },
+  },
+  family: {
+    lunchAlts: [["organic_bakery", ALL_SEGMENTS], ["bio_counter", ["parent", "freelancer", "office_worker", "retiree", "regular"]], ["vietnamese", ALL_BUT("trades")]],
+    coffeeAlts: [["organic_bakery", ALL_SEGMENTS], ["playground_kiosk", ["parent", "retiree"]]],
+    channels: [["the Kita parents' group", ["parent"]], ["nebenan.de", ["freelancer", "retiree", "regular", "office_worker"]]],
+    scene: {
+      lunch_offer: {
+        r1: x("Parents with prams and balance bikes are coming back from the Kita run, and there is a queue at the organic bakery opposite.", "Eltern mit Kinderwagen und Laufrädern kommen vom Kita-Bringen zurück, und vor der Biobäckerei gegenüber steht eine Schlange.", "Padres y madres con carritos y bicis sin pedales vuelven de dejar a los niños en la guarde, y hay cola en la panadería ecológica de enfrente.", "Rodzice z wózkami i rowerkami biegowymi wracają z przedszkola, a przed ekologiczną piekarnią naprzeciwko stoi kolejka."),
+        r2: x("Two prams are parked by the window, and a toddler is pressing his nose against the glass.", "Am Fenster parken zwei Kinderwagen, und ein Kleinkind drückt die Nase an die Scheibe.", "Junto a la ventana hay dos carritos aparcados y un niño pequeño aplasta la nariz contra el cristal.", "Przy oknie stoją dwa wózki, a maluch przyciska nos do szyby."),
+      },
+      price_change: {
+        r1: x("Outside, parents are wheeling prams back from the Kita drop-off.", "Draußen schieben Eltern ihre Kinderwagen vom Kita-Bringen zurück.", "Fuera, madres y padres vuelven con el carrito después de dejar a los niños en la guarde.", "Na zewnątrz rodzice pchają wózki z powrotem spod przedszkola."),
+        r2: x("A pram is blocking half the queue.", "Ein Kinderwagen versperrt die halbe Schlange.", "Un carrito bloquea media cola.", "Wózek blokuje pół kolejki."),
+      },
+    },
+  },
+  west: {
+    lunchAlts: [["konditorei", ["retiree", "regular", "tourist", "parent"]], ["italian", ["office_worker", "freelancer", "retiree", "tourist", "regular", "parent"]], ["market_stall", ["retiree", "parent", "freelancer", "regular", "trades", "student"]]],
+    coffeeAlts: [["konditorei", ALL_SEGMENTS], ["italian", ["office_worker", "freelancer", "regular", "tourist"]]],
+    channels: [["the Kiez newspaper", ["retiree", "regular", "parent"]]],
+    scene: {
+      lunch_offer: {
+        r1: x("Two older ladies with shopping trolleys stop at the Konditorei window, and the weekly market is setting up on the square.", "Zwei ältere Damen mit Einkaufstrolley bleiben am Fenster der Konditorei stehen, und auf dem Platz wird der Wochenmarkt aufgebaut.", "Dos señoras mayores con carro de la compra se paran ante el escaparate de la pastelería, y en la plaza montan el mercado semanal.", "Dwie starsze panie z wózkami na zakupy zatrzymują się przy witrynie cukierni, a na placu rozstawia się targ."),
+        r2: x("At the window table, two retired neighbours are taking their time over the soup.", "Am Fenstertisch lassen sich zwei Rentner aus der Nachbarschaft mit ihrer Suppe Zeit.", "En la mesa de la ventana, dos vecinos jubilados se toman la sopa con calma.", "Przy stoliku przy oknie dwoje emerytów z sąsiedztwa spokojnie je zupę."),
+      },
+      price_change: {
+        r1: x("Outside, a retired neighbour with reading glasses is studying the menu before coming in.", "Draußen studiert eine Rentnerin aus dem Haus mit Lesebrille die Karte, bevor sie reinkommt.", "Fuera, una vecina jubilada con gafas de leer estudia la carta antes de entrar.", "Na zewnątrz emerytka z sąsiedztwa w okularach do czytania studiuje menu, zanim wejdzie."),
+        r2: x("In the queue: two regulars from the building next door, chatting about the weekly market.", "In der Schlange: zwei Stammgäste aus dem Nachbarhaus, die über den Wochenmarkt plaudern.", "En la cola: dos habituales del edificio de al lado charlan del mercado semanal.", "W kolejce: dwoje stałych gości z sąsiedniej kamienicy rozmawia o targu."),
+      },
+    },
+  },
+  outer: {
+    lunchAlts: [["butcher", ["trades", "retiree", "office_worker", "regular"]], ["asia_imbiss", ["student", "trades", "office_worker", "parent", "tourist", "freelancer"]], ["food_court", ["student", "parent", "tourist", "freelancer"]]],
+    coffeeAlts: [["bakery_chain", ALL_SEGMENTS]],
+    channels: [["the free local paper", ["retiree", "trades", "parent", "regular"]]],
+    scene: {
+      lunch_offer: {
+        r1: x("People come up from the S-Bahn with shopping bags, and the butcher's down the road is chalking up its hot lunch.", "Leute kommen mit Einkaufstüten von der S-Bahn hoch, und die Fleischerei ein Stück weiter schreibt ihren Mittagstisch an.", "La gente sube del S-Bahn con bolsas de la compra y la carnicería de más abajo escribe su menú caliente.", "Ludzie wychodzą z S-Bahnu z torbami zakupów, a mięsny kawałek dalej wypisuje ciepłe obiady."),
+        r2: x("A delivery van is parked half on the pavement, and two workers from the depot are reading the board.", "Ein Lieferwagen steht halb auf dem Gehweg, und zwei Arbeiter vom Betriebshof lesen die Tafel.", "Una furgoneta de reparto está medio subida a la acera y dos trabajadores de la cochera leen la pizarra.", "Dostawczak stoi do połowy na chodniku, a dwóch pracowników z zajezdni czyta tablicę."),
+      },
+      price_change: {
+        r1: x("Outside, the first commuters come up from the S-Bahn, and the bakery chain opposite is already busy.", "Draußen kommen die ersten Pendler von der S-Bahn, und die Bäckereikette gegenüber hat schon gut zu tun.", "Fuera suben los primeros que van al trabajo desde el S-Bahn, y la cadena de panaderías de enfrente ya está llena.", "Na zewnątrz z S-Bahnu wychodzą pierwsi dojeżdżający, a sieciowa piekarnia naprzeciwko ma już ruch."),
+        r2: x("In the queue: two workers in high-vis vests from the depot.", "In der Schlange: zwei Arbeiter in Warnwesten vom Betriebshof.", "En la cola: dos trabajadores de la cochera con chaleco reflectante.", "W kolejce: dwóch pracowników z zajezdni w kamizelkach odblaskowych."),
+      },
+    },
+  },
 };
 
 // ---------------------------------------------------------------- the change, as customers see it
@@ -760,8 +1105,8 @@ export const ACTION_LABELS: Record<string, Tx> = {
 /** Conditions a rule-based line can require ("!x" in a line means: not x). */
 export type Cond =
   | "cheaper" | "pricier" | "sensitive" | "relaxed" | "fan" | "sceptic" | "regular" | "new" | "tried" | "untried" | "heard"
-  | "rain" | "heat" | "competitor" | "buzz" | "busy" | "quiet" | "works" | "wfh" | "holiday" | "drop" | "rise" | "tourist"
-  | "grumbled" | "takeaway" | "hurry" | "insta";
+  | "rain" | "heat" | "competitor" | "buzz" | "busy" | "quiet" | "works" | "wfh" | "holiday" | "festival" | "xmas" | "drop" | "rise" | "tourist"
+  | "grumbled" | "takeaway" | "hurry" | "insta" | "pram" | "sitter" | "local" | "lunch";
 
 export interface Line {
   t: Tx;
@@ -793,11 +1138,11 @@ function L(t: Tx, ...conds: (Cond | `!${Cond}`)[]): Line {
 
 /** Public words shared by the two "told a friend about the lunch deal" actions. */
 const LUNCH_SAYS: Line[] = [
-  L(x("If you're near {cafe}, the lunch deal is decent: {contents} for {price}.", "Wenn ihr bei {cafe} in der Nähe seid: Das Mittagsangebot ist gut, {contents} für {price}.", "Si estáis cerca de {cafe}, el menú del día está bien: {contents} por {price}.", "Jeśli jesteście koło {cafe}, zestaw lunchowy jest niezły: {contents} za {price}."), "cheaper"),
-  L(x("{cafe} does a lunch deal now. Good soup. Go before half twelve, it gets busy.", "{cafe} hat jetzt ein Mittagsangebot. Gute Suppe. Geht vor halb eins hin, dann wird's voll.", "{cafe} tiene ahora menú del día. Buena sopa. Id antes de las doce y media, que se llena.", "{cafe} ma teraz zestaw lunchowy. Dobra zupa. Idźcie przed wpół do pierwszej, potem jest tłoczno."), "sceptic"),
-  L(x("Lunch at {cafe} is {price} now for {contents}. Not bad.", "Mittag bei {cafe} kostet jetzt {price} für {contents}. Nicht schlecht.", "Comer en {cafe} ahora son {price} por {contents}. No está mal.", "Lunch w {cafe} to teraz {price} za {contents}. Nieźle.")),
-  L(x("Try the lunch deal at {cafe}, it's quick if you're on a short break.", "Probiert das Mittagsangebot bei {cafe}, das geht schnell, wenn man wenig Pause hat.", "Probad el menú de {cafe}, es rápido si tenéis poco descanso.", "Spróbujcie zestawu w {cafe}, jest szybki, jak ktoś ma krótką przerwę.")),
-  L(x("The soup at {cafe} is good, and the deal is {price}.", "Die Suppe bei {cafe} ist gut, und das Angebot kostet {price}.", "La sopa de {cafe} está buena y el menú cuesta {price}.", "Zupa w {cafe} jest dobra, a zestaw kosztuje {price}.")),
+  T("price", L(x("If you're near {cafe}, the lunch deal is decent: {contents} for {price}.", "Wenn ihr bei {cafe} in der Nähe seid: Das Mittagsangebot ist gut, {contents} für {price}.", "Si estáis cerca de {cafe}, el menú del día está bien: {contents} por {price}.", "Jeśli jesteście koło {cafe}, zestaw lunchowy jest niezły: {contents} za {price}."), "cheaper")),
+  T("crowd", L(x("{cafe} does a lunch deal now. Good soup. Go before half twelve, it gets busy.", "{cafe} hat jetzt ein Mittagsangebot. Gute Suppe. Geht vor halb eins hin, dann wird's voll.", "{cafe} tiene ahora menú del día. Buena sopa. Id antes de las doce y media, que se llena.", "{cafe} ma teraz zestaw lunchowy. Dobra zupa. Idźcie przed wpół do pierwszej, potem jest tłoczno."), "sceptic")),
+  T("price", L(x("Lunch at {cafe} is {price} now for {contents}. Not bad.", "Mittag bei {cafe} kostet jetzt {price} für {contents}. Nicht schlecht.", "Comer en {cafe} ahora son {price} por {contents}. No está mal.", "Lunch w {cafe} to teraz {price} za {contents}. Nieźle."))),
+  T("quick", L(x("Try the lunch deal at {cafe}, it's quick if you're on a short break.", "Probiert das Mittagsangebot bei {cafe}, das geht schnell, wenn man wenig Pause hat.", "Probad el menú de {cafe}, es rápido si tenéis poco descanso.", "Spróbujcie zestawu w {cafe}, jest szybki, jak ktoś ma krótką przerwę."))),
+  T("soup", L(x("The soup at {cafe} is good, and the deal is {price}.", "Die Suppe bei {cafe} ist gut, und das Angebot kostet {price}.", "La sopa de {cafe} está buena y el menú cuesta {price}.", "Zupa w {cafe} jest dobra, a zestaw kosztuje {price}."))),
 ];
 
 /**
@@ -813,6 +1158,9 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("School holidays: we're away.", "Schulferien, wir sind weg.", "Vacaciones escolares: estamos fuera.", "Ferie, nie ma nas w mieście."), "holiday"),
       L(x("With the strike I worked from home.", "Wegen des Streiks war ich im Homeoffice.", "Con la huelga trabajé desde casa.", "Przez strajk {g:pracowałem|pracowałam} z domu."), "wfh"),
       L(x("Too hot to go out at lunchtime.", "Zu heiß, um mittags rauszugehen.", "Hacía demasiado calor para salir a mediodía.", "Za gorąco, żeby wychodzić w południe."), "heat"),
+      L(x("Stayed home; it was pouring.", "Zu Hause geblieben, es hat geschüttet.", "Me quedé en casa; llovía a cántaros.", "{g:Zostałem|Zostałam} w domu, lało jak z cebra."), "rain"),
+      L(x("Avoided the street with the roadworks this week.", "Diese Woche die Straße mit der Baustelle gemieden.", "Esta semana evité la calle de las obras.", "W tym tygodniu {g:omijałem|omijałam} ulicę z robotami."), "works"),
+      L(x("Working from home with the strike; no U-Bahn into town.", "Wegen des Streiks Homeoffice; keine U-Bahn in die Stadt.", "Con la huelga, teletrabajo; no había metro para ir al centro.", "Przez strajk praca z domu; metro do centrum nie jeździło."), "wfh"),
       L(x("Not around this time.", "Diesmal nicht da.", "Esta vez no estaba por aquí.", "Tym razem mnie nie było.")),
       L(x("Somewhere else in the city this week.", "Diese Woche woanders in der Stadt unterwegs.", "Esta semana anduve por otra parte de la ciudad.", "W tym tygodniu {g:byłem|byłam} w innej części miasta.")),
       L(x("Didn't make it to this street this time.", "Diesmal bin ich gar nicht in die Straße gekommen.", "Esta vez ni pasé por esta calle.", "Tym razem nawet nie {g:przechodziłem|przechodziłam} tą ulicą.")),
@@ -824,7 +1172,7 @@ export const ACTION_TEXT: Record<string, ActionText> = {
   },
   notices_offer: {
     thought: [
-      L(x("{price} for {contents}? That's less than my usual {usual}. Noted.", "{price} für {contents}? Das ist weniger als meine üblichen {usual}. Gemerkt.", "¿{price} por {contents}? Es menos de lo que suelo gastar, {usual}. Apuntado.", "{price} za {contents}? To mniej niż moje zwykłe {usual}. Zapamiętane."), "cheaper"),
+      L(x("{price} for {contents}? That's less than the {usual} I usually spend. Noted.", "{price} für {contents}? Das ist weniger als die {usual}, die ich sonst ausgebe. Gemerkt.", "¿{price} por {contents}? Es menos de lo que suelo gastar, {usual}. Apuntado.", "{price} za {contents}? To mniej niż {usual}, które zwykle wydaję. Zapamiętane."), "cheaper"),
       L(x("Saw the board. {price} is more than I usually spend on lunch, but it's a full meal. Maybe one day.", "Hab die Tafel gesehen. {price} ist mehr, als ich sonst mittags ausgebe, aber es ist eine ganze Mahlzeit. Vielleicht mal.", "He visto la pizarra. {price} es más de lo que suelo gastar en comer, pero es una comida completa. Quizá algún día.", "{g:Widziałem|Widziałam} tablicę. {price} to więcej, niż zwykle wydaję na lunch, ale to pełny posiłek. Może kiedyś."), "pricier"),
       L(x("New board outside. I'll ask the staff what's in the sandwich next time I'm in.", "Neue Tafel draußen. Ich frag beim nächsten Mal, was im Sandwich ist.", "Pizarra nueva en la puerta. La próxima vez preguntaré qué lleva el bocadillo.", "Nowa tablica przed wejściem. Następnym razem zapytam, co jest w kanapce."), "regular"),
       L(x("I'd already seen it mentioned online, and there's the board. A fixed price at least tells you what you'll pay.", "Hatte es schon online gesehen, und da ist die Tafel. Ein fester Preis sagt wenigstens, was man zahlt.", "Ya lo había visto en internet y ahí está la pizarra. Un precio fijo al menos te dice lo que vas a pagar.", "{g:Widziałem|Widziałam} już o tym w sieci, a tu tablica. Stała cena przynajmniej mówi, ile się zapłaci."), "buzz"),
@@ -858,14 +1206,17 @@ export const ACTION_TEXT: Record<string, ActionText> = {
     diary: [
       L(x("Nothing much to remember about {cafe} this week.", "Diese Woche nichts Besonderes bei {cafe}.", "Nada especial que recordar de {cafe} esta semana.", "W tym tygodniu nic szczególnego w {cafe}.")),
       L(x("Busy week; didn't notice anything new.", "Volle Woche; nichts Neues bemerkt.", "Semana liada; no noté nada nuevo.", "Zabiegany tydzień; nic nowego nie {g:zauważyłem|zauważyłam}.")),
-      L(x("Walked past {cafe} as usual.", "Wie immer an {cafe} vorbeigelaufen.", "Pasé por delante de {cafe} como siempre.", "Jak zwykle {g:przeszedłem|przeszłam} obok {cafe}.")),
+      L(x("Walked past {cafe} as usual.", "Wie immer an {cafe} vorbeigelaufen.", "Pasé por delante de {cafe} como siempre.", "Jak zwykle {g:przeszedłem|przeszłam} obok {cafe}."), "!new"),
+      L(x("Walked past {cafe} on my way somewhere.", "Auf dem Weg an {cafe} vorbeigelaufen.", "Pasé por delante de {cafe} de camino a otro sitio.", "Po drodze {g:przeszedłem|przeszłam} obok {cafe}."), "new"),
     ],
   },
   tries_deal: {
     thought: [
       L(x("{speaker} said the deal was decent, so I gave it a go.", "{speaker} meinte, das Angebot sei gut, also hab ich es probiert.", "{speaker} dijo que el menú estaba bien, así que lo probé.", "{speaker} mówi, że zestaw jest niezły, więc {g:spróbowałem|spróbowałam}."), "heard"),
+      L(x("{speaker} told me about the deal, so I tried it today.", "{speaker} hat mir vom Angebot erzählt, also hab ich es heute probiert.", "{speaker} me habló del menú, así que hoy lo probé.", "{speaker} opowiada o zestawie, więc dziś {g:spróbowałem|spróbowałam}."), "heard"),
+      L(x("Went because {speaker} kept talking about it. Fair enough, it was good.", "Bin hin, weil {speaker} dauernd davon geredet hat. Stimmt, war gut.", "Fui porque {speaker} no paraba de hablar de ello. Y sí, estaba bien.", "{g:Poszedłem|Poszłam}, bo {speaker} ciągle o tym mówi. I faktycznie, było dobre."), "heard"),
       L(x("After what {speaker} said, I wanted to see for myself. Worth it.", "Nach dem, was {speaker} erzählt hat, wollte ich es selbst sehen. Hat sich gelohnt.", "Después de lo que contó {speaker}, quería verlo con mis propios ojos. Mereció la pena.", "Po tym, co opowiada {speaker}, {g:chciałem|chciałam} sam{g:|a} zobaczyć. Warto było."), "heard"),
-      L(x("{price} for {contents} is less than my usual {usual}, so why not. Quick, and I know what I'm paying.", "{price} für {contents} ist weniger als meine üblichen {usual}, also warum nicht. Schnell, und ich weiß, was ich zahle.", "{price} por {contents} es menos de lo que suelo gastar, {usual}, así que ¿por qué no? Rápido y sé lo que pago.", "{price} za {contents} to mniej niż moje zwykłe {usual}, więc czemu nie. Szybko i wiem, ile płacę."), "cheaper"),
+      L(x("{price} for {contents} is less than the {usual} I usually spend, so why not. Quick, and I know what I'm paying.", "{price} für {contents} ist weniger als die {usual}, die ich sonst ausgebe, also warum nicht. Schnell, und ich weiß, was ich zahle.", "{price} por {contents} es menos de lo que suelo gastar, {usual}, así que ¿por qué no? Rápido y sé lo que pago.", "{price} za {contents} to mniej niż {usual}, które zwykle wydaję, więc czemu nie. Szybko i wiem, ile płacę."), "cheaper"),
       L(x("It's more than I usually spend, but I was hungry and it's a proper meal. Just this once.", "Mehr, als ich sonst ausgebe, aber ich hatte Hunger und es ist eine richtige Mahlzeit. Nur dieses eine Mal.", "Es más de lo que suelo gastar, pero tenía hambre y es una comida en condiciones. Solo por esta vez.", "To więcej, niż zwykle wydaję, ale {g:byłem głodny|byłam głodna}, a to porządny posiłek. Tylko ten raz."), "pricier"),
       L(x("Tried the deal instead of my usual. The soup was good; the sandwich was a bit small.", "Hab das Angebot statt meinem Üblichen genommen. Die Suppe war gut, das Sandwich etwas klein.", "Probé el menú en vez de lo de siempre. La sopa estaba buena; el bocadillo, algo pequeño.", "Zamiast zwykłego zamówienia {g:wziąłem|wzięłam} zestaw. Zupa dobra, kanapka trochę mała."), "regular"),
       L(x("Took the deal to go. Fast, fixed price, back to work.", "Das Angebot zum Mitnehmen. Schnell, fester Preis, zurück an die Arbeit.", "Me llevé el menú. Rápido, precio fijo y de vuelta al trabajo.", "{g:Wziąłem|Wzięłam} zestaw na wynos. Szybko, stała cena i z powrotem do pracy."), "takeaway"),
@@ -878,14 +1229,14 @@ export const ACTION_TEXT: Record<string, ActionText> = {
     ],
     diary: [
       L(x("Had the lunch deal at {cafe}: {verdict}.", "Mittagsangebot bei {cafe} gegessen: {verdict}.", "Comí el menú del día en {cafe}: {verdict}.", "{g:Jadłem|Jadłam} zestaw lunchowy w {cafe}: {verdict}.")),
-      L(x("Tried the deal at {cafe} for the first time.", "Zum ersten Mal das Angebot bei {cafe} probiert.", "Probé por primera vez el menú de {cafe}.", "Pierwszy raz {g:spróbowałem|spróbowałam} zestawu w {cafe}.")),
+      L(x("Tried the deal at {cafe} for the first time.", "Zum ersten Mal das Angebot bei {cafe} probiert.", "Probé por primera vez el menú de {cafe}.", "Pierwszy raz {g:spróbowałem|spróbowałam} zestawu w {cafe}."), "untried"),
     ],
   },
   tries_and_tells: {
     thought: [
       L(x("Tried the deal and liked it, so I told {friend} straight away.", "Das Angebot probiert und mochte es, also hab ich gleich {friend} davon erzählt.", "Probé el menú y me gustó, así que se lo conté enseguida {friend}.", "{g:Spróbowałem|Spróbowałam} zestawu i mi smakował, więc od razu {g:powiedziałem|powiedziałam} {friend}."), "fan"),
-      L(x("Cheaper than my usual and quick. Told {friend} it's worth it.", "Billiger als mein Übliches und schnell. Hab {friend} gesagt, dass es sich lohnt.", "Más barato que lo de siempre y rápido. Se lo dije {friend}: merece la pena.", "Taniej niż zwykle i szybko. {g:Powiedziałem|Powiedziałam} {friend}, że warto."), "cheaper"),
-      L(x("The deal was fine. I told {friend}, with a warning to go before the rush.", "Das Angebot war okay. Hab {friend} davon erzählt, mit dem Tipp, vor dem großen Andrang zu gehen.", "El menú estaba bien. Se lo conté {friend}, con el aviso de ir antes de la hora punta.", "Zestaw był w porządku. {g:Powiedziałem|Powiedziałam} {friend}, ale z ostrzeżeniem, żeby iść przed szczytem."), "sceptic"),
+      T("price", L(x("Cheaper than what I usually pay, and quick. Told {friend} it's worth it.", "Billiger als das, was ich sonst zahle, und schnell. Hab {friend} gesagt, dass es sich lohnt.", "Más barato de lo que suelo pagar y rápido. Se lo dije {friend}: merece la pena.", "Taniej, niż zwykle płacę, i szybko. {g:Powiedziałem|Powiedziałam} {friend}, że warto."), "cheaper")),
+      T("crowd", L(x("The deal was fine. I told {friend}, with a warning to go before the rush.", "Das Angebot war okay. Hab {friend} davon erzählt, mit dem Tipp, vor dem großen Andrang zu gehen.", "El menú estaba bien. Se lo conté {friend}, con el aviso de ir antes de la hora punta.", "Zestaw był w porządku. {g:Powiedziałem|Powiedziałam} {friend}, ale z ostrzeżeniem, żeby iść przed szczytem."), "sceptic")),
       L(x("Had the deal and mentioned it to {friend} over lunch.", "Das Angebot gegessen und {friend} beim Essen davon erzählt.", "Comí el menú y se lo comenté {friend} mientras comíamos.", "{g:Zjadłem|Zjadłam} zestaw i {g:wspomniałem|wspomniałam} o nim {friend} przy jedzeniu.")),
       L(x("Tried it, then sent a photo of the board to {friend}.", "Probiert und dann {friend} ein Foto von der Tafel geschickt.", "Lo probé y luego mandé una foto de la pizarra {friend}.", "{g:Spróbowałem|Spróbowałam}, a potem {g:wysłałem|wysłałam} {friend} zdjęcie tablicy.")),
       L(x("Good enough to pass on. Told {friend} about it.", "Gut genug zum Weitersagen. Hab {friend} davon erzählt.", "Lo bastante bueno para recomendarlo. Se lo conté {friend}.", "Na tyle dobre, żeby polecić. {g:Powiedziałem|Powiedziałam} o tym {friend}.")),
@@ -924,10 +1275,19 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("Went to {alt_to}. Quicker, and I wasn't in the mood for soup.", "Bin {alt_to}. Schneller, und ich hatte keine Lust auf Suppe.", "Fui {alt_to}. Más rápido, y no me apetecía sopa.", "{g:Poszedłem|Poszłam} {alt_to}. Szybciej, a nie {g:miałem|miałam} ochoty na zupę."), "!competitor"),
       L(x("Went to {alt_to}. It's on my way and I didn't think twice.", "Bin {alt_to}. Liegt auf dem Weg, ich hab nicht lange überlegt.", "Fui {alt_to}. Me pilla de camino y no lo pensé.", "{g:Poszedłem|Poszłam} {alt_to}. Mam po drodze i się nie {g:zastanawiałem|zastanawiałam}."), "!competitor"),
       L(x("Lunch at {alt_at} today, with a friend who'd suggested it.", "Heute Mittag {alt_at}, mit einer Freundin, die das vorgeschlagen hatte.", "Hoy comí {alt_at}, con una amiga que lo propuso.", "Dziś lunch {alt_at}, z przyjaciółką, która to zaproponowała."), "!competitor"),
+      L(x("{speaker} said it's slow at lunch now, so I went to {alt_to}.", "{speaker} meinte, mittags dauert es jetzt lange, also bin ich {alt_to}.", "{speaker} dijo que ahora a mediodía va lento, así que fui {alt_to}.", "{speaker} mówi, że w południe teraz długo się czeka, więc {g:poszedłem|poszłam} {alt_to}."), "heard"),
+      L(x("Got a bite at {alt_at} instead; the festival was right outside.", "Stattdessen was {alt_at} geholt, das Fest war ja direkt vor der Tür.", "Picoteé algo {alt_at}; la fiesta estaba justo en la puerta.", "Zamiast tego {g:zjadłem|zjadłam} coś {alt_at}; festyn był tuż za drzwiami."), "festival"),
+      L(x("Lunch at {alt_at}: grilled corn and a lemonade. When else?", "Mittag {alt_at}: Maiskolben und Limo. Wann sonst?", "Comí {alt_at}: mazorca a la brasa y limonada. ¿Cuándo si no?", "Lunch {alt_at}: kolba kukurydzy i lemoniada. Kiedy, jak nie teraz?"), "festival"),
+      L(x("With the festival on, I ate standing up at {alt_at}.", "Wegen des Fests im Stehen {alt_at} gegessen.", "Con la fiesta, comí de pie {alt_at}.", "Przez festyn {g:jadłem|jadłam} na stojąco {alt_at}."), "festival"),
+      L(x("A Glühwein and a bratwurst at {alt_at} instead of lunch.", "Glühwein und Bratwurst {alt_at} statt Mittagessen.", "Un vino caliente y una salchicha {alt_at} en vez de comer.", "Grzaniec i kiełbaska {alt_at} zamiast lunchu."), "xmas"),
+      L(x("Went to {alt_to} with colleagues; it's that time of year.", "Mit Kollegen {alt_to} gegangen; ist ja die Zeit dafür.", "Fui {alt_to} con compañeros; es la época.", "{g:Poszedłem|Poszłam} {alt_to} ze znajomymi; to ten czas w roku."), "xmas"),
+      L(x("Had a potato pancake at {alt_at}. Not really lunch, but it counts.", "Einen Kartoffelpuffer {alt_at} gegessen. Nicht wirklich Mittag, zählt aber.", "Me comí una tortita de patata {alt_at}. No es una comida, pero cuenta.", "{g:Zjadłem|Zjadłam} placka ziemniaczanego {alt_at}. To nie obiad, ale się liczy."), "xmas"),
     ],
     diary: [
       L(x("Ate at {alt_at} instead.", "Stattdessen {alt_at} gegessen.", "Comí {alt_at}.", "{g:Jadłem|Jadłam} {alt_at}.")),
       L(x("Lunch at {alt_at} this time.", "Diesmal Mittag {alt_at}.", "Esta vez, la comida fue {alt_at}.", "Tym razem lunch {alt_at}.")),
+      L(x("Ate at {alt_at} during the festival.", "Während des Fests {alt_at} gegessen.", "Durante la fiesta comí {alt_at}.", "W czasie festynu {g:jadłem|jadłam} {alt_at}."), "festival"),
+      L(x("Ate at {alt_at} instead of lunch here.", "Statt hier {alt_at} gegessen.", "En vez de aquí, comí {alt_at}.", "Zamiast tutaj {g:jadłem|jadłam} {alt_at}."), "xmas"),
     ],
   },
   skips_lunch_out: {
@@ -947,7 +1307,9 @@ export const ACTION_TEXT: Record<string, ActionText> = {
   },
   comes_back_for_deal: {
     thought: [
-      L(x("Back for the deal. Cheaper than my usual and quick; it could become my Wednesday thing.", "Wieder fürs Angebot da. Billiger als mein Übliches und schnell; das könnte mein Mittwochsding werden.", "He vuelto a por el menú. Más barato que lo de siempre y rápido; puede convertirse en lo mío de los miércoles.", "{g:Wróciłem|Wróciłam} na zestaw. Taniej niż zwykle i szybko; może zostać moim środowym zwyczajem."), "tried", "cheaper"),
+      L(x("Back for the deal. Cheaper than what I usually pay, and quick; it could become my Wednesday thing.", "Wieder fürs Angebot da. Billiger als das, was ich sonst zahle, und schnell; das könnte mein Mittwochsding werden.", "He vuelto a por el menú. Más barato de lo que suelo pagar y rápido; puede convertirse en lo mío de los miércoles.", "{g:Wróciłem|Wróciłam} na zestaw. Taniej, niż zwykle płacę, i szybko; może zostać moim środowym zwyczajem."), "tried", "cheaper"),
+      L(x("{speaker} swears by it too. Second time for me, and still good.", "{speaker} schwört auch drauf. Für mich das zweite Mal, immer noch gut.", "{speaker} también lo defiende. Para mí es la segunda vez, y sigue bien.", "{speaker} też go chwali. Dla mnie to drugi raz i dalej dobrze."), "tried", "heard"),
+      L(x("Back again. {speaker} says the same as me: the Thursday soup is the best.", "Wieder da. {speaker} sagt dasselbe wie ich: Die Donnerstagssuppe ist die beste.", "Otra vez aquí. {speaker} dice lo mismo que yo: la sopa del jueves es la mejor.", "Znowu tu. {speaker} mówi to samo co ja: czwartkowa zupa jest najlepsza."), "tried", "heard"),
       L(x("Back again, and {speaker} recommends it too, so it's not just me.", "Wieder da, und {speaker} empfiehlt es auch, also bin ich nicht allein.", "Otra vez aquí, y {speaker} también lo recomienda, así que no soy solo yo.", "Znowu tu, a {speaker} też poleca, więc to nie tylko ja."), "tried", "heard"),
       L(x("Picked up the deal to go again. Quick, and I know the price.", "Wieder das Angebot zum Mitnehmen. Schnell, und ich kenne den Preis.", "Otra vez el menú para llevar. Rápido y ya sé el precio.", "Znowu zestaw na wynos. Szybko i znam cenę."), "tried", "takeaway"),
       L(x("Second time with the deal. The staff already know I want extra bread.", "Zum zweiten Mal das Angebot. Das Team weiß schon, dass ich extra Brot will.", "Segunda vez con el menú. El personal ya sabe que quiero pan de más.", "Drugi raz zestaw. Obsługa już wie, że chcę więcej chleba."), "tried", "regular"),
@@ -978,9 +1340,10 @@ export const ACTION_TEXT: Record<string, ActionText> = {
   tells_a_friend: {
     thought: [
       L(x("Haven't tried it myself, but {speaker} likes it, so I passed it on to {friend}.", "Selbst noch nicht probiert, aber {speaker} mag es, also hab ich's {friend} weitererzählt.", "Yo aún no lo he probado, pero a {speaker} le gusta, así que se lo pasé {friend}.", "Sam{g:|a} jeszcze nie {g:próbowałem|próbowałam}, ale {speaker} chwali, więc {g:przekazałem|przekazałam} to {friend}."), "untried", "heard"),
+      L(x("{speaker} rates it, so I mentioned it to {friend}.", "{speaker} findet es gut, also hab ich's {friend} erzählt.", "A {speaker} le gusta, así que se lo comenté {friend}.", "{speaker} go chwali, więc {g:wspomniałem|wspomniałam} o nim {friend}."), "untried", "heard"),
       L(x("I like this place and want it to do well, so I told {friend} about the deal.", "Ich mag den Laden und will, dass er läuft, also hab ich {friend} vom Angebot erzählt.", "Me gusta el sitio y quiero que le vaya bien, así que hablé del menú {friend}.", "Lubię to miejsce i chcę, żeby mu się wiodło, więc {g:powiedziałem|powiedziałam} {friend} o zestawie."), "fan"),
-      L(x("Told {friend} about the deal. Cheap enough for a weekday, and quick.", "Hab {friend} vom Angebot erzählt. Günstig genug für einen Werktag und schnell.", "Hablé del menú {friend}. Barato para un día entre semana, y rápido.", "{g:Powiedziałem|Powiedziałam} {friend} o zestawie. Na dzień roboczy tani i szybki."), "cheaper", "tried"),
-      L(x("Mentioned the deal to {friend}, with a warning to go before the rush.", "Hab {friend} vom Angebot erzählt, mit dem Hinweis, vor dem Andrang hinzugehen.", "Comenté el menú {friend}, con el aviso de ir antes de la hora punta.", "{g:Wspomniałem|Wspomniałam} {friend} o zestawie, z ostrzeżeniem, żeby iść przed szczytem."), "sceptic"),
+      T("price", L(x("Told {friend} about the deal. Cheap enough for a weekday, and quick.", "Hab {friend} vom Angebot erzählt. Günstig genug für einen Werktag und schnell.", "Hablé del menú {friend}. Barato para un día entre semana, y rápido.", "{g:Powiedziałem|Powiedziałam} {friend} o zestawie. Na dzień roboczy tani i szybki."), "cheaper", "tried")),
+      T("crowd", L(x("Mentioned the deal to {friend}, with a warning to go before the rush.", "Hab {friend} vom Angebot erzählt, mit dem Hinweis, vor dem Andrang hinzugehen.", "Comenté el menú {friend}, con el aviso de ir antes de la hora punta.", "{g:Wspomniałem|Wspomniałam} {friend} o zestawie, z ostrzeżeniem, żeby iść przed szczytem."), "sceptic")),
       L(x("Told {friend} about the lunch deal. We might go together next week.", "Hab {friend} vom Mittagsangebot erzählt. Vielleicht gehen wir nächste Woche zusammen.", "Hablé del menú del día {friend}. Igual vamos juntos la semana que viene.", "{g:Powiedziałem|Powiedziałam} {friend} o zestawie. Może pójdziemy razem w przyszłym tygodniu.")),
       L(x("It came up over coffee, so I told {friend} about the deal.", "Es kam beim Kaffee auf, also hab ich {friend} vom Angebot erzählt.", "Salió el tema tomando café y hablé del menú {friend}.", "Wyszło przy kawie, więc {g:powiedziałem|powiedziałam} {friend} o zestawie.")),
       L(x("Sent {friend} a photo of the board. Worth knowing about.", "Hab {friend} ein Foto von der Tafel geschickt. Gut zu wissen.", "Mandé una foto de la pizarra {friend}. Está bien saberlo.", "{g:Wysłałem|Wysłałam} {friend} zdjęcie tablicy. Warto wiedzieć.")),
@@ -996,6 +1359,9 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       T("crowd", L(x("Waited ten minutes for a to-go order because of the deal crowd. Said so at the till.", "Zehn Minuten auf mein Essen zum Mitnehmen gewartet, wegen des Andrangs. Hab's an der Kasse gesagt.", "Diez minutos esperando un pedido para llevar por la gente del menú. Lo dije en la caja.", "Dziesięć minut {g:czekałem|czekałam} na wynos przez tłum chętnych na zestaw. {g:Powiedziałem|Powiedziałam} to przy kasie."), "takeaway")),
       T("soup", L(x("It's the same soup every other day. I told them.", "Jeden zweiten Tag dieselbe Suppe. Hab's ihnen gesagt.", "La misma sopa un día sí y otro no. Se lo dije.", "Co drugi dzień ta sama zupa. {g:Powiedziałem|Powiedziałam} im."), "sceptic")),
       T("crowd", L(x("Since the deal started it's crowded at noon. Someone should say it, so I did.", "Seit es das Angebot gibt, ist es mittags voll. Einer muss es sagen, also hab ich's getan.", "Desde que hay menú, a mediodía está lleno. Alguien tenía que decirlo, y lo dije.", "Odkąd jest zestaw, w południe jest tłoczno. Ktoś musiał to powiedzieć, więc {g:powiedziałem|powiedziałam}."))),
+      T("crowd", L(x("The festival crowd took every table and my order took ages.", "Die Leute vom Fest haben jeden Tisch belegt, und meine Bestellung hat ewig gedauert.", "La gente de la fiesta ocupó todas las mesas y mi pedido tardó una eternidad.", "Ludzie z festynu zajęli wszystkie stoliki, a moje zamówienie trwało wieki."), "festival")),
+      T("crowd", L(x("Christmas market crowds everywhere; I waited ages at the counter.", "Überall Leute vom Weihnachtsmarkt; ich hab ewig an der Theke gewartet.", "Gente del mercado navideño por todas partes; esperé siglos en la barra.", "Wszędzie ludzie z jarmarku; {g:czekałem|czekałam} wieki przy ladzie."), "xmas")),
+      T("noise", L(x("The drilling outside made lunch at the window table a misery. I said so.", "Der Presslufthammer draußen hat das Mittagessen am Fenster verdorben. Hab ich gesagt.", "El martillo de fuera me amargó la comida junto a la ventana. Lo dije.", "Młot za oknem zepsuł mi lunch przy stoliku przy oknie. {g:Powiedziałem|Powiedziałam} to."), "works", "!takeaway")),
       T("crowd", L(x("Left a short comment: the queue at half twelve is too long now.", "Kurzen Kommentar hinterlassen: Die Schlange um halb eins ist jetzt zu lang.", "Dejé un comentario corto: la cola a las doce y media ya es demasiado larga.", "{g:Zostawiłem|Zostawiłam} krótki komentarz: kolejka o wpół do pierwszej jest teraz za długa."))),
     ],
     says: [
@@ -1004,12 +1370,16 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       T("price", L(x("{price} for the deal? Not convinced it's worth it.", "{price} fürs Angebot? Ich bin nicht überzeugt.", "¿{price} por el menú? No me convence.", "{price} za zestaw? Nie jestem {g:przekonany|przekonana}."))),
       T("soup", L(x("Same soup again? A bit more variety, please.", "Schon wieder dieselbe Suppe? Bitte etwas mehr Abwechslung.", "¿Otra vez la misma sopa? Un poco más de variedad, por favor.", "Znowu ta sama zupa? Poproszę trochę więcej różnorodności."))),
       T("crowd", L(x("The deal's fine, but the queue at 12:30 is too long now.", "Das Angebot ist okay, aber die Schlange um 12:30 ist jetzt zu lang.", "El menú está bien, pero la cola a las 12:30 ya es demasiado larga.", "Zestaw jest OK, ale kolejka o 12:30 jest teraz za długa."))),
+      T("noise", L(x("With the roadworks outside it's too loud to sit by the window.", "Mit der Baustelle draußen ist es am Fenster zu laut.", "Con las obras de fuera, junto a la ventana hay demasiado ruido.", "Przez roboty na zewnątrz przy oknie jest za głośno."), "works")),
+      T("crowd", L(x("With the festival on, there's not a free table at {cafe}.", "Während des Fests gibt es bei {cafe} keinen freien Tisch.", "Con la fiesta, en {cafe} no hay ni una mesa libre.", "W czasie festynu w {cafe} nie ma wolnego stolika."), "festival")),
+      T("crowd", L(x("Since the Christmas market opened, {cafe} is packed at lunchtime.", "Seit der Weihnachtsmarkt offen hat, ist es bei {cafe} mittags brechend voll.", "Desde que abrió el mercado navideño, {cafe} está a reventar a mediodía.", "Odkąd otworzyli jarmark, w {cafe} w południe jest pełno."), "xmas")),
       T("crowd", L(x("Lunchtime at {cafe} has got slow since the deal.", "Mittags dauert es bei {cafe} seit dem Angebot lange.", "Desde el menú, a mediodía en {cafe} todo va lento.", "Od czasu zestawu w {cafe} w południe wszystko trwa długo."))),
     ],
     diary: [
       T("portion", L(x("Told them the deal sandwich was small.", "Gesagt, dass das Sandwich im Angebot klein ist.", "Les dije que el bocadillo del menú era pequeño.", "{g:Powiedziałem|Powiedziałam}, że kanapka w zestawie jest mała."), "tried")),
       T("soup", L(x("Said something about the soup.", "Was zur Suppe gesagt.", "Dije algo sobre la sopa.", "{g:Powiedziałem|Powiedziałam} coś o zupie."))),
       T("price", L(x("Said the deal isn't worth {price} to me.", "Gesagt, dass mir das Angebot {price} nicht wert ist.", "Dije que para mí el menú no vale {price}.", "{g:Powiedziałem|Powiedziałam}, że zestaw nie jest dla mnie wart {price}."))),
+      T("noise", L(x("Complained about the noise from the roadworks.", "Mich über den Baulärm beschwert.", "Me quejé del ruido de las obras.", "{g:Ponarzekałem|Ponarzekałam} na hałas z budowy."))),
       T("crowd", L(x("Complained about the lunchtime crowd.", "Mich über den Mittagsandrang beschwert.", "Me quejé de la gente a mediodía.", "{g:Ponarzekałem|Ponarzekałam} na tłok w porze lunchu."))),
     ],
   },
@@ -1038,6 +1408,7 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("I'll keep having the deal on soup days. It suits me.", "An Suppentagen nehme ich weiter das Angebot. Passt zu mir.", "Los días de sopa seguiré pidiendo el menú. Me va bien.", "W dni z zupą dalej będę brać zestaw. Pasuje mi."), "tried", "regular"),
       L(x("Still grabbing the deal to go between jobs.", "Hol mir das Angebot weiter zum Mitnehmen zwischen den Aufträgen.", "Sigo cogiendo el menú para llevar entre trabajo y trabajo.", "Dalej biorę zestaw na wynos między zleceniami."), "tried", "takeaway"),
       L(x("{speaker} keeps mentioning the deal too. I'll keep coming for it.", "{speaker} erwähnt das Angebot auch ständig. Ich komme weiter dafür.", "{speaker} también habla del menú a menudo. Seguiré viniendo a por él.", "{speaker} też ciągle wspomina o zestawie. Będę dalej na niego przychodzić."), "tried", "heard"),
+      L(x("{speaker} and I both have it on Tuesdays now.", "{speaker} und ich nehmen es jetzt beide dienstags.", "{speaker} y yo lo pedimos ahora los martes.", "{speaker} i ja bierzemy go teraz we wtorki."), "tried", "heard"),
       L(x("I'll keep coming for the deal, at least while it lasts.", "Ich komme weiter fürs Angebot, zumindest solange es das gibt.", "Seguiré viniendo a por el menú, al menos mientras dure.", "Będę dalej przychodzić na zestaw, przynajmniej póki jest."), "tried"),
       L(x("Still having the deal. The board is part of the furniture now.", "Nehme weiter das Angebot. Die Tafel gehört jetzt zum Inventar.", "Sigo con el menú. La pizarra ya es parte del mobiliario.", "Dalej biorę zestaw. Tablica to już część wystroju."), "tried"),
       L(x("The deal has become my default on busy days.", "Das Angebot ist an vollen Tagen mein Standard geworden.", "El menú se ha vuelto mi opción por defecto los días de lío.", "W zabiegane dni zestaw stał się moim domyślnym wyborem.")),
@@ -1104,7 +1475,7 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("Saw it straight away; I know the board by heart. Fine, I'll pay it.", "Sofort gesehen, ich kenne die Tafel auswendig. Gut, ich zahl's.", "Lo vi enseguida; me sé la pizarra de memoria. Vale, lo pago.", "Od razu {g:zauważyłem|zauważyłam}, znam tablicę na pamięć. Dobra, zapłacę."), "rise", "regular"),
       L(x("Saw the new price. Still a fair price for round here.", "Den neuen Preis gesehen. Für die Gegend immer noch fair.", "Vi el precio nuevo. Sigue siendo justo para la zona.", "{g:Widziałem|Widziałam} nową cenę. Jak na okolicę wciąż uczciwa.")),
       L(x("Noticed the board. Prices go up everywhere; this one's still fine.", "Die Tafel gesehen. Preise steigen überall; das hier ist noch okay.", "Vi la pizarra. Los precios suben en todas partes; este sigue bien.", "{g:Zauważyłem|Zauważyłam} tablicę. Ceny rosną wszędzie; ta jest jeszcze OK.")),
-      L(x("New price, everything else the same. I can live with it.", "Neuer Preis, sonst alles wie immer. Kann ich mit leben.", "Precio nuevo, lo demás igual. Lo puedo asumir.", "Nowa cena, reszta bez zmian. Da się przeżyć.")),
+      L(x("New price, everything else the same. I can live with it.", "Neuer Preis, sonst alles wie immer. Kann ich mit leben.", "Precio nuevo, lo demás igual. Lo puedo asumir.", "Nowa cena, reszta bez zmian. Da się przeżyć."), "!new"),
       L(x("Saw it, shrugged, paid.", "Gesehen, mit den Schultern gezuckt, bezahlt.", "Lo vi, me encogí de hombros y pagué.", "{g:Zobaczyłem|Zobaczyłam}, {g:wzruszyłem|wzruszyłam} ramionami, {g:zapłaciłem|zapłaciłam}.")),
     ],
     diary: [
@@ -1139,21 +1510,27 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("Half asleep, ordered on autopilot.", "Halb verschlafen, auf Autopilot bestellt.", "{g:Medio dormido|Medio dormida}, pedí en piloto automático.", "Pół śpiąc, {g:zamówiłem|zamówiłam} na autopilocie.")),
     ],
     diary: [
-      L(x("Usual {item}, nothing special.", "Wie immer, nichts Besonderes.", "Lo de siempre, nada especial.", "Jak zwykle, nic szczególnego.")),
-      L(x("Coffee at {cafe}, as usual.", "Kaffee bei {cafe}, wie immer.", "Café en {cafe}, como siempre.", "Kawa w {cafe}, jak zwykle.")),
+      L(x("Usual {item}, nothing special.", "Wie immer, nichts Besonderes.", "Lo de siempre, nada especial.", "Jak zwykle, nic szczególnego."), "!new"),
+      L(x("Coffee at {cafe}, as usual.", "Kaffee bei {cafe}, wie immer.", "Café en {cafe}, como siempre.", "Kawa w {cafe}, jak zwykle."), "!new"),
+      L(x("Bought {a_item} at {cafe}; nothing special.", "Bei {cafe} {einen_item} gekauft; nichts Besonderes.", "Compré {un_item} en {cafe}; nada especial.", "{g:Kupiłem|Kupiłam} {item} w {cafe}; nic szczególnego."), "new"),
     ],
   },
   buys_as_usual: {
     thought: [
-      L(x("Ordered the usual. The price is the price; I like it here.", "Das Übliche bestellt. Der Preis ist der Preis; ich mag es hier.", "Pedí lo de siempre. El precio es el que es; me gusta este sitio.", "{g:Zamówiłem|Zamówiłam} to, co zwykle. Cena jest, jaka jest; lubię tu przychodzić."), "fan"),
-      L(x("Same order as always. It's {diff} more, I'll live.", "Dieselbe Bestellung wie immer. Sind {diff} mehr, werd's überleben.", "Lo mismo de siempre. Son {diff} más, sobreviviré.", "To samo co zawsze. To {diff} więcej, przeżyję."), "relaxed", "rise"),
+      L(x("Ordered the usual. The price is the price; I like it here.", "Das Übliche bestellt. Der Preis ist der Preis; ich mag es hier.", "Pedí lo de siempre. El precio es el que es; me gusta este sitio.", "{g:Zamówiłem|Zamówiłam} to, co zwykle. Cena jest, jaka jest; lubię tu przychodzić."), "fan", "!new"),
+      L(x("Same order as always. It's {diff} more, I'll live.", "Dieselbe Bestellung wie immer. Sind {diff} mehr, werd's überleben.", "Lo mismo de siempre. Son {diff} más, sobreviviré.", "To samo co zawsze. To {diff} więcej, przeżyję."), "relaxed", "rise", "!new"),
       L(x("The barista started my order before I'd said a word. Of course I paid.", "Die Barista hat angefangen, bevor ich was gesagt hab. Klar hab ich bezahlt.", "El barista empezó mi pedido antes de que abriera la boca. Claro que pagué.", "Barista zaczął robić moje zamówienie, zanim się {g:odezwałem|odezwałam}. Jasne, że {g:zapłaciłem|zapłaciłam}."), "regular"),
-      L(x("Bought my {item} as usual. Didn't think about it much.", "Wie immer gekauft. Nicht groß drüber nachgedacht.", "Compré lo de siempre. No le di muchas vueltas.", "{g:Kupiłem|Kupiłam} {item} jak zwykle. Nie {g:myślałem|myślałam} o tym za dużo.")),
-      L(x("Same as always: one {item}, a quick chat, out the door.", "Wie immer: einmal das Übliche, kurz geplaudert, raus.", "Como siempre: {un_item}, una charla rápida y a la calle.", "Jak zawsze: {item}, krótka rozmowa i za drzwi.")),
-      L(x("Usual order. I barely looked at the board.", "Das Übliche. Kaum auf die Tafel geschaut.", "Lo de siempre. Apenas miré la pizarra.", "Zwykłe zamówienie. Ledwo {g:spojrzałem|spojrzałam} na tablicę.")),
-      L(x("Still my morning stop. The coffee is good, that's what counts.", "Immer noch mein Morgenstopp. Der Kaffee ist gut, das zählt.", "Sigue siendo mi parada de la mañana. El café es bueno, que es lo que cuenta.", "Wciąż mój poranny przystanek. Kawa jest dobra, to się liczy.")),
+      L(x("Bought my {item} as usual. Didn't think about it much.", "Wie immer gekauft. Nicht groß drüber nachgedacht.", "Compré lo de siempre. No le di muchas vueltas.", "{g:Kupiłem|Kupiłam} {item} jak zwykle. Nie {g:myślałem|myślałam} o tym za dużo."), "!new"),
+      L(x("Same as always: one {item}, a quick chat, out the door.", "Wie immer: einmal das Übliche, kurz geplaudert, raus.", "Como siempre: {un_item}, una charla rápida y a la calle.", "Jak zawsze: {item}, krótka rozmowa i za drzwi."), "!new"),
+      L(x("Usual order. I barely looked at the board.", "Das Übliche. Kaum auf die Tafel geschaut.", "Lo de siempre. Apenas miré la pizarra.", "Zwykłe zamówienie. Ledwo {g:spojrzałem|spojrzałam} na tablicę."), "!new"),
+      L(x("Got {a_item}; the price looks normal for round here.", "Hab {einen_item} genommen; der Preis wirkt normal für die Gegend.", "Pedí {un_item}; el precio me parece normal para la zona.", "{g:Wziąłem|Wzięłam} {item}; cena wygląda normalnie jak na okolicę."), "new"),
+      L(x("Bought one; I don't know what it cost before anyway.", "Einen gekauft; was es vorher gekostet hat, weiß ich eh nicht.", "Compré uno; total, no sé lo que costaba antes.", "{g:Kupiłem|Kupiłam} jeden; i tak nie wiem, ile kosztował wcześniej."), "new"),
+      L(x("Still my morning stop. The coffee is good, that's what counts.", "Immer noch mein Morgenstopp. Der Kaffee ist gut, das zählt.", "Sigue siendo mi parada de la mañana. El café es bueno, que es lo que cuenta.", "Wciąż mój poranny przystanek. Kawa jest dobra, to się liczy."), "!new"),
     ],
-    diary: [L(x("Usual {item} at {cafe}.", "Das Übliche bei {cafe}.", "Lo de siempre en {cafe}.", "Jak zwykle {item} w {cafe}."))],
+    diary: [
+      L(x("Usual {item} at {cafe}.", "Das Übliche bei {cafe}.", "Lo de siempre en {cafe}.", "Jak zwykle {item} w {cafe}."), "!new"),
+      L(x("Had {a_item} at {cafe}.", "Bei {cafe} {einen_item} getrunken.", "Tomé {un_item} en {cafe}.", "{g:Wypiłem|Wypiłam} {item} w {cafe}."), "new"),
+    ],
   },
   buys_less_often: {
     thought: [
@@ -1174,7 +1551,7 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("Had {cheaper} instead. Honestly fine.", "Stattdessen {cheaper}. Ehrlich gesagt völlig okay.", "Tomé {cheaper}. La verdad, bien.", "{g:Wziąłem|Wzięłam} {cheaper}. Szczerze, w porządku.")),
       L(x("Tried {cheaper} for a change. Not bad, and cheaper.", "Zur Abwechslung {cheaper} probiert. Nicht schlecht, und günstiger.", "Probé {cheaper} para variar. No está mal, y es más barato.", "Dla odmiany {g:wziąłem|wzięłam} {cheaper}. Nieźle i taniej.")),
     ],
-    diary: [L(x("Switched to {cheaper} instead of the {item}.", "Statt des Üblichen jetzt {cheaper}.", "Ahora {cheaper} en vez de lo de siempre.", "Zamiast zwykłego teraz {cheaper}."))],
+    diary: [L(x("Switched to {cheaper} instead of the {item}.", "Diesmal {cheaper} genommen.", "Esta vez, {cheaper}.", "Tym razem {g:wziąłem|wzięłam} {cheaper}."))],
   },
   goes_elsewhere: {
     thought: [
@@ -1193,10 +1570,11 @@ export const ACTION_TEXT: Record<string, ActionText> = {
       L(x("{speaker} says it's still worth it here, and I agree. Still buying it.", "{speaker} sagt, es lohnt sich hier immer noch, und ich finde das auch. Kaufe weiter.", "{speaker} dice que aquí sigue valiendo la pena, y estoy de acuerdo. Lo sigo comprando.", "{speaker} mówi, że tu dalej warto, i się zgadzam. Dalej kupuję."), "heard"),
       L(x("Still buying it. I stopped thinking about the price after a few days.", "Kaufe es weiter. Nach ein paar Tagen hab ich nicht mehr an den Preis gedacht.", "Lo sigo comprando. A los pocos días dejé de pensar en el precio.", "Dalej kupuję. Po kilku dniach {g:przestałem|przestałam} myśleć o cenie."), "relaxed"),
       L(x("Still my place. The {item} is good, and that matters more.", "Immer noch mein Laden. Der Kaffee ist gut, das zählt mehr.", "Sigue siendo mi sitio. El café es bueno, y eso pesa más.", "Wciąż moje miejsce. Kawa jest dobra, to ważniejsze."), "fan"),
-      L(x("Keep buying it as before. The price is just the price now.", "Kaufe es weiter wie vorher. Der Preis ist jetzt einfach der Preis.", "Lo sigo comprando como antes. El precio ya es el que es.", "Kupuję jak wcześniej. Cena to teraz po prostu cena.")),
+      L(x("Keep buying it as before. The price is just the price now.", "Kaufe es weiter wie vorher. Der Preis ist jetzt einfach der Preis.", "Lo sigo comprando como antes. El precio ya es el que es.", "Kupuję jak wcześniej. Cena to teraz po prostu cena."), "!new"),
       L(x("Still buying it. Coffee is the one treat I don't count.", "Kaufe es weiter. Kaffee ist der eine Luxus, den ich nicht nachrechne.", "Lo sigo comprando. El café es el único capricho que no cuento.", "Dalej kupuję. Kawa to jedyna przyjemność, której nie liczę.")),
-      L(x("Nothing's changed for me. Same time, same order.", "Für mich hat sich nichts geändert. Gleiche Zeit, gleiche Bestellung.", "Para mí nada ha cambiado. Misma hora, mismo pedido.", "U mnie nic się nie zmieniło. Ta sama pora, to samo zamówienie.")),
-      L(x("Honestly, I'd forgotten it ever cost less.", "Ehrlich gesagt hab ich vergessen, dass es mal billiger war.", "La verdad, ya ni me acordaba de que costaba menos.", "Szczerze, {g:zapomniałem|zapomniałam}, że kiedyś było taniej.")),
+      L(x("Bought another one. Seems a fair price to me.", "Noch einen gekauft. Kommt mir fair vor.", "Compré otro. Me parece un precio justo.", "{g:Kupiłem|Kupiłam} kolejny. Cena wydaje mi się uczciwa."), "new"),
+      L(x("Nothing's changed for me. Same time, same order.", "Für mich hat sich nichts geändert. Gleiche Zeit, gleiche Bestellung.", "Para mí nada ha cambiado. Misma hora, mismo pedido.", "U mnie nic się nie zmieniło. Ta sama pora, to samo zamówienie."), "!new"),
+      L(x("Honestly, I'd forgotten it ever cost less.", "Ehrlich gesagt hab ich vergessen, dass es mal billiger war.", "La verdad, ya ni me acordaba de que costaba menos.", "Szczerze, {g:zapomniałem|zapomniałam}, że kiedyś było taniej."), "!new"),
     ],
     diary: [L(x("Still buying the {item} here.", "Kaufe hier weiter.", "Lo sigo comprando aquí.", "Dalej kupuję tutaj."))],
   },
@@ -1235,12 +1613,16 @@ export const ACTION_TEXT: Record<string, ActionText> = {
   stays_a_customer: {
     thought: [
       L(x("{speaker} still swears by the coffee here, and so do I.", "{speaker} schwört immer noch auf den Kaffee hier, ich auch.", "{speaker} sigue jurando que aquí está el mejor café, y yo también.", "{speaker} dalej zachwala tutejszą kawę, ja też."), "heard"),
-      L(x("Still coming as before. Good coffee, nice people, that's what counts.", "Komme weiter wie bisher. Guter Kaffee, nette Leute, das zählt.", "Sigo viniendo como antes. Buen café, gente maja, es lo que cuenta.", "Przychodzę jak dawniej. Dobra kawa, mili ludzie, to się liczy."), "fan"),
+      L(x("Still coming as before. Good coffee, nice people, that's what counts.", "Komme weiter wie bisher. Guter Kaffee, nette Leute, das zählt.", "Sigo viniendo como antes. Buen café, gente maja, es lo que cuenta.", "Przychodzę jak dawniej. Dobra kawa, mili ludzie, to się liczy."), "fan", "!new"),
       L(x("Still here most mornings. You don't drop your café over a few cents.", "Fast jeden Morgen noch hier. Wegen ein paar Cent gibt man sein Café nicht auf.", "Sigo aquí casi todas las mañanas. No dejas tu café por unos céntimos.", "Prawie każdego ranka wciąż tu jestem. Nie rzuca się swojej kawiarni dla kilku centów."), "regular"),
-      L(x("Still a customer. The price change is old news.", "Bin weiter {g:Kunde|Kundin}. Die Preisänderung ist Schnee von gestern.", "Sigo siendo {g:cliente|clienta}. Lo del precio ya es historia.", "Dalej jestem {g:klientem|klientką}. Zmiana ceny to stara historia.")),
-      L(x("I still come in like before. The board is just the board.", "Ich komme weiter wie vorher. Die Tafel ist halt die Tafel.", "Sigo viniendo como antes. La pizarra es la pizarra.", "Przychodzę jak wcześniej. Tablica to tylko tablica.")),
+      L(x("Still a customer. The price change is old news.", "Bin weiter {g:Kunde|Kundin}. Die Preisänderung ist Schnee von gestern.", "Sigo siendo {g:cliente|clienta}. Lo del precio ya es historia.", "Dalej jestem {g:klientem|klientką}. Zmiana ceny to stara historia."), "!new"),
+      L(x("I come by now and then; the price seems fine.", "Ich komme ab und zu vorbei; der Preis passt schon.", "Paso de vez en cuando; el precio me parece bien.", "Wpadam od czasu do czasu; cena jest w porządku."), "new"),
+      L(x("I still come in like before. The board is just the board.", "Ich komme weiter wie vorher. Die Tafel ist halt die Tafel.", "Sigo viniendo como antes. La pizarra es la pizarra.", "Przychodzę jak wcześniej. Tablica to tylko tablica."), "!new"),
     ],
-    diary: [L(x("Still buying at {cafe} as before.", "Kaufe weiter bei {cafe} wie bisher.", "Sigo comprando en {cafe} como antes.", "Dalej kupuję w {cafe} jak dawniej."))],
+    diary: [
+      L(x("Still buying at {cafe} as before.", "Kaufe weiter bei {cafe} wie bisher.", "Sigo comprando en {cafe} como antes.", "Dalej kupuję w {cafe} jak dawniej."), "!new"),
+      L(x("Bought {a_item} at {cafe} again.", "Wieder {einen_item} bei {cafe} gekauft.", "Volví a comprar {un_item} en {cafe}.", "Znowu {g:kupiłem|kupiłam} {item} w {cafe}."), "new"),
+    ],
   },
   buys_less_than_before: {
     thought: [
@@ -1355,6 +1737,110 @@ export const FRIEND: Record<SegmentId, Tx> = {
   trades: x("my workmates", "meinen Kollegen auf der Baustelle", "a los compañeros de la obra", "kolegom z budowy"),
 };
 
+/** Wider circles anyone can tell (de/pl dative, es with "a"): neighbours reach people who live in the Kiez, friends anyone but visitors. */
+export const FRIEND_WIDE: { neighbours: Tx; friends: Tx } = {
+  neighbours: x("my neighbours", "meinen Nachbarn", "a mis vecinos", "sąsiadom"),
+  friends: x("a couple of friends", "ein paar Freunden", "a unos amigos", "kilku znajomym"),
+};
+
+/**
+ * What an imagined customer says about an owner event while it lasts (rule-based). "any" fits every
+ * action; "in" someone who came to the café; "out" someone who went somewhere else. The sentence goes
+ * before their own thought.
+ */
+export const EVENT_LINES: Record<"rain" | "heat" | "wfh" | "works" | "holiday" | "festival" | "xmas" | "competitor" | "busy" | "buzz", { any: Line[]; in?: Line[]; out?: Line[] }> = {
+  competitor: {
+    any: [
+      L(x("Everyone's talking about the new café two doors down.", "Alle reden vom neuen Café zwei Häuser weiter.", "Todo el mundo habla del café nuevo de dos portales más allá.", "Wszyscy mówią o nowej kawiarni dwa budynki dalej.")),
+      L(x("Walked past the new café two doors down; it was full.", "Am neuen Café zwei Häuser weiter vorbeigegangen; es war voll.", "Pasé por delante del café nuevo de dos portales más allá; estaba lleno.", "{g:Przeszedłem|Przeszłam} obok nowej kawiarni dwa budynki dalej; była pełna.")),
+    ],
+  },
+  rain: {
+    any: [
+      L(x("Wet again; everyone was walking fast with their hoods up.", "Wieder nass; alle liefen schnell mit Kapuze.", "Otra vez mojado; todo el mundo iba deprisa con la capucha puesta.", "Znowu mokro; wszyscy szli szybko w kapturach.")),
+      L(x("It hasn't stopped raining all week.", "Es hat die ganze Woche nicht aufgehört zu regnen.", "No ha parado de llover en toda la semana.", "Cały tydzień nie przestaje padać.")),
+      L(x("Another grey, rainy day.", "Wieder so ein grauer Regentag.", "Otro día gris de lluvia.", "Kolejny szary, deszczowy dzień.")),
+    ],
+    in: [
+      L(x("With this rain I wasn't walking any further than {cafe}.", "Bei dem Regen bin ich nicht weiter gelaufen als bis zu {cafe}.", "Con esta lluvia no iba a andar más allá de {cafe}.", "W taki deszcz nie {g:szedłem|szłam} dalej niż do {cafe}.")),
+      L(x("Good to be inside, out of the rain.", "Gut, drinnen zu sein, raus aus dem Regen.", "Qué bien estar dentro, lejos de la lluvia.", "Dobrze było schować się przed deszczem.")),
+    ],
+    out: [L(x("In this rain I went wherever was closest.", "Bei dem Regen bin ich dahin, wo es am nächsten war.", "Con esta lluvia fui a lo que me pillaba más cerca.", "W taki deszcz {g:poszedłem|poszłam} tam, gdzie najbliżej."))],
+  },
+  heat: {
+    any: [
+      L(x("32 degrees again; the street was empty at noon.", "Wieder 32 Grad; mittags war die Straße leer.", "Otra vez 32 grados; a mediodía la calle estaba vacía.", "Znowu 32 stopnie; w południe ulica była pusta.")),
+      L(x("This heat makes everything slower.", "Bei der Hitze geht alles langsamer.", "Con este calor todo va más lento.", "W taki upał wszystko idzie wolniej.")),
+    ],
+    in: [
+      L(x("In this heat, at least the door was open and a fan was going.", "Bei der Hitze stand wenigstens die Tür offen, und ein Ventilator lief.", "Con este calor, al menos la puerta estaba abierta y había un ventilador.", "W ten upał przynajmniej drzwi były otwarte i chodził wiatrak.")),
+      L(x("Too hot for soup really, but I wanted something proper.", "Eigentlich zu heiß für Suppe, aber ich wollte was Richtiges.", "Hacía demasiado calor para sopa, pero quería algo en condiciones.", "Właściwie za gorąco na zupę, ale {g:chciałem|chciałam} czegoś porządnego."), "lunch"),
+    ],
+    out: [L(x("In this heat I only wanted something cold.", "Bei der Hitze wollte ich nur was Kaltes.", "Con este calor solo me apetecía algo frío.", "W taki upał {g:chciałem|chciałam} tylko czegoś zimnego."))],
+  },
+  wfh: {
+    any: [
+      L(x("No U-Bahn because of the BVG strike, so half the street was working from home.", "Wegen des BVG-Streiks fuhr keine U-Bahn, die halbe Straße war im Homeoffice.", "Con la huelga de la BVG no había metro y media calle teletrabajaba.", "Przez strajk BVG nie jeździło metro, pół ulicy pracowało z domu.")),
+      L(x("Strike day: hardly any commuters, lots of neighbours.", "Streiktag: kaum Pendler, dafür viele Nachbarn.", "Día de huelga: casi nadie de fuera, muchos vecinos.", "Dzień strajku: prawie nikt nie dojeżdżał, za to dużo sąsiadów.")),
+    ],
+    in: [
+      L(x("Working from home because of the strike, so I came down for lunch.", "Wegen des Streiks im Homeoffice, also bin ich zum Mittag runtergegangen.", "Por la huelga trabajaba desde casa, así que bajé a comer.", "Przez strajk {g:pracowałem|pracowałam} z domu, więc {g:zszedłem|zeszłam} na lunch."), "local", "lunch"),
+      L(x("Working from home because of the strike, so I came down for a coffee.", "Wegen des Streiks im Homeoffice, also bin ich auf einen Kaffee runtergegangen.", "Por la huelga trabajaba desde casa, así que bajé a por un café.", "Przez strajk {g:pracowałem|pracowałam} z domu, więc {g:zszedłem|zeszłam} na kawę."), "local", "!lunch"),
+      L(x("With the strike the café was full of neighbours in tracksuits.", "Wegen des Streiks war das Café voller Nachbarn in Jogginghose.", "Con la huelga, el café estaba lleno de vecinos en chándal.", "Przez strajk w kawiarni było pełno sąsiadów w dresach.")),
+    ],
+    out: [L(x("With the strike I didn't go far.", "Wegen des Streiks bin ich nicht weit gekommen.", "Con la huelga no me moví mucho.", "Przez strajk nie {g:ruszyłem|ruszyłam} się daleko."))],
+  },
+  works: {
+    any: [
+      L(x("The roadworks outside have half the pavement fenced off.", "Die Baustelle vor der Tür sperrt den halben Gehweg.", "Las obras de la puerta tienen media acera vallada.", "Roboty przed wejściem zagrodziły pół chodnika.")),
+      L(x("The drilling from the roadworks went on all lunchtime.", "Der Presslufthammer von der Baustelle lief die ganze Mittagszeit.", "El martillo de las obras no paró en toda la hora de comer.", "Młot z budowy walił przez całą porę lunchu.")),
+      L(x("Hard to even see the board behind the building-site fence.", "Hinter dem Bauzaun sieht man die Tafel kaum.", "Detrás de la valla de obra apenas se ve la pizarra.", "Za płotem budowy ledwo widać tablicę.")),
+    ],
+    in: [L(x("Squeezed past the barriers to get in.", "Hab mich an den Absperrungen vorbei reingequetscht.", "Me colé entre las vallas para entrar.", "{g:Przecisnąłem|Przecisnęłam} się obok barierek, żeby wejść."))],
+    out: [
+      L(x("Not worth squeezing past the roadworks this week.", "Diese Woche lohnt es sich nicht, sich an der Baustelle vorbeizuquetschen.", "Esta semana no merece la pena colarse entre las obras.", "W tym tygodniu nie warto przeciskać się obok robót.")),
+      L(x("No way through the roadworks with the pram.", "Mit dem Kinderwagen kommt man an der Baustelle nicht vorbei.", "Con el carrito no hay forma de pasar por las obras.", "Z wózkiem nie da się przejść obok robót."), "pram"),
+    ],
+  },
+  holiday: {
+    any: [
+      L(x("School holidays: the street is half empty.", "Schulferien: Die Straße ist halb leer.", "Vacaciones escolares: la calle está medio vacía.", "Ferie: ulica jest w połowie pusta.")),
+      L(x("With the holidays it's quiet round here, no queue anywhere.", "In den Ferien ist es ruhig hier, nirgends eine Schlange.", "Con las vacaciones esto está tranquilo, no hay cola en ningún sitio.", "W ferie jest tu cicho, nigdzie kolejki.")),
+    ],
+    in: [L(x("Nice and quiet in the café now the families are away.", "Schön ruhig im Café, jetzt wo die Familien weg sind.", "Qué tranquilo está el café ahora que las familias se han ido.", "Miło i cicho w kawiarni, odkąd rodziny wyjechały."))],
+  },
+  festival: {
+    any: [
+      L(x("The street festival is on and you can hardly move outside.", "Das Straßenfest läuft, draußen kommt man kaum durch.", "Está la fiesta del barrio y fuera casi no se puede andar.", "Trwa festyn i na zewnątrz ledwo da się przejść.")),
+      L(x("Music from the festival stage all afternoon.", "Den ganzen Nachmittag Musik von der Bühne vom Straßenfest.", "Música del escenario de la fiesta toda la tarde.", "Przez całe popołudnie muzyka ze sceny festynu.")),
+      L(x("Half of Berlin seemed to be at the street festival.", "Halb Berlin schien auf dem Straßenfest zu sein.", "Parecía que medio Berlín estaba en la fiesta del barrio.", "Wyglądało na to, że pół Berlina jest na festynie.")),
+    ],
+    in: [
+      L(x("With the festival crowds I only spotted {cafe} because of the queue.", "Bei dem Festtrubel hab ich {cafe} nur wegen der Schlange bemerkt.", "Con el gentío de la fiesta solo vi {cafe} por la cola.", "Przy festynowym tłumie {g:zauważyłem|zauważyłam} {cafe} tylko przez kolejkę.")),
+      L(x("Escaped the festival crowds for a moment.", "Bin dem Festtrubel kurz entkommen.", "Me escapé un momento del gentío de la fiesta.", "Na chwilę {g:uciekłem|uciekłam} przed festynowym tłumem.")),
+    ],
+  },
+  xmas: {
+    any: [
+      L(x("The Christmas market round the corner is open, and it smells of mulled wine.", "Der Weihnachtsmarkt um die Ecke hat offen, es riecht nach Glühwein.", "El mercado navideño de la esquina ya está abierto y huele a vino caliente.", "Jarmark za rogiem już działa i pachnie grzanym winem.")),
+      L(x("Crowds on the way to the Christmas market all afternoon.", "Den ganzen Nachmittag Gedränge auf dem Weg zum Weihnachtsmarkt.", "Toda la tarde, gente camino del mercado navideño.", "Przez całe popołudnie tłumy w drodze na jarmark.")),
+      L(x("Since the Christmas market opened, the street is full of visitors.", "Seit der Weihnachtsmarkt offen hat, ist die Straße voller Besucher.", "Desde que abrió el mercado navideño, la calle está llena de visitantes.", "Odkąd otworzyli jarmark, ulica jest pełna przyjezdnych.")),
+    ],
+    in: [L(x("Warmed up inside after a walk round the Christmas market.", "Hab mich nach einer Runde über den Weihnachtsmarkt drinnen aufgewärmt.", "Entré a calentarme después de dar una vuelta por el mercado navideño.", "{g:Ogrzałem|Ogrzałam} się w środku po spacerze po jarmarku."))],
+  },
+  busy: {
+    any: [
+      L(x("The street was packed today.", "Die Straße war heute voll.", "Hoy la calle estaba llena.", "Dziś ulica była pełna ludzi.")),
+      L(x("More people about than usual today.", "Heute mehr Leute unterwegs als sonst.", "Hoy había más gente por la calle que de costumbre.", "Dziś na ulicy więcej ludzi niż zwykle.")),
+    ],
+  },
+  buzz: {
+    any: [
+      L(x("Everyone seems to have read about {cafe} online.", "Alle scheinen online über {cafe} gelesen zu haben.", "Parece que todo el mundo ha leído sobre {cafe} en internet.", "Wygląda na to, że wszyscy czytali w sieci o {cafe}.")),
+    ],
+  },
+};
+
 /** Auto-recorded thought for someone not around this round (no model call). */
 export const AWAY: Record<SegmentId, Tx> = {
   office_worker: x("I wasn't around: working from home that week.", "War nicht da: Ich war die Woche im Homeoffice.", "No estaba: esa semana teletrabajaba desde casa.", "Nie było mnie: w tym tygodniu {g:pracowałem|pracowałam} z domu."),
@@ -1454,25 +1940,36 @@ export const UPTAKE_LABEL: Record<TemplateId, Tx> = {
   price_change: x("Still buying at the new price", "Kaufen weiter zum neuen Preis", "Siguen comprando al precio nuevo", "Dalej kupują po nowej cenie"),
 };
 
-/** The caveat follows who actually played the customers. */
-export const CAVEATS: Record<"rule-based" | "ai" | "mixed", Tx> = {
+/**
+ * The caveat follows who actually played the customers. Each language uses one word for "imagined"
+ * (src/i18n/terms.ts TERMS.imagined: imagined, ausgedacht, imaginado, wyobrażony).
+ */
+export const CAVEATS: Record<"rule-based" | "subagent" | "ai" | "mixed", Tx> = {
   "rule-based": x(
     "These imagined customers followed simple fixed rules built from short descriptions; no AI played them. They show reactions worth checking, not what will happen. Nothing here is counted in the money maths.",
     "Diese ausgedachten Gäste folgen einfachen, festen Regeln, gebaut aus kurzen Beschreibungen; keine KI hat sie gespielt. Sie zeigen Reaktionen, die eine Nachfrage wert sind, nicht, was passieren wird. Nichts davon fließt in die Rechnung ein.",
-    "Estos clientes imaginarios siguen reglas sencillas y fijas, hechas a partir de descripciones breves; ninguna IA los ha interpretado. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
-    "Ci wymyśleni klienci działają według prostych, stałych reguł opartych na krótkich opisach; nie odgrywała ich żadna AI. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
+    "Estos clientes imaginados siguen reglas sencillas y fijas, hechas a partir de descripciones breves; ninguna IA los ha interpretado. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
+    "Ci wyobrażeni klienci działają według prostych, stałych reguł opartych na krótkich opisach; nie odgrywała ich żadna AI. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
   ),
+  /** Each customer played by its own AI helper (a Claude subagent) from a short brief. */
+  subagent: x(
+    "These imagined customers were each played by an AI (Claude) from a short brief; they are not data. They show reactions worth checking, not what will happen. Nothing here is counted in the money maths.",
+    "Diese ausgedachten Gäste hat jeweils eine KI (Claude) aus einer kurzen Beschreibung gespielt; sie sind keine Daten. Sie zeigen Reaktionen, die eine Nachfrage wert sind, nicht, was passieren wird. Nichts davon fließt in die Rechnung ein.",
+    "Son clientes imaginados, cada uno interpretado por una IA (Claude) a partir de una descripción breve; no son datos. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
+    "To wyobrażeni klienci; każdego odegrała AI (Claude) na podstawie krótkiego opisu. To nie są dane. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
+  ),
+  /** Played in turn by the AI in the owner's chat. */
   ai: x(
-    "These are imagined customers, each played by an AI from a short description. They show reactions worth checking, not what will happen. Nothing here is counted in the money maths.",
-    "Das sind ausgedachte Gäste, jeweils von einer KI aus einer kurzen Beschreibung gespielt. Sie zeigen Reaktionen, die eine Nachfrage wert sind, nicht, was passieren wird. Nichts davon fließt in die Rechnung ein.",
-    "Son clientes imaginarios, cada uno interpretado por una IA a partir de una descripción breve. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
-    "To wymyśleni klienci, każdego odegrała AI na podstawie krótkiego opisu. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
+    "These imagined customers were played by an AI in your chat, one at a time, from short briefs; they are not data. They show reactions worth checking, not what will happen. Nothing here is counted in the money maths.",
+    "Diese ausgedachten Gäste hat eine KI in Ihrem Chat nacheinander aus kurzen Beschreibungen gespielt; sie sind keine Daten. Sie zeigen Reaktionen, die eine Nachfrage wert sind, nicht, was passieren wird. Nichts davon fließt in die Rechnung ein.",
+    "Son clientes imaginados, interpretados uno a uno por una IA en tu chat a partir de descripciones breves; no son datos. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
+    "To wyobrażeni klienci; każdego po kolei odegrała AI w twoim czacie na podstawie krótkiego opisu. To nie są dane. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
   ),
   mixed: x(
-    "These imagined customers were played partly by an AI and partly by simple fixed rules, from short descriptions. They show reactions worth checking, not what will happen. Nothing here is counted in the money maths.",
-    "Diese ausgedachten Gäste wurden teils von einer KI, teils nach einfachen, festen Regeln gespielt, jeweils aus kurzen Beschreibungen. Sie zeigen Reaktionen, die eine Nachfrage wert sind, nicht, was passieren wird. Nichts davon fließt in die Rechnung ein.",
-    "Estos clientes imaginarios los han interpretado en parte una IA y en parte reglas sencillas y fijas, a partir de descripciones breves. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
-    "Tych wymyślonych klientów odgrywała częściowo AI, a częściowo proste, stałe reguły, na podstawie krótkich opisów. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
+    "These imagined customers were played partly by an AI and partly by simple fixed rules, from short descriptions; they are not data. They show reactions worth checking, not what will happen. Nothing here is counted in the money maths.",
+    "Diese ausgedachten Gäste wurden teils von einer KI, teils nach einfachen, festen Regeln gespielt, jeweils aus kurzen Beschreibungen; sie sind keine Daten. Sie zeigen Reaktionen, die eine Nachfrage wert sind, nicht, was passieren wird. Nichts davon fließt in die Rechnung ein.",
+    "Estos clientes imaginados los han interpretado en parte una IA y en parte reglas sencillas y fijas, a partir de descripciones breves; no son datos. Muestran reacciones que vale la pena comprobar, no lo que va a pasar. Nada de esto entra en las cuentas.",
+    "Tych wyobrażonych klientów odegrała częściowo AI, a częściowo proste, stałe reguły, na podstawie krótkich opisów. To nie są dane. Pokazują reakcje warte sprawdzenia, a nie to, co się wydarzy. Nic z tego nie trafia do wyliczeń.",
   ),
 };
 
@@ -1493,7 +1990,8 @@ export interface ChecksText {
   compareWeekly(item: string): string;
   askRegularsSwitch(tried: number, of: number): string;
   countPassersby(): string;
-  askHowHeard(channel: string | undefined): string;
+  /** `top`: the channel (or two tied channels) most of the noticers use, with how many of the `of` noticers use it. */
+  askHowHeard(top: { channel: string; n: number }[], of: number): string;
   weekTwo(tried: number, back: number): string;
   checkPlaces(places: string[], n: number): string;
   listen(quoted: string[]): string;
@@ -1516,7 +2014,8 @@ export const CHECKS: Record<Lang, ChecksText> = {
     askRegularsSwitch: (tried, of) =>
       `Ask five regulars whether they would swap their usual lunch for the deal: that switching is what your sums depend on.${of ? ` ${tried} of ${of} imagined regulars did.` : ""}`,
     countPassersby: () => "Count how many passers-by stop to read the board during one lunch hour: most imagined customers did not take it in.",
-    askHowHeard: (ch) => `Ask new lunch customers how they heard about the deal (the board, Instagram, a colleague).${ch ? ` The imagined ones who noticed it mostly hear about things ${ch}.` : ""}`,
+    askHowHeard: (top, of) =>
+      `Ask new lunch customers how they heard about the deal (the board, Instagram, a colleague).${top[0] ? ` Of the imagined customers who noticed it, ${top[0].n} of ${of} usually hear about new things ${top[0].channel}${top[1] ? `, and as many ${top[1].channel}` : ""}.` : ""}`,
     weekTwo: (tried, back) => `In week two, count how many deal customers come back. Of the ${tried} imagined customer${s_(tried)} who tried it, ${back} came back.`,
     checkPlaces: (places, n) =>
       `Check what ${joinWith(places, "and")} ${places.length === 1 ? "charges" : "charge"} for lunch: ${n} imagined customer${s_(n)} ate elsewhere or brought food from home instead.`,
@@ -1536,7 +2035,8 @@ export const CHECKS: Record<Lang, ChecksText> = {
     askRegularsSwitch: (tried, of) =>
       `Fragen Sie fünf Stammgäste, ob sie ihr übliches Mittagessen gegen das Angebot tauschen würden: Von diesem Wechsel hängt Ihre Rechnung ab.${of ? ` Von den ausgedachten Stammgästen haben es ${tried} von ${of} getan.` : ""}`,
     countPassersby: () => "Zählen Sie in einer Mittagsstunde, wie viele Vorbeigehende stehen bleiben und die Tafel lesen: Die meisten ausgedachten Gäste haben sie nicht wahrgenommen.",
-    askHowHeard: (ch) => `Fragen Sie neue Mittagsgäste, wie sie vom Angebot erfahren haben (Tafel, Instagram, Kollegen).${ch ? ` Die ausgedachten Gäste, die es bemerkt haben, erfahren Neues meist ${ch}.` : ""}`,
+    askHowHeard: (top, of) =>
+      `Fragen Sie neue Mittagsgäste, wie sie vom Angebot erfahren haben (Tafel, Instagram, Kollegen).${top[0] ? ` Von den ausgedachten Gästen, die es bemerkt haben, erfahren ${top[0].n} von ${of} Neues meist ${top[0].channel}${top[1] ? `, ebenso viele ${top[1].channel}` : ""}.` : ""}`,
     weekTwo: (tried, back) => `Zählen Sie in der zweiten Woche, wie viele Angebotsgäste wiederkommen. Von den ausgedachten Gästen, die es probiert haben, kamen ${back} von ${tried} wieder.`,
     checkPlaces: (places, n) => `Prüfen Sie die Mittagspreise hier: ${joinWith(places, "und")}. Ausgedachte Gäste, die woanders gegessen oder etwas von zu Hause mitgebracht haben: ${n}.`,
     listen: (qs) => `Achten Sie auf die Fragen echter Gäste an der Theke. Die ausgedachten fragten ${joinWith(qs, "und")}.`,
@@ -1546,39 +2046,41 @@ export const CHECKS: Record<Lang, ChecksText> = {
   es: {
     watchItem: (item) => `Observa a los diez primeros clientes que pidan ${item} después del cambio: ¿miran la pizarra, dicen algo o piden otra cosa?`,
     askRegularsPrice: (price, aItem, reduced, of) =>
-      `Pregunta directamente a tres habituales si ${price} por ${aItem} cambia lo a menudo que vienen.${of ? ` Entre los habituales imaginarios, compraron menos ${reduced} de ${of}.` : ""}`,
-    staffPriceNotes: (n) => `Pide al personal que apunte los comentarios sobre el precio la primera semana. Clientes imaginarios que dijeron algo en voz alta o en internet: ${n}.`,
-    trackCheaper: (item, n) => `Lleva la cuenta de los productos más baratos junto a ${item}. Clientes imaginarios que se pasaron a algo más barato: ${n}.`,
-    checkRivals: (aItem, n) => `Comprueba cuánto cobran los dos cafés más cercanos por ${aItem}. Clientes imaginarios que se fueron a otro sitio: ${n}.`,
+      `Pregunta directamente a tres habituales si ${price} por ${aItem} cambia lo a menudo que vienen.${of ? ` Entre los habituales imaginados, compraron menos ${reduced} de ${of}.` : ""}`,
+    staffPriceNotes: (n) => `Pide al personal que apunte los comentarios sobre el precio la primera semana. Clientes imaginados que dijeron algo en voz alta o en internet: ${n}.`,
+    trackCheaper: (item, n) => `Lleva la cuenta de los productos más baratos junto a ${item}. Clientes imaginados que se pasaron a algo más barato: ${n}.`,
+    checkRivals: (aItem, n) => `Comprueba cuánto cobran los dos cafés más cercanos por ${aItem}. Clientes imaginados que se fueron a otro sitio: ${n}.`,
     friendlyAnswer: (qs) => `Ten preparada una respuesta amable para preguntas como ${joinWith(qs, "y")}.`,
     compareWeekly: (item) => `Compara las ventas semanales de ${item} antes y después del cambio, como dice el plan de prueba.`,
     askRegularsSwitch: (tried, of) =>
-      `Pregunta a cinco clientes habituales si cambiarían su comida de siempre por el menú: de ese cambio dependen tus cuentas.${of ? ` Entre los habituales imaginarios, lo hicieron ${tried} de ${of}.` : ""}`,
-    countPassersby: () => "Cuenta cuántas personas se paran a leer la pizarra durante una hora de comida: la mayoría de los clientes imaginarios no se fijaron.",
-    askHowHeard: (ch) => `Pregunta a los clientes nuevos del mediodía cómo se enteraron del menú (la pizarra, Instagram, un compañero).${ch ? ` Los imaginarios que se fijaron suelen enterarse de las novedades ${ch}.` : ""}`,
-    weekTwo: (tried, back) => `En la segunda semana, cuenta cuántos clientes del menú vuelven. De los clientes imaginarios que lo probaron, volvieron ${back} de ${tried}.`,
-    checkPlaces: (places, n) => `Comprueba los precios del mediodía en estos sitios: ${joinWith(places, "y")}. Clientes imaginarios que comieron en otro sitio o se trajeron comida de casa: ${n}.`,
-    listen: (qs) => `Fíjate en las preguntas que hacen los clientes reales en la barra. Los imaginarios preguntaron ${joinWith(qs, "y")}.`,
-    staffQueue: () => "Pide al personal que apunte a mediodía los comentarios sobre colas o el resto de la carta: un cliente imaginario se quejó.",
+      `Pregunta a cinco clientes habituales si cambiarían su comida de siempre por el menú: de ese cambio dependen tus cuentas.${of ? ` Entre los habituales imaginados, lo hicieron ${tried} de ${of}.` : ""}`,
+    countPassersby: () => "Cuenta cuántas personas se paran a leer la pizarra durante una hora de comida: la mayoría de los clientes imaginados no se fijaron.",
+    askHowHeard: (top, of) =>
+      `Pregunta a los clientes nuevos del mediodía cómo se enteraron del menú (la pizarra, Instagram, un compañero).${top[0] ? ` Entre los clientes imaginados que se fijaron, suelen enterarse de las novedades ${top[0].channel}: ${top[0].n} de ${of}${top[1] ? `; ${top[1].channel}, otros tantos` : ""}.` : ""}`,
+    weekTwo: (tried, back) => `En la segunda semana, cuenta cuántos clientes del menú vuelven. De los clientes imaginados que lo probaron, volvieron ${back} de ${tried}.`,
+    checkPlaces: (places, n) => `Comprueba los precios del mediodía en estos sitios: ${joinWith(places, "y")}. Clientes imaginados que comieron en otro sitio o se trajeron comida de casa: ${n}.`,
+    listen: (qs) => `Fíjate en las preguntas que hacen los clientes reales en la barra. Los clientes imaginados preguntaron ${joinWith(qs, "y")}.`,
+    staffQueue: () => "Pide al personal que apunte a mediodía los comentarios sobre colas o el resto de la carta: un cliente imaginado se quejó.",
     writeDown: () => "Apunta cada día de la prueba los menús vendidos y el total de clientes del mediodía, para compararlos con los escenarios.",
   },
   pl: {
     watchItem: (item) => `Obserwuj pierwszych dziesięciu klientów, którzy po zmianie zamówią ${item}: czy patrzą na tablicę, coś mówią albo zamawiają coś innego?`,
     askRegularsPrice: (price, aItem, reduced, of) =>
-      `Zapytaj wprost trzech stałych gości, czy ${price} za ${aItem} zmienia to, jak często przychodzą.${of ? ` Wśród wymyślonych stałych gości mniej kupowało: ${reduced} z ${of}.` : ""}`,
-    staffPriceNotes: (n) => `Poproś obsługę, żeby w pierwszym tygodniu notowała uwagi o cenie. Wymyśleni klienci, którzy coś powiedzieli na głos lub w sieci: ${n}.`,
-    trackCheaper: (item, n) => `Licz sprzedaż tańszych produktów obok: ${item}. Wymyśleni klienci, którzy przerzucili się na coś tańszego: ${n}.`,
-    checkRivals: (aItem, n) => `Sprawdź, ile za ${aItem} biorą dwie najbliższe kawiarnie. Wymyśleni klienci, którzy poszli gdzie indziej: ${n}.`,
+      `Zapytaj wprost trzech stałych gości, czy ${price} za ${aItem} zmienia to, jak często przychodzą.${of ? ` Wśród wyobrażonych stałych gości mniej kupowało: ${reduced} z ${of}.` : ""}`,
+    staffPriceNotes: (n) => `Poproś obsługę, żeby w pierwszym tygodniu notowała uwagi o cenie. Wyobrażeni klienci, którzy coś powiedzieli na głos lub w sieci: ${n}.`,
+    trackCheaper: (item, n) => `Licz sprzedaż tańszych produktów obok: ${item}. Wyobrażeni klienci, którzy przerzucili się na coś tańszego: ${n}.`,
+    checkRivals: (aItem, n) => `Sprawdź, ile za ${aItem} biorą dwie najbliższe kawiarnie. Wyobrażeni klienci, którzy poszli gdzie indziej: ${n}.`,
     friendlyAnswer: (qs) => `Przygotuj życzliwą odpowiedź na pytania w rodzaju ${joinWith(qs, "i")}.`,
     compareWeekly: (item) => `Porównaj tygodniową sprzedaż (${item}) przed zmianą i po niej, tak jak w planie testu.`,
     askRegularsSwitch: (tried, of) =>
-      `Zapytaj pięciu stałych gości, czy zamieniliby swój zwykły lunch na zestaw: od tej zamiany zależą twoje wyliczenia.${of ? ` Wśród wymyślonych stałych gości tak zrobiło: ${tried} z ${of}.` : ""}`,
-    countPassersby: () => "Policz, ilu przechodniów zatrzymuje się przy tablicy w ciągu jednej godziny lunchu: większość wymyślonych klientów jej nie zauważyła.",
-    askHowHeard: (ch) => `Pytaj nowych gości w porze lunchu, skąd wiedzą o zestawie (tablica, Instagram, ktoś z pracy).${ch ? ` Wymyśleni klienci, którzy go zauważyli, dowiadują się o nowościach zwykle ${ch}.` : ""}`,
-    weekTwo: (tried, back) => `W drugim tygodniu policz, ilu klientów zestawu wraca. Spośród wymyślonych klientów, którzy go spróbowali, wróciło: ${back} z ${tried}.`,
-    checkPlaces: (places, n) => `Sprawdź ceny lunchu w tych miejscach: ${joinWith(places, "i")}. Wymyśleni klienci, którzy jedli gdzie indziej albo przynieśli jedzenie z domu: ${n}.`,
-    listen: (qs) => `Zwracaj uwagę na pytania prawdziwych klientów przy ladzie. Wymyśleni pytali: ${joinWith(qs, "i")}.`,
-    staffQueue: () => "Poproś obsługę, żeby w porze lunchu notowała uwagi o kolejkach i reszcie menu: jeden wymyślony klient narzekał.",
+      `Zapytaj pięciu stałych gości, czy zamieniliby swój zwykły lunch na zestaw: od tej zamiany zależą twoje wyliczenia.${of ? ` Wśród wyobrażonych stałych gości tak zrobiło: ${tried} z ${of}.` : ""}`,
+    countPassersby: () => "Policz, ilu przechodniów zatrzymuje się przy tablicy w ciągu jednej godziny lunchu: większość wyobrażonych klientów jej nie zauważyła.",
+    askHowHeard: (top, of) =>
+      `Pytaj nowych gości w porze lunchu, skąd wiedzą o zestawie (tablica, Instagram, ktoś z pracy).${top[0] ? ` Wśród wyobrażonych klientów, którzy go zauważyli, o nowościach dowiaduje się zwykle ${top[0].channel}: ${top[0].n} z ${of}${top[1] ? `, i tyle samo ${top[1].channel}` : ""}.` : ""}`,
+    weekTwo: (tried, back) => `W drugim tygodniu policz, ilu klientów zestawu wraca. Spośród wyobrażonych klientów, którzy go spróbowali, wróciło: ${back} z ${tried}.`,
+    checkPlaces: (places, n) => `Sprawdź ceny lunchu w tych miejscach: ${joinWith(places, "i")}. Wyobrażeni klienci, którzy jedli gdzie indziej albo przynieśli jedzenie z domu: ${n}.`,
+    listen: (qs) => `Zwracaj uwagę na pytania prawdziwych klientów przy ladzie. Wyobrażeni klienci pytali: ${joinWith(qs, "i")}.`,
+    staffQueue: () => "Poproś obsługę, żeby w porze lunchu notowała uwagi o kolejkach i reszcie menu: jeden wyobrażony klient narzekał.",
     writeDown: () => "Zapisuj każdego dnia testu liczbę sprzedanych zestawów i wszystkich gości w porze lunchu, żeby porównać je ze scenariuszami.",
   },
 };

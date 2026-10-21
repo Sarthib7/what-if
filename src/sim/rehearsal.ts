@@ -31,8 +31,8 @@ import type {
   SubmitOutcome,
 } from "./types.ts";
 import { type Rng, hashString, normaliseSeed, pick, rngFor, weightedPick } from "./prng.ts";
-import { WORD_OF_MOUTH_CHANNELS, channelPhrase, cleanMix, generatePersonas, placeIdFor } from "./personas.ts";
-import { EVENT_EFFECTS, berlinEventText, findBerlinEvent, normaliseKiez, type BerlinEventId } from "./berlin.ts";
+import { SEGMENTS, WORD_OF_MOUTH_CHANNELS, channelPhrase, cleanMix, generatePersonas, placeIdFor } from "./personas.ts";
+import { EVENT_EFFECTS, EVENT_ROUNDS, berlinEventText, findBerlinEvent, normaliseKiez, type BerlinEventId, type EventEffect } from "./berlin.ts";
 import {
   ACTION_TEXT,
   AWAY,
@@ -42,8 +42,10 @@ import {
   CHANGE_TEXT,
   CHECKS,
   CHEAPER,
+  EVENT_LINES,
   FALLBACK_THOUGHT,
   FRIEND,
+  FRIEND_WIDE,
   FUNNEL,
   MIX_NOTE,
   PLACES,
@@ -57,7 +59,7 @@ import {
   fillText,
   quote,
 } from "./messages.ts";
-import { ACTIONS, FEED_KIND, GROUPS, OWNER_TEXT_CAPS, actionKind, actionLabel, buildRounds, changeContext, difference, itemVars, money, tr } from "./rounds.ts";
+import { ACTIONS, FEED_KIND, GROUPS, OWNER_TEXT_CAPS, actionKind, actionLabel, buildRounds, changeContext, deNoun, difference, itemVars, money, tr } from "./rounds.ts";
 
 // ---------------------------------------------------------------- constants
 
@@ -67,8 +69,8 @@ const SLACK = 1.5;
 /** Raw text longer than this is cut before any processing (keeps every step linear and cheap). */
 const RAW_CAP = 4000;
 
-/** The caveat for an AI-played rehearsal, in English. Use caveatFor() for the one that matches a run. */
-export const CAVEAT = CAVEATS.ai.en;
+/** The caveat for a rehearsal played by AI subagents, in English. Use caveatFor() for the one that matches a run. */
+export const CAVEAT = CAVEATS.subagent.en;
 
 const METHODS: ReactionMethod[] = ["subagent", "in-context", "rule-based"];
 
@@ -83,12 +85,23 @@ export interface StartOptions {
   customerMix?: Partial<Record<SegmentId, number>>;
 }
 
-/** The rehearsal part of a ShareState, plus the optional customer mix needed to rebuild the same personas. */
-export type ShareRehearsal = NonNullable<ShareState["rehearsal"]> & { customerMix?: Partial<Record<SegmentId, number>> };
+/**
+ * The rehearsal part of a ShareState, plus what a rebuild needs to get the same people back:
+ * the customer mix, and for a run an AI played (subagent or in-context reactions or answers) the
+ * cast and who was around each round, saved verbatim. A model wrote its words for exactly those
+ * people, so they must survive later changes to the persona code. Rule-based links keep only the
+ * seed and regenerate.
+ */
+export type ShareRehearsal = NonNullable<ShareState["rehearsal"]> & {
+  customerMix?: Partial<Record<SegmentId, number>>;
+  cast?: Persona[];
+  active?: Record<number, string[]>;
+};
 
 /** The caveat that matches who played the customers, plus the note that the mix is a rough guess. */
 export function caveatFor(method: RehearsalSummary["method"], lang: Lang = "en", mixNote?: string): string {
-  const base = tr(method === "rule-based" ? CAVEATS["rule-based"] : method === "mixed" ? CAVEATS.mixed : CAVEATS.ai, lang);
+  const t = method === "rule-based" ? CAVEATS["rule-based"] : method === "mixed" ? CAVEATS.mixed : method === "subagent" ? CAVEATS.subagent : CAVEATS.ai;
+  const base = tr(t, lang);
   return mixNote ? `${base} ${mixNote}` : base;
 }
 
@@ -350,26 +363,33 @@ function recordAbsent(r: Rehearsal, round: number): void {
  * Uses the analysis language and, when the inputs have one, the Kiez for the persona mix.
  */
 export function startRehearsal(a: Analysis, opts: StartOptions = {}): Rehearsal {
-  const n = clampInt(opts.personas, 4, 12, 6);
+  return start(a, opts);
+}
+
+/** startRehearsal, or (for a rebuild) with a saved cast and activation instead of drawing them. */
+function start(a: Analysis, opts: StartOptions, saved: { cast?: Persona[]; active?: Record<number, string[]> } = {}): Rehearsal {
   const roundCount = clampInt(opts.rounds, 3, 5, 4);
   const seed = typeof opts.seed === "number" && Number.isFinite(opts.seed) ? normaliseSeed(opts.seed) : hashString(a.id);
   const mix = cleanMix(opts.customerMix) ?? undefined;
   const ctx = changeContext(a);
   const lang = ctx.lang;
-  const personas = generatePersonas(
-    {
-      template: a.template,
-      cafe: ctx.cafe,
-      currency: ctx.currency,
-      baseSpend: ctx.baseSpend,
-      lang,
-      ...(ctx.kiez ? { kiez: ctx.kiez } : {}),
-      ...(a.template === "price_change" ? { item: ctx.item } : {}),
-    },
-    n,
-    seed,
-    mix,
-  );
+  const personas =
+    saved.cast ??
+    generatePersonas(
+      {
+        template: a.template,
+        cafe: ctx.cafe,
+        currency: ctx.currency,
+        baseSpend: ctx.baseSpend,
+        lang,
+        ...(ctx.kiez ? { kiez: ctx.kiez } : {}),
+        ...(a.template === "price_change" ? { item: ctx.item } : {}),
+      },
+      clampInt(opts.personas, 4, 12, 6),
+      seed,
+      mix,
+    );
+  const n = personas.length;
   const rounds = buildRounds(ctx, roundCount);
   const scene: RehearsalScene = {
     cafe: ctx.cafe,
@@ -395,7 +415,7 @@ export function startRehearsal(a: Analysis, opts: StartOptions = {}): Rehearsal 
     currentRound: 1,
     rounds,
     personas,
-    active: drawActive(personas, rounds.length, seed),
+    active: saved.active ?? drawActive(personas, rounds.length, seed),
     reactions: [],
     interviews: [],
     feed: [{ round: 1, name: ctx.cafe, text: ctx.announcement, kind: "post" }],
@@ -468,7 +488,9 @@ function feedLine(r: Rehearsal, f: FeedItem, viewer: Persona): string {
     if (!f.personaId) return f.name;
     if (f.personaId === viewer.id) return `you (${f.name})`;
     const p = personaById(r, f.personaId);
-    return p ? `${p.name} (${p.segmentLabel.toLowerCase()})` : f.name;
+    // German nouns keep their capitals ("Vater mit kleinen Kindern"); other languages start lower case.
+    const label = langOfR(r) === "de" ? p?.segmentLabel : p ? p.segmentLabel.charAt(0).toLowerCase() + p.segmentLabel.slice(1) : "";
+    return p ? `${p.name} (${label})` : f.name;
   };
   switch (f.kind) {
     case "post":
@@ -558,7 +580,7 @@ function briefPrompt(r: Rehearsal, p: Persona, spec: RoundSpec): string {
     cardBlock(r, p),
     ["YOUR DIARY SO FAR", ...(diary.length ? diary : ["- Nothing yet: this is the first round."])].join("\n"),
     feedBlock(r, p, spec.n),
-    `THIS ROUND: ${spec.title}\n${spec.situation}`,
+    `THIS ROUND: ${spec.title}\n${spec.situation}${eventsOn(r, spec.n).length ? `\nAlso this time: ${eventsOn(r, spec.n).join(" ")}` : ""}`,
     ["CHOOSE EXACTLY ONE ACTION (use its id)", ...spec.actions.map((a) => `- ${a.id}: ${a.label}${a.public ? " (public: others will hear about it)" : ""}`)].join("\n"),
     realismBlock(r),
     jsonBlock(r, p, spec),
@@ -779,8 +801,12 @@ interface EventMods {
   works: boolean;
   wfh: boolean;
   holiday: boolean;
+  festival: boolean;
+  xmas: boolean;
   /** First round the competitor event applies to (for "went to the new place" continuity). */
   competitorFrom: number;
+  /** Effects of events that start this very round (people talk about those most). */
+  fresh: Set<EventEffect>;
 }
 
 const RE = {
@@ -790,31 +816,55 @@ const RE = {
   competitorWhat: /(lunch|deal|offer|price|€|\$|£|cheap|coffee|menu|open|mittag|angebot|preis|billig|kaffee|menú|precio|barato|café|oferta|cena|tani|kawa|zestaw)/,
   buzz: /(instagram|influencer|blog|newspaper|article|tiktok|featured|press|radio|\btv\b|viral|recommend|zeitung|artikel|presse|empfiehlt|periódico|artículo|prensa|recomienda|gazeta|artykuł|prasa|poleca)/,
   busy: /(festival|market|fair|street party|\bfest\b|tourists|concert|marathon|sunny|sunshine|straßenfest|markt|touristen|konzert|sonne|fiesta|mercado|turistas|concierto|festyn|jarmark|targ|turyści|koncert|słońce)/,
+  festival: /(festival|street party|straßenfest|\bfest\b|fiesta|festyn)/,
+  xmas: /(christmas|weihnacht|navide|navidad|jarmark|bożonarodzeniow)/,
   works: /(construction|roadworks|road works|baustelle|scaffold|pavement|gehweg|gesperrt|obras|acera|budowa|remont|roboty|chodnik)/,
   wfh: /(strike|working from home|home office|homeoffice|streik|huelga|teletrabajo|strajk|praca zdalna|z domu)/,
   holiday: /(school holiday|summer holiday|ferien|vacaciones|ferie|wakacje)/,
   quiet: /(closed|detour|diversion|umleitung|cerrad|zamknięt)/,
 };
 
+/** The effects an event has: a Berlin event's own, or read from the owner's words. */
+function effectsOf(e: Rehearsal["events"][number]): EventEffect[] {
+  const id = (e.id ?? findBerlinEvent(e.text)?.id) as BerlinEventId | undefined;
+  if (id && EVENT_EFFECTS[id]) return [...EVENT_EFFECTS[id]];
+  const t = e.text.toLowerCase().slice(0, LIMITS.event);
+  const out = new Set<EventEffect>();
+  if (RE.rain.test(t)) out.add("rain");
+  if (RE.heat.test(t)) out.add("heat");
+  if (RE.competitorWhere.test(t) && RE.competitorWhat.test(t)) out.add("competitor");
+  if (RE.buzz.test(t)) out.add("buzz");
+  if (RE.busy.test(t)) out.add("busy");
+  if (RE.festival.test(t)) out.add("festival").add("busy");
+  if (RE.xmas.test(t)) out.add("xmas").add("busy");
+  if (RE.works.test(t)) out.add("works");
+  if (RE.wfh.test(t)) out.add("wfh");
+  if (RE.holiday.test(t)) out.add("holiday").add("quiet");
+  if (RE.quiet.test(t)) out.add("quiet");
+  return [...out];
+}
+
+/** Whether an event is still on in a round: Berlin events last EVENT_ROUNDS rounds, free-text events stay. */
+function eventOn(e: Rehearsal["events"][number], round: number): boolean {
+  if (e.beforeRound > round) return false;
+  const id = (e.id ?? findBerlinEvent(e.text)?.id) as BerlinEventId | undefined;
+  const lasts = id && EVENT_ROUNDS[id] ? EVENT_ROUNDS[id] : 99;
+  return round < e.beforeRound + lasts;
+}
+
+/** The texts of the events that are on in a round (for the brief's situation). */
+function eventsOn(r: Rehearsal, round: number): string[] {
+  return r.events.filter((e) => eventOn(e, round)).map((e) => e.text);
+}
+
 function eventMods(r: Rehearsal, round: number): EventMods {
-  const m: EventMods = { rain: false, heat: false, competitor: false, buzz: false, busy: false, quiet: false, works: false, wfh: false, holiday: false, competitorFrom: 0 };
+  const m: EventMods = { rain: false, heat: false, competitor: false, buzz: false, busy: false, quiet: false, works: false, wfh: false, holiday: false, festival: false, xmas: false, competitorFrom: 0, fresh: new Set() };
   for (const e of r.events) {
-    if (e.beforeRound > round) continue;
-    const id = (e.id ?? findBerlinEvent(e.text)?.id) as BerlinEventId | undefined;
-    const effects = id ? EVENT_EFFECTS[id] : undefined;
+    if (!eventOn(e, round)) continue;
     const before = m.competitor;
-    if (effects) for (const f of effects) m[f] = true;
-    else {
-      const t = e.text.toLowerCase().slice(0, LIMITS.event);
-      if (RE.rain.test(t)) m.rain = true;
-      if (RE.heat.test(t)) m.heat = true;
-      if (RE.competitorWhere.test(t) && RE.competitorWhat.test(t)) m.competitor = true;
-      if (RE.buzz.test(t)) m.buzz = true;
-      if (RE.busy.test(t)) m.busy = true;
-      if (RE.works.test(t)) m.works = m.quiet = true;
-      if (RE.wfh.test(t)) m.wfh = m.quiet = true;
-      if (RE.holiday.test(t)) m.holiday = m.quiet = true;
-      if (RE.quiet.test(t)) m.quiet = true;
+    for (const f of effectsOf(e)) {
+      m[f] = true;
+      if (e.beforeRound === round) m.fresh.add(f);
     }
     if (!before && m.competitor) m.competitorFrom = e.beforeRound;
   }
@@ -825,6 +875,46 @@ const SENS_W: Record<Persona["priceSensitivity"], number> = { low: 0.25, medium:
 const SENS_MULT: Record<Persona["priceSensitivity"], number> = { low: 0.6, medium: 2, high: 4 };
 const CONVENIENCE: Record<SegmentId, number> = { office_worker: 0.15, trades: 0.15, tourist: 0.1, freelancer: 0.05, parent: 0.05, regular: 0.05, student: 0, retiree: 0 };
 const ELSEWHERE_ACTIONS = new Set(["eats_elsewhere", "goes_elsewhere", "stays_away", "found_somewhere_cheaper", "back_to_old_habits"]);
+/** People who live in the Kiez (a strike keeps commuters home; locals are around more). */
+const LOCALS: readonly SegmentId[] = ["regular", "retiree", "parent", "freelancer", "student"];
+
+// ---------------------------------------------------------------- word of mouth: who hears what
+
+/** Actions where someone told people they know (their audience decides who can hear it). */
+const TELLS = new Set(["tries_and_tells", "tells_a_friend", "recommends_it", "tells_friend_it_is_pricey", "recommends_cafe_anyway", "recommends_cafe"]);
+/** Whom each kind of customer tells in their own circle (FRIEND): colleagues, flatmates, Kita parents… */
+const OWN_CIRCLE: Record<SegmentId, readonly SegmentId[]> = {
+  office_worker: ["office_worker"],
+  freelancer: ["freelancer", "office_worker", "student"],
+  student: ["student"],
+  parent: ["parent"],
+  regular: LOCALS,
+  tourist: [],
+  retiree: ["retiree", "regular"],
+  trades: ["trades"],
+};
+
+type Audience = "own" | "neighbours" | "friends";
+
+/** Whom a rule-based teller told in a round: their own circle, the neighbours or a couple of friends (seeded, so it is the same when read back). */
+function audienceOf(r: Rehearsal, teller: Persona, round: number): Audience {
+  if (teller.segment === "tourist") return "own";
+  const x = rngFor(r.seed, "audience", teller.id, round)();
+  return x < 0.35 ? "own" : x < 0.7 ? "neighbours" : "friends";
+}
+
+/** Whether `viewer` could plausibly have heard what `teller` said or wrote in `said`. */
+function reaches(r: Rehearsal, said: Reaction, teller: Persona, viewer: Persona): boolean {
+  // A model's words: it names its own audience, so anyone may have heard them.
+  if (said.method !== "rule-based") return true;
+  if (FEED_KIND[said.action] === "review") return viewer.relationship === "new" || viewer.channels.some((c) => c === "Google Maps" || c === "Instagram" || c === "a city-guide app");
+  // Complaints at the counter or online, grumbling out loud: anyone around the café.
+  if (!TELLS.has(said.action)) return true;
+  const aud = audienceOf(r, teller, said.round);
+  if (aud === "friends") return viewer.segment !== "tourist";
+  if (aud === "neighbours") return LOCALS.includes(viewer.segment);
+  return OWN_CIRCLE[teller.segment].includes(viewer.segment);
+}
 
 interface Ctx {
   r: Rehearsal;
@@ -845,8 +935,12 @@ interface Ctx {
   wentToRival: boolean;
   grumbled: boolean;
   accepted: boolean;
+  /** Said something public in an earlier round (so they do not "forget" the deal next). */
+  toldBefore: boolean;
+  local: boolean;
   heardPos: number;
   heardNeg: number;
+  /** Public words this person could have heard (their teller's audience includes them). */
   speakers: ReturnType<typeof speakersFor>;
   noticeP: number;
   /** Lunch: how good the deal looks to them (−1…1). */
@@ -866,14 +960,20 @@ function buildCtx(r: Rehearsal, p: Persona, k: number): Ctx {
   const has = (c: string) => p.channels.includes(c);
   const trait = (t: string) => (p.traits ?? []).includes(t);
   const lunch = r.template === "lunch_offer";
+  const local = LOCALS.includes(p.segment);
   const firstTry = hist.find((x) => GROUPS.lunchUsed.has(x.action));
   const triedRound = firstTry ? firstTry.round : 0;
   const tried = !!firstTry;
   const cameBack = tried && hist.some((x) => x.round > triedRound && GROUPS.lunchReturn.has(x.action));
-  const speakers = speakersFor(r, p.id, k);
+  const speakers = speakersFor(r, p.id, k).filter((s) => {
+    const said = reactionFor(r, s.id, s.round);
+    const teller = personaById(r, s.id);
+    return !!said && !!teller && reaches(r, said, teller, p);
+  });
   const heardPos = speakers.filter((s) => s.pol === "pos").length;
   const heardNeg = speakers.filter((s) => s.pol === "neg").length;
   const sens = SENS_W[p.priceSensitivity];
+  const takeaway = trait("takeaway") || trait("pram") || trait("hurry");
   let noticeP: number;
   let value = 0, pain = 0;
   if (lunch) {
@@ -886,21 +986,26 @@ function buildCtx(r: Rehearsal, p: Persona, k: number): Ctx {
     if (heardPos + heardNeg > 0 && WORD_OF_MOUTH_CHANNELS.some(has)) noticeP += 0.2;
     noticeP += p.relationship === "regular" ? 0.2 : p.relationship === "occasional" ? 0.08 : 0;
     if (ev.buzz) noticeP += 0.2;
-    if (ev.busy) noticeP += 0.1;
+    if (ev.busy) noticeP += 0.15;
     if (ev.rain) noticeP -= 0.15;
-    if (ev.quiet || ev.works) noticeP -= 0.15;
+    if (ev.works) noticeP -= 0.22;
+    if (ev.quiet) noticeP -= 0.12;
+    if (ev.wfh) noticeP += local ? 0.12 : -0.1;
     noticeP = clamp(noticeP, 0.08, 0.95);
     const saving = p.usualSpend > 0 ? (p.usualSpend - scene.price) / p.usualSpend : 0;
     value =
-      saving * sens + CONVENIENCE[p.segment] + (p.attitude === "fan" ? 0.12 : p.attitude === "sceptical" ? -0.15 : 0) - (ev.competitor ? 0.25 * sens : 0) + (ev.buzz ? 0.05 : 0) + (ev.rain ? 0.05 : 0) - (ev.heat ? 0.08 : 0);
+      saving * sens + CONVENIENCE[p.segment] + (p.attitude === "fan" ? 0.12 : p.attitude === "sceptical" ? -0.15 : 0) - (ev.competitor ? 0.25 * sens : 0) + (ev.buzz ? 0.05 : 0) + (ev.rain ? 0.05 : 0) - (ev.heat ? 0.08 : 0) +
+      (ev.wfh && local ? 0.1 : 0) + (ev.holiday && p.segment !== "parent" && p.segment !== "student" ? 0.05 : 0) + (ev.busy && (p.relationship === "new" || p.segment === "tourist") ? 0.1 : 0) - (ev.works ? (takeaway ? 0.12 : 0.05) : 0);
     value = clamp(value, -1, 1);
   } else {
     noticeP = p.relationship === "regular" ? 0.8 : p.relationship === "occasional" ? 0.45 : 0.08;
     noticeP += p.priceSensitivity === "high" ? 0.15 : p.priceSensitivity === "low" ? -0.1 : 0;
     if (has("the staff")) noticeP += 0.05;
+    if (ev.rain || ev.works) noticeP -= 0.1;
+    if (ev.busy) noticeP += 0.05;
     noticeP = clamp(noticeP, 0.05, 0.95);
     const rise = scene.oldPrice > 0 ? (scene.price - scene.oldPrice) / scene.oldPrice : 0;
-    pain = rise * SENS_MULT[p.priceSensitivity] * (p.relationship === "regular" ? 1.2 : 1) + (p.attitude === "sceptical" ? 0.08 : p.attitude === "fan" ? -0.05 : 0) + (ev.competitor ? 0.15 : 0);
+    pain = rise * SENS_MULT[p.priceSensitivity] * (p.relationship === "regular" ? 1.2 : 1) + (p.attitude === "sceptical" ? 0.08 : p.attitude === "fan" ? -0.05 : 0) + (ev.competitor ? 0.15 : 0) + (ev.works && takeaway ? 0.08 : 0);
     pain = clamp(pain, -1, 1);
   }
   const gShare = clamp(pain * 1.8 + (p.attitude === "sceptical" ? 0.25 : 0) - (p.attitude === "fan" ? 0.15 : 0), 0.02, 0.85);
@@ -914,6 +1019,8 @@ function buildCtx(r: Rehearsal, p: Persona, k: number): Ctx {
     wentToRival: ev.competitor && hist.some((x) => x.round >= ev.competitorFrom && ELSEWHERE_ACTIONS.has(x.action)),
     grumbled: hist.some((x) => x.action === "grumbles"),
     accepted: hist.some((x) => x.action === "accepts"),
+    toldBefore: hist.some((x) => !!actionOf(r, x.round, x.action)?.public),
+    local,
     heardPos, heardNeg, speakers, noticeP, value, pain, gShare, has, trait,
   };
 }
@@ -929,7 +1036,10 @@ function att(p: Persona, fan: number, neutral: number, sceptic: number): number 
 /** Chance of a "first try" this round (lunch offer). */
 function tryWeight(c: Ctx): number {
   const heard = Math.min(1, c.heardPos);
-  return (c.noticed || heard ? 1 : 0.55) * clamp(0.36 + c.value * 1.3 + 0.45 * heard, 0.04, 1.4);
+  // Without having noticed it or heard of it, a first try is less likely: more so behind roadworks, less in a busy street.
+  const unseen = c.ev.works ? 0.35 : c.ev.busy ? 0.8 : 0.55;
+  const crowd = c.ev.busy && (c.p.relationship !== "regular" || c.p.segment === "tourist") ? 1.25 : 1;
+  return (c.noticed || heard ? 1 : unseen) * clamp(0.36 + c.value * 1.3 + 0.45 * heard, 0.04, 1.4) * (c.ev.works ? 0.75 : 1) * crowd;
 }
 
 /** How likely this person is to take this action now (unnormalised). */
@@ -940,13 +1050,19 @@ function weight(id: string, c: Ctx): number {
   const heard = Math.min(1, c.heardPos);
   const pain = Math.max(0, c.pain);
   const wom = WORD_OF_MOUTH_CHANNELS.some(c.has) ? 1.35 : 1;
+  const pram = c.trait("pram"), takeaway = c.trait("takeaway"), hurry = c.trait("hurry"), sitter = c.trait("sitter");
+  /** Roadworks keep prams, take-away and hurried customers (and older neighbours) off the pavement. */
+  const avoidsWorks = ev.works && (pram || takeaway || hurry || p.segment === "parent" || p.segment === "retiree");
   switch (id) {
     case "not_around": {
-      let w = p.segment === "tourist" && c.k >= 3 ? 0.5 + 0.2 * (c.k - 3) : 0;
+      let w = p.segment === "tourist" && c.k >= 3 && !ev.busy ? 0.5 + 0.2 * (c.k - 3) : 0;
       if (ev.holiday && (p.segment === "parent" || p.segment === "student")) w += 0.8;
-      if (ev.wfh) w += p.segment === "office_worker" ? 0.7 : p.segment === "freelancer" || p.segment === "student" ? 0.3 : 0;
+      // A strike keeps commuters and visitors away; people who live in the Kiez are around more.
+      if (ev.wfh) w += p.segment === "office_worker" ? 0.8 : p.segment === "tourist" ? 0.3 : p.segment === "trades" ? 0.15 : 0;
       if (ev.heat && p.segment === "retiree") w += 0.3;
-      return w;
+      if (ev.rain) w += p.segment === "retiree" || pram ? 0.3 : p.segment === "freelancer" ? 0.15 : 0;
+      if (ev.works && pram) w += 0.2;
+      return ev.busy ? w * 0.5 : w;
     }
     // lunch offer
     case "notices_offer":
@@ -954,39 +1070,53 @@ function weight(id: string, c: Ctx): number {
     case "ignores":
       return 1 - c.noticeP;
     case "tries_deal":
-      if (c.tried) return 0.08;
+      // A second helping is "comes back", never another first try.
+      if (c.tried) return 0;
       return tryWeight(c) * (c.k === 2 ? 1 - tellShare(c) : 0.8);
     case "tries_and_tells":
-      return c.tried ? 0.05 : tryWeight(c) * tellShare(c);
+      return c.tried ? 0 : tryWeight(c) * tellShare(c);
     case "usual_order": {
+      // Someone new has no usual here.
+      if (p.relationship === "new") return 0;
+      const evx = (ev.rain && regular ? 0.1 : 0) + (ev.wfh && c.local ? 0.1 : 0);
+      const evm = (ev.busy && regular ? 0.8 : 1) * (ev.works ? 0.85 : 1);
       const base = rel(p, 0.85, 0.35, 0.1) * (p.priceSensitivity === "low" ? 1.25 : 1);
-      if (c.k >= 4) return rel(p, 0.8, 0.28, 0.05) * (c.tried ? 0.4 : 1);
-      return c.tried ? 0.2 + (regular ? 0.25 : 0) : base;
+      if (c.k >= 4) return (rel(p, 0.8, 0.28, 0.05) * (c.tried ? 0.4 : 1) + evx) * evm;
+      return ((c.tried ? 0.2 + (regular ? 0.25 : 0) : base) + evx) * evm;
     }
-    case "eats_elsewhere":
-      if (c.k >= 4) return ((c.wentElsewhere ? 0.4 : 0.05) + (c.wentToRival ? 0.3 : 0) + (ev.competitor ? 0.25 * sens : 0) + (sceptic ? 0.1 : 0)) * (c.cameBack ? 0.3 : 1);
+    case "eats_elsewhere": {
+      const evx = (avoidsWorks ? 0.3 : ev.works ? 0.1 : 0) + (ev.festival || ev.xmas ? 0.22 : 0);
+      const evm = (ev.rain && !takeaway ? 0.75 : 1) * (ev.wfh && c.local ? 0.7 : 1);
+      if (c.k >= 4) return ((c.wentElsewhere ? 0.4 : 0.05) + (c.wentToRival ? 0.3 : 0) + (ev.competitor ? 0.25 * sens : 0) + (sceptic ? 0.1 : 0) + evx) * (c.cameBack ? 0.3 : 1) * evm;
       return (
-        (0.18 + (sceptic ? 0.28 : 0) + (p.relationship === "new" ? 0.12 : 0) + (ev.competitor ? 0.4 * sens : 0) + (c.wentElsewhere ? 0.2 : 0) + (ev.heat ? 0.1 : 0)) *
-        rel(p, 0.4, 1, 1.1) *
-        (fan ? 0.6 : 1) *
-        (c.tried && c.value > 0.1 ? 0.6 : 1)
+        ((0.18 + (sceptic ? 0.28 : 0) + (p.relationship === "new" ? 0.12 : 0) + (ev.competitor ? 0.4 * sens : 0) + (c.wentElsewhere ? 0.2 : 0) + (ev.heat ? 0.1 : 0)) *
+          rel(p, 0.4, 1, 1.1) *
+          (fan ? 0.6 : 1) *
+          (c.tried && c.value > 0.1 ? 0.6 : 1) +
+          evx) *
+        evm
       );
+    }
     case "skips_lunch_out":
       return ({ low: 0.05, medium: 0.15, high: 0.4 } as const)[p.priceSensitivity] + (ev.rain ? 0.25 : 0) + (ev.heat ? 0.15 : 0) + (["student", "retiree", "parent", "freelancer"].includes(p.segment) ? 0.12 : 0);
     case "comes_back_for_deal":
-      return c.tried ? clamp(0.75 + c.value * 1.5 + 0.2 * heard, 0.1, 1.5) : 0;
+      return c.tried ? clamp(0.75 + c.value * 1.5 + 0.2 * heard, 0.1, 1.5) * (ev.works ? 0.85 : 1) + (ev.wfh && c.local ? 0.15 : 0) : 0;
     case "back_to_usual":
       return c.tried ? 0.35 + (regular ? 0.3 : 0) : rel(p, 0.8, 0.4, 0.1);
     case "tells_a_friend":
       return c.tried ? 0.32 * att(p, 1.6, 1, 0.6) * wom : heard ? 0.14 * wom : 0.02;
     case "keeps_coming":
-      return c.tried ? clamp(0.42 + c.value * 1.4 + (c.cameBack ? 0.35 : 0), 0.08, 1.4) : 0.03 + 0.25 * heard * (c.noticed ? 1 : 0.5) * att(p, 1.2, 1, 0.5);
+      return (c.tried ? clamp(0.42 + c.value * 1.4 + (c.cameBack ? 0.35 : 0), 0.08, 1.4) : 0.03 + 0.25 * heard * (c.noticed ? 1 : 0.5) * att(p, 1.2, 1, 0.5)) * (ev.works ? 0.85 : 1) + (ev.wfh && c.local && c.tried ? 0.1 : 0);
     case "posts_review":
-      return c.tried ? 0.15 * (c.has("Google Maps") || c.has("Instagram") ? 2 : 1) * att(p, 1.3, 1, 1.2) : 0.02;
-    case "complains":
-      return (sceptic ? 0.25 : 0.03) + (regular && !c.tried && !c.trait("takeaway") ? 0.1 : 0) + (c.tried && c.value < 0 ? 0.15 : 0);
+      return (c.tried ? 0.15 * (c.has("Google Maps") || c.has("Instagram") ? 2 : 1) * att(p, 1.3, 1, 1.2) : 0.02) * (ev.busy && p.segment === "tourist" ? 1.5 : 1);
+    case "complains": {
+      const evx = (ev.busy ? (regular || hurry || sitter ? 0.2 : 0.08) : 0) + (ev.works && (sitter || regular) && !takeaway ? 0.15 : 0);
+      return ((sceptic ? 0.25 : 0.03) + (regular && !c.tried && !c.trait("takeaway") ? 0.1 : 0) + (c.tried && c.value < 0 ? 0.15 : 0) + evx) * (ev.holiday ? 0.6 : 1);
+    }
     case "forgets_about_it":
-      return c.tried ? 0.1 : regular ? 0.15 : 0.55;
+      // Nobody forgets a deal they told others about.
+      if (c.toldBefore) return 0;
+      return (c.cameBack ? 0.02 : c.tried ? 0.1 : regular ? 0.15 : 0.55) * (ev.busy ? 0.8 : 1) + (ev.works && !c.tried ? 0.1 : 0);
     case "still_comes_for_lunch":
       return c.cameBack ? 0.9 : c.tried ? 0.4 : 0.03 + 0.2 * heard;
     case "comes_now_and_then":
@@ -1004,36 +1134,39 @@ function weight(id: string, c: Ctx): number {
       return 1 - c.noticeP;
     case "buys_as_usual":
       // Habits are sticky: most people keep buying after a small rise.
-      return clamp(1.2 - pain * 1.5, 0.15, 1.2) * (regular ? 1.2 : 1) * (fan ? 1.2 : 1) * (c.grumbled ? 0.7 : 1) * (!c.noticed ? 1.3 : 1);
+      return (
+        clamp(1.2 - pain * 1.5, 0.15, 1.2) * (regular ? 1.2 : 1) * (fan ? 1.2 : 1) * (c.grumbled ? 0.7 : 1) * (!c.noticed ? 1.3 : 1) * (ev.works ? 0.85 : 1) * (ev.heat ? 0.85 : 1) +
+        (ev.rain && c.local ? 0.1 : 0) + (ev.wfh && c.local ? 0.15 : 0) + (ev.busy ? 0.1 : 0)
+      );
     case "buys_less_often":
-      if (c.k >= 3) return (c.reduced && !c.elsewhere ? 0.4 : pain * 0.3) * (c.grumbled ? 1.4 : 1) + 0.12 * Math.min(1, c.heardNeg);
-      return pain * 0.45 * (c.grumbled ? 1.5 : 1) + 0.08 * Math.min(1, c.heardNeg);
+      if (c.k >= 3) return (c.reduced && !c.elsewhere ? 0.4 : pain * 0.3) * (c.grumbled ? 1.4 : 1) + 0.12 * Math.min(1, c.heardNeg) + (ev.heat ? 0.12 : 0) + (ev.works ? 0.08 : 0);
+      return pain * 0.45 * (c.grumbled ? 1.5 : 1) + 0.08 * Math.min(1, c.heardNeg) + (ev.heat ? 0.12 : 0) + (ev.works ? 0.08 : 0);
     case "switches_to_cheaper_item":
       return pain * 0.35 * (p.segment === "student" || p.segment === "freelancer" ? 1.4 : 1);
     case "goes_elsewhere":
-      return pain * 0.22 * (sceptic ? 1.8 : 1) + (ev.competitor ? 0.4 * sens : 0) + 0.06 * Math.min(2, c.heardNeg);
+      return (pain * 0.22 * (sceptic ? 1.8 : 1) + (ev.competitor ? 0.4 * sens : 0) + 0.06 * Math.min(2, c.heardNeg)) * (ev.rain ? 0.7 : 1) * (ev.wfh && c.local ? 0.7 : 1) + (avoidsWorks ? 0.25 : ev.works ? 0.08 : 0) + (ev.busy ? 0.1 : 0);
     case "keeps_buying":
-      return c.elsewhere ? 0.1 : !c.reduced ? clamp(1 - pain * 1.5, 0.15, 1) : 0.25;
+      return (c.elsewhere ? 0.1 : !c.reduced ? clamp(1 - pain * 1.5, 0.15, 1) : 0.25) * (ev.works ? 0.85 : 1) * (ev.heat ? 0.9 : 1) + (ev.rain && c.local ? 0.1 : 0) + (ev.wfh && c.local ? 0.1 : 0) + (ev.busy ? 0.05 : 0);
     case "tells_friend_it_is_pricey":
-      return (c.grumbled || c.reduced ? 0.2 + pain : 0.03) * wom;
+      return (c.grumbled || c.reduced ? 0.2 + pain : 0.03) * wom + (ev.busy ? 0.05 : 0);
     case "forgot_about_it":
       return !c.noticed ? 0.8 : c.accepted ? 0.4 : 0.1;
     case "stays_away":
-      return c.elsewhere ? 0.7 : c.reduced ? 0.2 + (ev.competitor ? 0.3 : 0) : 0.02 + (ev.competitor ? 0.3 * sens : 0);
+      return (c.elsewhere ? 0.7 : c.reduced ? 0.2 + (ev.competitor ? 0.3 : 0) : 0.02 + (ev.competitor ? 0.3 * sens : 0)) + (avoidsWorks ? 0.2 : 0);
     case "stays_a_customer":
-      return c.elsewhere ? 0.05 : !c.reduced ? clamp(1 - pain, 0.2, 1) : 0.3;
+      return (c.elsewhere ? 0.05 : !c.reduced ? clamp(1 - pain, 0.2, 1) : 0.3) * (ev.works ? 0.85 : 1) + (ev.wfh && c.local ? 0.1 : 0);
     case "buys_less_than_before":
-      return c.reduced && !c.elsewhere ? 0.45 : pain * 0.18 + 0.06 * Math.min(1, c.heardNeg);
+      return (c.reduced && !c.elsewhere ? 0.45 : pain * 0.18 + 0.06 * Math.min(1, c.heardNeg)) + (ev.heat ? 0.1 : 0) + (ev.works ? 0.08 : 0);
     case "recommends_cafe_anyway":
-      return ((fan ? 0.18 : 0.03) + (!c.reduced ? 0.04 : 0) + 0.08 * Math.min(1, c.heardPos)) * (c.elsewhere ? 0.2 : 1) * wom;
+      return ((fan ? 0.18 : 0.03) + (!c.reduced ? 0.04 : 0) + 0.08 * Math.min(1, c.heardPos)) * (c.elsewhere ? 0.2 : 1) * wom + (ev.busy ? 0.05 : 0);
     case "mentions_price_in_review":
-      return ((sceptic ? 0.15 : 0.03) + (c.has("Google Maps") ? 0.1 : 0)) * (c.grumbled || c.reduced ? 2 : 1);
+      return ((sceptic ? 0.15 : 0.03) + (c.has("Google Maps") ? 0.1 : 0)) * (c.grumbled || c.reduced ? 2 : 1) + (ev.busy ? 0.03 : 0);
     case "still_buys_regularly":
       return c.elsewhere ? 0.1 : !c.reduced ? 0.9 : 0.25;
     case "buys_now_and_then":
       return c.reduced && !c.elsewhere ? 0.5 : 0.1;
     case "found_somewhere_cheaper":
-      return c.elsewhere ? 0.8 : (ev.competitor ? 0.25 * sens : 0) + 0.02 + pain * 0.15 + 0.06 * Math.min(1, c.heardNeg);
+      return (c.elsewhere ? 0.8 : (ev.competitor ? 0.25 * sens : 0) + 0.02 + pain * 0.15 + 0.06 * Math.min(1, c.heardNeg)) + (avoidsWorks ? 0.1 : 0);
     case "recommends_cafe":
       return (fan ? 0.25 : 0.04) * (c.elsewhere ? 0.2 : 1);
     default:
@@ -1046,10 +1179,14 @@ function tellShare(c: Ctx): number {
   return clamp(0.45 * att(c.p, 1.5, 1, 0.6) * (WORD_OF_MOUTH_CHANNELS.some(c.has) ? 1.3 : 1), 0, 0.7);
 }
 
-function conditions(c: Ctx, action: string, useRival: boolean, speaker: Speaker | undefined): Set<Cond> {
+/** Where someone went instead this round, when an event brought its own place (the festival stalls, the Christmas market). */
+type EventPlace = "festival" | "xmas" | undefined;
+
+function conditions(c: Ctx, action: string, useRival: boolean, eventPlace: EventPlace, speaker: Speaker | undefined): Set<Cond> {
   const { p, scene, ev } = c;
   const s = new Set<Cond>();
   const lunch = c.r.template === "lunch_offer";
+  if (lunch) s.add("lunch");
   if (lunch && scene.price < p.usualSpend - 0.2) s.add("cheaper");
   if (lunch && scene.price > p.usualSpend * 1.05) s.add("pricier");
   if (p.priceSensitivity === "high") s.add("sensitive");
@@ -1059,11 +1196,14 @@ function conditions(c: Ctx, action: string, useRival: boolean, speaker: Speaker 
   if (p.relationship === "regular") s.add("regular");
   if (p.relationship === "new") s.add("new");
   if (p.segment === "tourist") s.add("tourist");
+  if (c.local) s.add("local");
   s.add(c.tried ? "tried" : "untried");
   if (speaker) s.add("heard");
   if (c.grumbled) s.add("grumbled");
   if (c.trait("takeaway")) s.add("takeaway");
   if (c.trait("hurry")) s.add("hurry");
+  if (c.trait("pram")) s.add("pram");
+  if (c.trait("sitter")) s.add("sitter");
   if (c.has("Instagram")) s.add("insta");
   if (ev.rain) s.add("rain");
   if (ev.heat) s.add("heat");
@@ -1074,6 +1214,9 @@ function conditions(c: Ctx, action: string, useRival: boolean, speaker: Speaker 
   if (ev.works) s.add("works");
   if (ev.wfh) s.add("wfh");
   if (ev.holiday) s.add("holiday");
+  // The festival or market lines for going elsewhere name its stalls, so they only fit when that is where they went.
+  if (ev.festival && (action !== "eats_elsewhere" || eventPlace === "festival")) s.add("festival");
+  if (ev.xmas && (action !== "eats_elsewhere" || eventPlace === "xmas")) s.add("xmas");
   if (!lunch && scene.price < scene.oldPrice) s.add("drop");
   if (!lunch && scene.price > scene.oldPrice) s.add("rise");
   return s;
@@ -1087,17 +1230,19 @@ function fits(l: Line, conds: Set<Cond>): boolean {
  * Prefers a line written for this person's situation (and, when someone's words moved them, a line
  * that names that person); falls back to a line that fits anyone. Lines already used this round are
  * skipped while others remain, so people don't all say the same thing; when every fitting line is
- * taken, `tail` asks the caller to add a few words of the person's own.
+ * taken, `tail` asks the caller to add a few words of the person's own. `only`: use just the lines
+ * that need this condition (when there are any), e.g. the festival stalls.
  */
 function chooseLine(
   rng: Rng,
   lines: Line[] | undefined,
   conds: Set<Cond>,
   used: Set<Line>,
-  opts: { stale?: (l: Line) => boolean; topic?: string } = {},
+  opts: { stale?: (l: Line) => boolean; topic?: string; only?: Cond } = {},
 ): { line?: Line; tail: boolean } {
   if (!lines || !lines.length) return { tail: false };
   let all = lines.filter((l) => fits(l, conds));
+  if (opts.only && all.some((l) => l.when?.includes(opts.only!))) all = all.filter((l) => l.when?.includes(opts.only!));
   // Public words and the diary stay on the thought's topic when there are lines for it.
   if (opts.topic && all.some((l) => l.topic === opts.topic)) all = all.filter((l) => !l.topic || l.topic === opts.topic);
   const specific = all.filter((l) => l.when?.length);
@@ -1123,15 +1268,16 @@ function chooseLine(
 
 const COFFEE_WORDS = /(coffee|kaffee|café|cafe|kawa|flat white|latte|cappuccino|espresso|americano|cortado|macchiato|mocha|chai)/i;
 
-function textVars(c: Ctx, rng: Rng, useRival: boolean, speaker: Speaker | undefined): Record<string, string> {
+function textVars(c: Ctx, rng: Rng, useRival: boolean, eventPlace: EventPlace, speaker: Speaker | undefined): Record<string, string> {
   const { p, scene } = c;
   const lang = langOfR(c.r);
-  const place = PLACES[useRival ? "rival" : placeIdFor(p, c.r.template)]!;
+  const place = PLACES[eventPlace ?? (useRival ? "rival" : placeIdFor(p, c.r.template))]!;
   const cur = scene.currency;
   const lunch = c.r.template === "lunch_offer";
   const verdict = lunch && scene.price < p.usualSpend - 0.2 ? tr(VERDICTS.cheaper, lang) : tr(pick(rng, VERDICTS.other), lang);
+  const aud = audienceOf(c.r, p, c.k);
   return {
-    ...itemVars(scene.item),
+    ...itemVars(scene.item, lang),
     price: money(scene.price, cur, lang),
     old: money(scene.oldPrice, cur, lang),
     diff: difference(scene.price - scene.oldPrice, cur, lang),
@@ -1142,7 +1288,8 @@ function textVars(c: Ctx, rng: Rng, useRival: boolean, speaker: Speaker | undefi
     Alt_at: ucFirst(tr(place.at, lang)),
     cafe: scene.cafe,
     contents: scene.contents,
-    friend: tr(FRIEND[p.segment], lang),
+    // Whom they told: their own circle, or the neighbours / a couple of friends (the same audience reaches() checks).
+    friend: tr(aud === "own" ? FRIEND[p.segment] : FRIEND_WIDE[aud], lang),
     verdict,
     cheaper: tr(COFFEE_WORDS.test(scene.item) && !/filter/i.test(scene.item) ? CHEAPER.filter : CHEAPER.other, lang),
     speaker: speaker?.name ?? "",
@@ -1161,32 +1308,79 @@ function withTail(text: string, p: Persona, lang: Lang, used: Set<Tx>, rng: Rng)
   return `${text} ${tr(t, lang)}`;
 }
 
-function ruleReaction(r: Rehearsal, p: Persona, spec: RoundSpec, used: Set<Line>, usedTails: Set<Tx>, asked: Set<Tx>): Reaction {
-  const lang = langOfR(r);
+/** Conditions that mean a line already talks about an event (no extra event sentence then). */
+const EVENT_CONDS = new Set<Cond>(["rain", "heat", "competitor", "buzz", "busy", "quiet", "works", "wfh", "holiday", "festival", "xmas"]);
+/** Which EVENT_LINES set an effect speaks with, most specific first. */
+const EVENT_VOICE: readonly (keyof typeof EVENT_LINES)[] = ["festival", "xmas", "competitor", "wfh", "works", "rain", "heat", "holiday", "busy", "buzz"];
+
+/** A planned reaction: the action is chosen for everyone first, so the words can take the others' choices into account. */
+interface Plan {
+  p: Persona;
+  rng: Rng;
+  c: Ctx;
+  action: string;
+}
+
+function planReaction(r: Rehearsal, p: Persona, spec: RoundSpec): Plan {
   const rng = rngFor(r.seed, "react", spec.n, p.id);
   const c = buildCtx(r, p, spec.n);
   const action = weightedPick(rng, spec.actions.map((a) => [a.id, weight(a.id, c)] as const));
+  return { p, rng, c, action };
+}
+
+/** Whether a speaker's earlier words still stand this round (nobody quotes someone who has just turned away or forgotten). */
+function stillStands(pol: "pos" | "neg", nowAction: string | undefined): boolean {
+  if (!nowAction) return true;
+  if (pol === "pos") return !GROUPS.negative.has(nowAction) && nowAction !== "forgets_about_it" && nowAction !== "forgot_about_it";
+  return !(ACTIONS[nowAction]?.public && ACTIONS[nowAction]?.positive);
+}
+
+function renderReaction(r: Rehearsal, plan: Plan, spec: RoundSpec, now: Map<string, string>, used: Set<Line>, usedTails: Set<Tx>, asked: Set<Tx>): Reaction {
+  const { p, rng, c, action } = plan;
+  const lang = langOfR(r);
+  const lunch = r.template === "lunch_offer";
   const useRival = c.ev.competitor && ELSEWHERE_ACTIONS.has(action) && (c.wentToRival || rng() < 0.8);
+  const eventPlace: EventPlace =
+    lunch && action === "eats_elsewhere" && !useRival && (c.ev.festival || c.ev.xmas) && rng() < 0.75 ? (c.ev.festival ? "festival" : "xmas") : undefined;
   const pol = polarityOf(action);
-  const speaker = pol ? [...c.speakers].reverse().find((s) => s.pol === pol) : undefined;
-  const conds = conditions(c, action, useRival, speaker);
-  const vars = textVars(c, rng, useRival, speaker);
+  const speaker = pol ? [...c.speakers].reverse().find((s) => s.pol === pol && stillStands(pol, now.get(s.id))) : undefined;
+  const conds = conditions(c, action, useRival, eventPlace, speaker);
+  const vars = textVars(c, rng, useRival, eventPlace, speaker);
   const text = ACTION_TEXT[action];
+  const only: Cond | undefined = eventPlace;
   const before = new Set(c.hist.map((x) => x.thought));
-  const th = chooseLine(rng, text?.thought, conds, used, { stale: (l) => before.has(cut(render(l.t, lang, vars, p), LIMITS.thought)) });
+  const th = chooseLine(rng, text?.thought, conds, used, { stale: (l) => before.has(cut(render(l.t, lang, vars, p), LIMITS.thought)), ...(only ? { only } : {}) });
   let thought = th.line ? render(th.line.t, lang, vars, p) : tr(FALLBACK_THOUGHT, lang);
   if (th.tail || before.has(thought)) thought = withTail(thought, p, lang, usedTails, rng);
+  // People who are around talk about what is going on in the Kiez (an event), unless their line already does.
+  const voices = EVENT_VOICE.filter((k) => c.ev[k]);
+  if (voices.length && action !== "not_around" && !th.line?.when?.some((w) => EVENT_CONDS.has(w))) {
+    const freshVoice = voices.find((k) => c.ev.fresh.has(k));
+    const key = freshVoice ?? pick(rng, voices);
+    // Talk of the new café only from people who did not just go there or somewhere else (their own words say where).
+    const skip = key === "competitor" && actionKind(action) === "elsewhere";
+    if (rng() < (freshVoice ? 0.45 : 0.3) && !skip) {
+      const set = EVENT_LINES[key];
+      const kind = actionKind(action);
+      const side = kind === "elsewhere" ? set.out : kind === "engaged" || action === "usual_order" || action === "complains" || action === "buys_as_usual" ? set.in : undefined;
+      const ev = chooseLine(rng, [...(side ?? []), ...set.any], conds, used);
+      if (ev.line) thought = `${render(ev.line.t, lang, vars, p)} ${thought}`;
+    }
+  }
   thought = cut(thought, LIMITS.thought);
   const topic = th.line?.topic;
-  const di = chooseLine(rng, text?.diary, conds, used, topic ? { topic } : {});
+  const di = chooseLine(rng, text?.diary, conds, used, { ...(topic ? { topic } : {}), ...(only ? { only } : {}) });
   const diary = di.line ? cut(render(di.line.t, lang, vars, p), LIMITS.diary) : undefined;
   const isPublic = !!spec.actions.find((a) => a.id === action)?.public;
   const sa = isPublic ? chooseLine(rng, text?.says, conds, used, topic ? { topic } : {}) : { tail: false };
   const saysPublicly = sa.line ? cut(render(sa.line.t, lang, vars, p), LIMITS.saysPublicly) : undefined;
+  // Questions for the owner come only from people who took in the change and are at the café.
   let questionForOwner: string | undefined;
   const askedBefore = r.reactions.some((x) => x.personaId === p.id && x.questionForOwner);
+  const noticedNow = c.noticed || (lunch ? GROUPS.lunchNoticed : GROUPS.priceNoticed).has(action);
+  const atCafe = actionKind(action) !== "elsewhere" && !["not_around", "forgets_about_it", "forgot_about_it", "skips_lunch_out", "ignores", "does_not_notice"].includes(action);
   const qChance = p.attitude === "sceptical" ? 0.45 : p.relationship === "new" ? 0.35 : 0.3;
-  if (action !== "not_around" && !askedBefore && rng() < qChance) {
+  if (noticedNow && atCafe && !askedBefore && rng() < qChance) {
     const bank = QUESTIONS[r.template];
     const pool = rng() < 0.6 ? bank.bySegment[p.segment] ?? bank.general : bank.general;
     const fresh = pool.filter((q) => !asked.has(q));
@@ -1220,9 +1414,10 @@ function askedQuestions(r: Rehearsal): Set<Tx> {
 /**
  * Deterministic stand-in for the model: reactions for every active persona still waiting in the
  * current round, from their traits (price sensitivity vs the price, channels → noticing, attitude,
- * earlier actions, word of mouth in the feed, injected events). Submit them with method "rule-based".
- * Within a round no two people think the same sentence; someone moved by another customer's words
- * names that person, which is how the summary draws who told whom.
+ * earlier actions, word of mouth they could have heard, injected events). Submit them with method
+ * "rule-based". Everyone's action is chosen first; then the words, so nobody quotes someone who
+ * turns away in the same round. Within a round no two people think the same sentence; someone moved
+ * by another customer's words names that person, which is how the summary draws who told whom.
  */
 export function ruleBasedReactions(r: Rehearsal): Reaction[] {
   const spec = specOf(r, r.currentRound);
@@ -1230,7 +1425,10 @@ export function ruleBasedReactions(r: Rehearsal): Reaction[] {
   const used = new Set<Line>();
   const usedTails = new Set<Tx>();
   const asked = askedQuestions(r);
-  return pending(r).map((p) => ruleReaction(r, p, spec, used, usedTails, asked));
+  const plans = pending(r).map((p) => planReaction(r, p, spec));
+  const now = new Map<string, string>(r.reactions.filter((x) => x.round === spec.n).map((x) => [x.personaId, x.action]));
+  for (const pl of plans) now.set(pl.p.id, pl.action);
+  return plans.map((pl) => renderReaction(r, pl, spec, now, used, usedTails, asked));
 }
 
 /** Plays every remaining round with the rule-based stand-in (no model). */
@@ -1360,15 +1558,77 @@ export function recordInterview(
 
 /** The compact rehearsal part of a ShareState. Automatic "not around" reactions are left out (they are rebuilt). */
 export function toShareRehearsal(r: Rehearsal): ShareRehearsal {
+  const played = r.reactions.filter((x) => isActive(r, x.personaId, x.round));
+  const byAI = played.some((x) => x.method !== "rule-based") || r.interviews.some((iv) => iv.answers.some((x) => x.method !== "rule-based"));
   return {
     seed: r.seed,
     personas: r.personas.length,
     rounds: r.rounds.length,
     events: r.events.map((e) => ({ beforeRound: e.beforeRound, text: e.text })),
-    reactions: r.reactions.filter((x) => isActive(r, x.personaId, x.round)).map((x) => ({ ...x })),
+    reactions: played.map((x) => ({ ...x })),
     interviews: clone(r.interviews),
     ...(r.customerMix ? { customerMix: { ...r.customerMix } } : {}),
+    ...(byAI ? { cast: clone(r.personas), active: clone(r.active) } : {}),
   };
+}
+
+const PERSONA_ID = /^p([1-9]|1[0-2])$/;
+const str = (v: unknown, max = 2000): v is string => typeof v === "string" && !!v.trim() && v.length <= max;
+const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** A saved cast, checked lightly (ids p1-p12 in order, every required field there); null when unusable. */
+function savedCast(cast: unknown): Persona[] | null {
+  if (!Array.isArray(cast) || cast.length < 4 || cast.length > 12) return null;
+  const out: Persona[] = [];
+  for (const [i, raw] of cast.entries()) {
+    const p = raw as Partial<Persona> | null;
+    if (!p || typeof p !== "object") return null;
+    if (p.id !== `p${i + 1}` || !PERSONA_ID.test(p.id)) return null;
+    if (!str(p.name, 60) || !SEGMENTS.includes(p.segment as SegmentId) || !str(p.segmentLabel, 120) || !num(p.age) || !str(p.routine) || !num(p.usualSpend) || p.usualSpend <= 0) return null;
+    if (!["low", "medium", "high"].includes(p.priceSensitivity as string) || !["regular", "occasional", "new"].includes(p.relationship as string)) return null;
+    if (!["fan", "neutral", "sceptical"].includes(p.attitude as string) || !num(p.activityLevel) || !str(p.story, 4000)) return null;
+    if (!Array.isArray(p.channels) || !p.channels.every((c) => typeof c === "string") || !str(p.alternatives) || !str(p.quirk) || !str(p.represents)) return null;
+    const strings = (v: unknown) => (Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]).slice(0, 12) : undefined);
+    const traits = strings(p.traits), altIds = strings(p.altIds);
+    const ids = Array.isArray(p.textIds) && p.textIds.length === 5 && p.textIds.every((x) => typeof x === "string") ? ([...p.textIds] as NonNullable<Persona["textIds"]>) : undefined;
+    out.push({
+      id: p.id,
+      name: p.name,
+      segment: p.segment as SegmentId,
+      segmentLabel: p.segmentLabel,
+      age: p.age,
+      routine: p.routine,
+      usualSpend: p.usualSpend,
+      priceSensitivity: p.priceSensitivity as Persona["priceSensitivity"],
+      relationship: p.relationship as Persona["relationship"],
+      channels: p.channels.slice(0, 8),
+      alternatives: p.alternatives,
+      quirk: p.quirk,
+      represents: p.represents,
+      attitude: p.attitude as Persona["attitude"],
+      activityLevel: clamp(p.activityLevel, 0, 1),
+      story: p.story,
+      ...(p.gender === "f" || p.gender === "m" ? { gender: p.gender } : {}),
+      ...(traits ? { traits } : {}),
+      ...(altIds ? { altIds } : {}),
+      ...(ids ? { textIds: ids } : {}),
+    });
+  }
+  return out;
+}
+
+/** Saved activation for a cast: every round 1..rounds present, only known ids; null when unusable. */
+function savedActive(active: unknown, personas: Persona[], rounds: number): Record<number, string[]> | null {
+  if (!active || typeof active !== "object" || Array.isArray(active)) return null;
+  const ids = new Set(personas.map((p) => p.id));
+  const out: Record<number, string[]> = {};
+  for (let k = 1; k <= rounds; k++) {
+    const v = (active as Record<string, unknown>)[String(k)];
+    if (!Array.isArray(v) || !v.every((x) => typeof x === "string" && ids.has(x))) return null;
+    // Persona order, no duplicates (the same order drawActive gives).
+    out[k] = personas.filter((p) => v.includes(p.id)).map((p) => p.id);
+  }
+  return out;
 }
 
 /**
@@ -1376,10 +1636,15 @@ export function toShareRehearsal(r: Rehearsal): ShareRehearsal {
  * replays events and reactions round by round. Invalid stored items are skipped; replay stops at
  * the first round that is not complete. Deterministic, so the summary matches the original.
  * Rebuilt in another language, the generated texts (people, rounds, Berlin events) follow the
- * analysis language, while the imagined customers' own words stay as they were written.
+ * analysis language, while the imagined customers' own words stay as they were written. A saved
+ * cast (AI-played runs) is used as it is, in the language it was written in, with its saved
+ * activation; an unusable one falls back to generating the people from the seed.
  */
 export function rebuildRehearsal(a: Analysis, s: ShareRehearsal): Rehearsal {
-  const r = startRehearsal(a, { seed: s.seed, personas: s.personas, rounds: s.rounds, ...(s.customerMix ? { customerMix: s.customerMix } : {}) });
+  const opts: StartOptions = { seed: s.seed, personas: s.personas, rounds: s.rounds, ...(s.customerMix ? { customerMix: s.customerMix } : {}) };
+  const cast = savedCast(s.cast);
+  const active = cast ? savedActive(s.active, cast, clampInt(s.rounds, 3, 5, 4)) : null;
+  const r = cast ? start(a, opts, { cast, ...(active ? { active } : {}) }) : startRehearsal(a, opts);
   const events = (Array.isArray(s.events) ? s.events : []).filter(
     (e): e is { beforeRound: number; text: string } => !!e && typeof e.text === "string" && !!norm(e.text) && Number.isFinite(Number(e.beforeRound)),
   );
@@ -1517,35 +1782,39 @@ function checksFor(r: Rehearsal, funnel: RehearsalSummary["funnel"], questions: 
   const by = (ids: string[]) => (x: Reaction) => ids.includes(x.action);
   const out: string[] = [];
   const quoted = questions.slice(0, 2).map((q) => quote(q, lang));
-  const iv = itemVars(s.item);
+  const iv = itemVars(s.item, lang);
+  const item = lang === "de" ? deNoun(s.item) : s.item;
   const aItem = lang === "de" ? iv.einen_item! : lang === "es" ? iv.un_item! : lang === "pl" ? s.item : iv.a_item!;
   const price = money(s.price, s.currency, lang);
   const regulars = r.personas.filter((p) => p.relationship === "regular");
   if (r.template === "price_change") {
     const regReduced = regulars.filter((p) => r.reactions.some((x) => x.personaId === p.id && GROUPS.priceReduced.has(x.action))).length;
-    out.push(C.watchItem(s.item));
+    out.push(C.watchItem(item));
     out.push(C.askRegularsPrice(price, aItem, regReduced, regulars.length));
     const grumbled = count(by(["grumbles", "tells_friend_it_is_pricey", "mentions_price_in_review"]));
     if (grumbled) out.push(C.staffPriceNotes(grumbled));
     const switched = count(by(["switches_to_cheaper_item"]));
-    if (switched) out.push(C.trackCheaper(s.item, switched));
+    if (switched) out.push(C.trackCheaper(item, switched));
     const away = count((x) => GROUPS.priceElsewhere.has(x.action));
     if (away) out.push(C.checkRivals(aItem, away));
     if (quoted.length) out.push(C.friendlyAnswer(quoted));
-    out.push(C.compareWeekly(s.item));
+    out.push(C.compareWeekly(item));
   } else {
     const regTried = regulars.filter((p) => r.reactions.some((x) => x.personaId === p.id && GROUPS.lunchUsed.has(x.action))).length;
     out.push(C.askRegularsSwitch(regTried, regulars.length));
     const noticed = funnel[0]?.count ?? 0;
     if (noticed * 2 < r.personas.length) out.push(C.countPassersby());
     else {
+      // How the noticers usually hear about things, with the count; a tie names both channels (persona order breaks it).
       const tally = new Map<string, number>();
       for (const p of r.personas) {
         if (!r.reactions.some((x) => x.personaId === p.id && GROUPS.lunchNoticed.has(x.action))) continue;
         for (const ch of p.channels) tally.set(ch, (tally.get(ch) ?? 0) + 1);
       }
-      const top = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-      out.push(C.askHowHeard(top ? channelPhrase(top, lang) : undefined));
+      const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+      const best = ranked[0]?.[1] ?? 0;
+      const top = best >= 2 ? ranked.filter(([, n]) => n === best).slice(0, 2).map(([ch, n]) => ({ channel: channelPhrase(ch, lang), n })) : [];
+      out.push(C.askHowHeard(top, noticed));
     }
     const tried = funnel[1]?.count ?? 0;
     const back = funnel[2]?.count ?? 0;

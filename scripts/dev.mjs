@@ -9,7 +9,9 @@
  *   node scripts/dev.mjs --watch     rebuild when site/, src/ or skill/ change
  *
  * Closed beta locally: set WHATIF_BETA_CODES (and WHATIF_BETA_CONTACT) in the shell first;
- * unset = open. The request log prints paths only, never query strings, so codes stay out of it.
+ * unset = open. Without a valid code the MCP still connects and every tool call returns the beta
+ * message (never a 401); the OAuth discovery paths answer 404 JSON, routed like on Vercel.
+ * The request log prints paths only, never query strings, so codes stay out of it.
  */
 import { spawnSync } from "node:child_process";
 import { createReadStream, existsSync, readFileSync, statSync, watch } from "node:fs";
@@ -131,7 +133,9 @@ function route(pathname) {
     if (!m) continue;
     if (r.headers) Object.assign(headers, r.headers);
     if (r.status) status = r.status;
-    if (r.dest) path = r.dest.replace(/\$(\d+)/g, (_, i) => m[Number(i)] ?? "");
+    // A dest may carry a query (the OAuth routes add ?__whatif_oauth=1); only its path picks the file or
+    // function. The handler still gets the original request, whose path it checks itself.
+    if (r.dest) path = r.dest.replace(/\$(\d+)/g, (_, i) => m[Number(i)] ?? "").split("?")[0];
     if (!r.continue) {
       const hit = resolveFs(path);
       return hit ? { ...hit, headers, status } : { kind: "missing", headers, status };
@@ -183,7 +187,9 @@ server.listen(PORT, () => {
   const closed = (process.env.WHATIF_BETA_CODES ?? "").trim() !== "";
   const mcpUrl = closed ? `"${SITE_URL}/api/mcp?code=YOUR-INVITE-CODE"` : `${SITE_URL}/api/mcp`;
   console.log(`[dev]   MCP      ${SITE_URL}/api/mcp  (claude mcp add --transport http what-if-local ${mcpUrl})`);
-  console.log(`[dev]   beta     ${closed ? `closed: ${codes} invite code${codes === 1 ? "" : "s"} from WHATIF_BETA_CODES` : "open (WHATIF_BETA_CODES is not set)"}`);
+  console.log(
+    `[dev]   beta     ${closed ? `closed: ${codes} invite code${codes === 1 ? "" : "s"} from WHATIF_BETA_CODES (no code: tools answer with the beta message)` : "open (WHATIF_BETA_CODES is not set)"}`,
+  );
 });
 
 if (args.has("--watch")) {
